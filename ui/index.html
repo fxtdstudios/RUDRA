@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RUDRA Studio — Premium High Dynamic Range Mastering</title>
+    <meta name="description" content="A state-of-the-art biological-adaptive HDR reconstruction and mastering interface powered by Gated LoRA and Spatial DRE.">
+    <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Header -->
+    <header>
+        <div class="brand">
+            <div class="brand-icon"></div>
+            <span>RUDRA Studio</span>
+        </div>
+        <div class="system-status">
+            <button class="status-pill active" id="btnHeaderUpload" style="cursor: pointer; background: rgba(0, 113, 227, 0.12); border: 1px solid rgba(0, 113, 227, 0.3); color: var(--accent-cyan); font-weight: 700; transition: var(--transition-quick);">
+                <span>📤 Upload SDR</span>
+            </button>
+            <div class="status-pill active" id="cudaStatus">
+                <div class="status-dot"></div>
+                <span>CUDA: RTX 4080 SUPER</span>
+            </div>
+            <div class="status-pill active" id="backboneStatus">
+                <div class="status-dot"></div>
+                <span>Backbone: Flux 1 Dev</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="dashboard-grid">
+        
+        <!-- Left Column: Interactive Viewer & Histogram -->
+        <section class="viewer-section">
+            
+            <!-- Interactive Comparison Layout Segments -->
+            <div class="tabs-container" style="max-width: 420px; margin-bottom: 0; align-self: flex-start; z-index: 10;">
+                <button class="tab-btn active" id="modeSplit" onclick="switchLayoutMode('split')">Split Screen ↔</button>
+                <button class="tab-btn" id="modeSide" onclick="switchLayoutMode('side')">Side-by-Side ⧉</button>
+                <button class="tab-btn" id="modeSingle" onclick="switchLayoutMode('single')">Single View 👁</button>
+            </div>
+
+            <!-- Drag & Drop Uploader (Hidden initially as default demo loads) -->
+            <div class="glass-panel upload-card" id="uploadCard" style="display: none;">
+                <div class="upload-icon-container">
+                    <svg class="upload-icon" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                </div>
+                <h3 class="upload-title">Drop standard image here</h3>
+                <p class="upload-subtitle">Select any SDR graphic (sRGB, LogC, S-Log) to reconstruct and master into scene-linear EXR format.</p>
+            </div>
+
+            <!-- Hidden file input placed safely to avoid bubbling event loops -->
+            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+
+            <!-- HDR Comparative Viewer (Shown by default with mountain sunset demo) -->
+            <div class="glass-panel viewer-card" id="viewerCard" style="display: block;">
+                <!-- SDR Simulation Layer -->
+                <div class="sdr-layer" id="sdrLayer">
+                    <img id="sdrImage" src="assets/cinematic_hdr_sunset.png" alt="SDR Simulation">
+                </div>
+                <!-- HDR Original Layer -->
+                <div class="hdr-layer" id="hdrLayer">
+                    <img id="hdrImage" src="assets/cinematic_hdr_sunset.png" alt="HDR Original">
+                </div>
+                
+                <!-- Slide Control Handle -->
+                <div class="slider-handle" id="sliderHandle">
+                    <div class="slider-handle-button">↔</div>
+                </div>
+                
+                <span class="layer-badge badge-sdr">DISPLAY SDR (CLIPPED)</span>
+                <span class="layer-badge badge-hdr">SCENE-LINEAR HDR (RUDRA)</span>
+            </div>
+
+            <!-- Luminance Waveform/Histogram -->
+            <div class="glass-panel histogram-card">
+                <div class="histogram-header">
+                    <div class="histogram-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 3v18h18M18 17V9M13 17V5M8 17v-4"/>
+                        </svg>
+                        <span>LUMINANCE HISTOGRAM (NITS)</span>
+                    </div>
+                    <span style="font-size: 11px; font-weight: 700; color: var(--accent-cyan); letter-spacing: 0.05em;">SCENE-LINEAR COMPRESSED</span>
+                </div>
+                <div class="histogram-svg-container">
+                    <svg class="histogram-svg" id="histogramSvg" viewBox="0 0 500 120" preserveAspectRatio="none">
+                        <defs>
+                            <linearGradient id="histGrad" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stop-color="#0071e3"/>
+                                <stop offset="50%" stop-color="#29e7cd"/>
+                                <stop offset="100%" stop-color="#a55eff"/>
+                            </linearGradient>
+                            <linearGradient id="histAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="rgba(41, 231, 205, 0.2)"/>
+                                <stop offset="100%" stop-color="rgba(6, 6, 9, 0)"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- Grid Lines -->
+                        <line class="histogram-grid-line" x1="0" y1="30" x2="500" y2="30"/>
+                        <line class="histogram-grid-line" x1="0" y1="60" x2="500" y2="60"/>
+                        <line class="histogram-grid-line" x1="0" y1="90" x2="500" y2="90"/>
+                        <!-- Vertical divisions for Nits ranges -->
+                        <line class="histogram-grid-line" x1="125" y1="0" x2="125" y2="120"/>
+                        <line class="histogram-grid-line" x1="250" y1="0" x2="250" y2="120"/>
+                        <line class="histogram-grid-line" x1="375" y1="0" x2="375" y2="120"/>
+                        <!-- Dynamic SVG Curve Path -->
+                        <path class="histogram-curve" id="histogramCurve" d="M 0 120 Q 125 80 250 120 T 500 120 L 500 120 L 0 120 Z"/>
+                    </svg>
+                </div>
+                <!-- X-axis nit marks -->
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.25); font-weight: 700; margin-top: 8px;">
+                    <span>0.001 NIT (SDR Black)</span>
+                    <span>100 NITS (SDR White)</span>
+                    <span>1,000 NITS (HDR standard)</span>
+                    <span>10,000 NITS (RUDRA Knee Limit)</span>
+                </div>
+            </div>
+
+            <!-- Cinematic LUT Presets Bar -->
+            <div class="glass-panel lut-card" style="padding: 20px;">
+                <div class="histogram-header" style="margin-bottom: 16px;">
+                    <div class="histogram-title">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <line x1="9" y1="3" x2="9" y2="21"/>
+                            <line x1="15" y1="3" x2="15" y2="21"/>
+                            <line x1="3" y1="9" x2="21" y2="9"/>
+                            <line x1="3" y1="15" x2="21" y2="15"/>
+                        </svg>
+                        <span>CINEMATIC LUT COLOR PRESETS</span>
+                    </div>
+                </div>
+                <div class="lut-presets-container">
+                    <div class="lut-preset-item active" onclick="applyPreset('arri')">
+                        <div class="lut-thumb" style="background-image: url('assets/cinematic_hdr_sunset.png'); filter: contrast(0.55) brightness(1.0) saturate(0.5);"></div>
+                        <span class="lut-name">ARRI LogC4</span>
+                    </div>
+                    <div class="lut-preset-item" onclick="applyPreset('venice')">
+                        <div class="lut-thumb" style="background-image: url('assets/cinematic_hdr_sunset.png'); filter: contrast(1.15) brightness(1.1) saturate(1.25) sepia(0.1) hue-rotate(5deg);"></div>
+                        <span class="lut-name">Venice Sunset</span>
+                    </div>
+                    <div class="lut-preset-item" onclick="applyPreset('linear')">
+                        <div class="lut-thumb" style="background-image: url('assets/cinematic_hdr_sunset.png'); filter: contrast(0.65) brightness(1.15) saturate(0.65);"></div>
+                        <span class="lut-name">ACES Linear</span>
+                    </div>
+                    <div class="lut-preset-item" onclick="applyPreset('neon')">
+                        <div class="lut-thumb" style="background-image: url('assets/cinematic_hdr_sunset.png'); filter: contrast(1.25) brightness(1.2) saturate(1.7) sepia(0.15) hue-rotate(-20deg);"></div>
+                        <span class="lut-name">Prism Neon</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Column: Parameters Dashboard & Mastering -->
+        <section class="controls-section">
+            
+            <!-- Pathway Adjustments -->
+            <div class="glass-panel">
+                <h4 class="section-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    <span>Adapter Pathway Controls</span>
+                </h4>
+                
+                <div class="tabs-container">
+                    <button class="tab-btn active" id="tabLite" onclick="switchTab('lite')">RUDRA-Lite (LoRA)</button>
+                    <button class="tab-btn" id="tabFull" onclick="switchTab('full')">RUDRA-Full (DRE)</button>
+                </div>
+
+                <!-- Path A: RUDRA-Lite (Exposure & tonemapping) -->
+                <div id="litePanel">
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Input Tone Curve</span>
+                        </div>
+                        <div class="select-wrapper">
+                            <select id="toneCurveSelect" onchange="updateParameters()">
+                                <option value="linear">Scene-linear EXR (Prism)</option>
+                                <option value="logc4" selected>ARRI LogC4 (Cinematic)</option>
+                                <option value="slog3">Sony S-Log3 (Venice)</option>
+                                <option value="vlog">Panasonic V-Log (Varicam)</option>
+                                <option value="hlg">Rec.2100 HLG (Broadcast)</option>
+                                <option value="sdr">Rec.709 sRGB (Standard Display)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Exposure Adjustment (EV)</span>
+                            <span class="control-value" id="valExposure">0.00 EV</span>
+                        </div>
+                        <input type="range" id="sliderExposure" min="-3.0" max="3.0" step="0.1" value="0.0" oninput="updateParameters()">
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>LoRA Dynamic Gating Scale</span>
+                            <span class="control-value" id="valGating">1.00x</span>
+                        </div>
+                        <input type="range" id="sliderGating" min="0.0" max="2.0" step="0.05" value="1.0" oninput="updateParameters()">
+                    </div>
+                </div>
+
+                <!-- Path B: RUDRA-Full (DRE spatial encoder) -->
+                <div id="drePanel">
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Spatial DRE Patch Size</span>
+                            <span class="control-value" id="valPatchSize">8 x 8</span>
+                        </div>
+                        <input type="range" id="sliderPatchSize" min="4" max="16" step="4" value="8" oninput="updateParameters()">
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>DRE Transformer Projection</span>
+                            <span class="control-value" id="valProjection">512-d</span>
+                        </div>
+                        <input type="range" id="sliderProjection" min="256" max="768" step="128" value="512" oninput="updateParameters()">
+                    </div>
+
+                    <div class="control-group">
+                        <div class="control-label">
+                            <span>Highlight Knee Threshold</span>
+                            <span class="control-value" id="valHighlightKnee">0.85 Y</span>
+                        </div>
+                        <input type="range" id="sliderHighlightKnee" min="0.5" max="0.95" step="0.05" value="0.85" oninput="updateParameters()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Perceptual Visual Metrics Dials -->
+            <div class="glass-panel metrics-card">
+                <h4 class="section-title" style="margin-bottom: 24px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <span>Biological Perceptual Metrics</span>
+                </h4>
+                <div class="dials-container">
+                    <!-- LPIPS Dial -->
+                    <div class="dial-box">
+                        <div class="dial-circle-container">
+                            <svg class="dial-svg">
+                                <circle class="dial-track" cx="50" cy="50" r="45"></circle>
+                                <circle class="dial-fill dial-fill-lpips" id="dialLpips" cx="50" cy="50" r="45"></circle>
+                            </svg>
+                            <span class="dial-text" id="textLpips">0.142</span>
+                        </div>
+                        <span class="dial-label">LPIPS</span>
+                        <span class="dial-description">Lower is closer</span>
+                    </div>
+
+                    <!-- HDR-VDP Proxy JOD Dial -->
+                    <div class="dial-box">
+                        <div class="dial-circle-container">
+                            <svg class="dial-svg">
+                                <circle class="dial-track" cx="50" cy="50" r="45"></circle>
+                                <circle class="dial-fill dial-fill-jod" id="dialJod" cx="50" cy="50" r="45"></circle>
+                            </svg>
+                            <span class="dial-text" id="textJod">9.24</span>
+                        </div>
+                        <span class="dial-label">HDR-VDP JOD</span>
+                        <span class="dial-description">JOD > 8 is identical</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mastering Action Panel -->
+            <div class="glass-panel mastering-card">
+                <h4 class="section-title" style="color: #fff; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 12px; margin-bottom: 16px;">
+                    HDR Mastering Output
+                </h4>
+                
+                <div class="control-group">
+                    <div class="control-label" style="color: rgba(255,255,255,0.7);">
+                        <span>Target Dynamic Domain</span>
+                    </div>
+                    <div class="select-wrapper">
+                        <select id="exportFormat" style="background: rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.1);">
+                            <option value="exr">OpenEXR (.exr) — Scene-Linear 16-bit</option>
+                            <option value="acescg">ACEScg OpenEXR (.exr) — VFX Pipeline</option>
+                            <option value="pq">Rec.2020 PQ (.tiff) — 10,000 nits BT.2100</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="master-btn" id="btnMaster" onclick="triggerMastering()">
+                    <span class="master-loader" id="btnLoader"></span>
+                    <span id="btnText">Master HDR Image</span>
+                </button>
+
+                <!-- Live Rendering Console Output -->
+                <div class="mastering-console" id="masteringConsole" style="display: none;">
+                    <div class="console-header">
+                        <span class="console-dot" style="background: #ff5f56;"></span>
+                        <span class="console-dot" style="background: #ffbd2e;"></span>
+                        <span class="console-dot" style="background: #27c93f;"></span>
+                        <span class="console-title">RUDRA MASTERING CONSOLE</span>
+                    </div>
+                    <div class="console-body" id="consoleBody">
+                        <!-- Log messages are appended dynamically -->
+                    </div>
+                </div>
+
+                <a class="download-link" id="btnDownload" download="cinematic_hdr_sunset_mastered.exr">
+                    📥 Download Scene-Linear EXR
+                </a>
+            </div>
+
+        </section>
+
+    </main>
+</div>
+
+<script src="app.js?v=4"></script>
+</body>
+</html>

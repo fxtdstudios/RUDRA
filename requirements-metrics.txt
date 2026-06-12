@@ -1,0 +1,12 @@
+# Optional dependencies for full-fidelity RUDRA validation metrics.
+# Install with:  pip install -r requirements-metrics.txt
+#
+# ColorVideoVDP — the real HDR perceptual difference metric (JOD units), the
+# pip-installable successor to HDR-VDP from Mantiuk et al. Used by
+# rudra.hdrvdp.hdr_vdp3_jod / metrics.validation_metrics when available.
+# See: https://github.com/gfxdisp/ColorVideoVDP
+cvvdp>=0.5.1
+
+# LPIPS perceptual metric (tone-mapped SDR preview). Optional; metrics fall back
+# to multi-scale L1 if absent.
+lpips>=0.1.4

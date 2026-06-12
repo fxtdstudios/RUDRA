@@ -1,0 +1,16 @@
+name: rudra_decoder_only
+version: 0.3
+mode: decoder_only
+model_type: flux
+precision: bf16
+batch_size: 8
+grad_accum: 2
+learning_rate: 2.0e-4
+max_steps: 40000
+validate_every: 1000
+checkpoint_every: 5000
+loss_schedule: reconstruction_first
+sampler: highlight_balanced
+outputs:
+  color_space: ACEScg
+  output_domain: scene_linear

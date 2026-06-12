@@ -1,0 +1,42 @@
+# ── Trained weights & data (huge — never commit) ─────────────────────────────
+hdrdata/checkpoints/
+hdrdata/**/*.npz
+hdrdata/*pairs*/
+hdrdata/*cache*/
+hdrdata/Source_HDR/
+*.safetensors
+*.pth
+*.ckpt
+*.npz
+
+# Source HDR / image assets
+*.exr
+*.hdr
+*.tif
+*.tiff
+*.mxf
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ── Env / IDE / OS ────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ── Logs / scratch ────────────────────────────────────────────────────────────
+*.log
+*.jsonl
+outputs/
+tmp/
