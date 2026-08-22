@@ -25,10 +25,12 @@ FORMAT_NAMES = [
 FORMAT_TO_ID = {name: idx for idx, name in enumerate(FORMAT_NAMES)}
 FORMAT_DIM = len(FORMAT_NAMES)
 
+from .radiometry import LUMA_REC709, LUMA_REC2020, LUMA_ACESCG
+
 LUMA_WEIGHTS = {
-    "rec709":  (0.2126, 0.7152, 0.0722),
-    "rec2020": (0.2627, 0.6780, 0.0593),
-    "acescg":  (0.272229, 0.674082, 0.053689),
+    "rec709":  LUMA_REC709,
+    "rec2020": LUMA_REC2020,
+    "acescg":  LUMA_ACESCG,
 }
 
 @dataclass

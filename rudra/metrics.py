@@ -7,6 +7,8 @@ import math
 import torch
 import torch.nn.functional as F
 
+from .radiometry import luma_cf
+
 
 # ---------------------------------------------------------------------------
 # Existing metrics (unchanged)
@@ -32,8 +34,8 @@ def highlight_reconstruction_accuracy(
     was unreachable for relative scene-linear data — see spatial_descriptor.)
     Returns 1.0 when no highlight pixels exist.
     """
-    y_t = 0.2627 * target[:, 0:1] + 0.6780 * target[:, 1:2] + 0.0593 * target[:, 2:3]
-    y_p = 0.2627 * pred[:, 0:1] + 0.6780 * pred[:, 1:2] + 0.0593 * pred[:, 2:3]
+    y_t = luma_cf(target)
+    y_p = luma_cf(pred)
     ev = torch.log2(y_t.clamp(min=1e-8) / 0.18)
     mask = ev > ev_threshold
     if not mask.any():
@@ -46,7 +48,7 @@ def exposure_ev_error(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """Absolute difference in median-based exposure value (EV) between *pred* and *target*."""
 
     def ev(x: torch.Tensor) -> torch.Tensor:
-        y = 0.2627 * x[:, 0:1] + 0.6780 * x[:, 1:2] + 0.0593 * x[:, 2:3]
+        y = luma_cf(x)
         med = y.flatten(1).median(dim=-1).values.clamp(min=1e-8)
         return torch.log2(med / 0.18 + 1e-8)
 
@@ -343,7 +345,7 @@ def hdr_vdp_proxy(
     with torch.no_grad():
         # 1. Absolute luminance conversion
         def get_luminance(rgb: torch.Tensor) -> torch.Tensor:
-            y = 0.2627 * rgb[:, 0:1] + 0.6780 * rgb[:, 1:2] + 0.0593 * rgb[:, 2:3]
+            y = luma_cf(rgb)
             return y.clamp(min=0.0) * peak_nits
             
         y_pred = get_luminance(pred)

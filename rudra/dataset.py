@@ -11,6 +11,8 @@ from typing import Iterable, Optional
 import torch
 from torch.utils.data import Dataset
 
+from .radiometry import luma_cf
+
 from .config import FORMAT_TO_ID
 from .descriptor import RUDRADescriptor
 from .exr_io import load_tensor_cache, save_tensor_cache
@@ -65,7 +67,7 @@ def _load_tensor(path: str | Path) -> torch.Tensor:
 
 
 def _sample_stats(index: int, target: torch.Tensor) -> SampleHDRStats:
-    y = 0.2627 * target[:, 0:1] + 0.6780 * target[:, 1:2] + 0.0593 * target[:, 2:3]
+    y = luma_cf(target)
     flat = y.flatten()
     return SampleHDRStats(
         index=index,

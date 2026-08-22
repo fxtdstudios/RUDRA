@@ -15,6 +15,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .radiometry import ACES_A, ACES_B, ACES_C, ACES_D, ACES_E, LUMA_REC709
+
 
 def srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
     x = x.clamp(0.0, 1.0)
@@ -54,7 +56,7 @@ def inverse_aces_approx(display_linear: torch.Tensor) -> torch.Tensor:
     one produces a finite baseline which the learned residual can extend.
     """
     y = display_linear.clamp(0.0, 0.995)
-    a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
+    a, b, c, d, e = ACES_A, ACES_B, ACES_C, ACES_D, ACES_E
     qa = y * c - a
     qb = y * d - b
     qc = y * e
@@ -76,7 +78,8 @@ def sdr_to_baseline_hdr(sdr: torch.Tensor) -> torch.Tensor:
 
 
 def luminance(x: torch.Tensor) -> torch.Tensor:
-    return 0.2126 * x[:, 0:1] + 0.7152 * x[:, 1:2] + 0.0722 * x[:, 2:3]
+    w0, w1, w2 = LUMA_REC709
+    return w0 * x[:, 0:1] + w1 * x[:, 1:2] + w2 * x[:, 2:3]
 
 
 class ResidualBlock(nn.Module):

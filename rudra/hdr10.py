@@ -9,18 +9,17 @@ from __future__ import annotations
 
 import numpy as np
 
+from .radiometry import (
+    LUMA_REC2020, PQ_C1, PQ_C2, PQ_C3, PQ_M1, PQ_M2,
+)
 
-REC2020_LUMA = np.asarray((0.2627, 0.6780, 0.0593), dtype=np.float32)
+REC2020_LUMA = np.asarray(LUMA_REC2020, dtype=np.float32)
 
 
 def pq_oetf(nits: np.ndarray) -> np.ndarray:
     """Encode absolute luminance in nits to normalized ST 2084 code values."""
     values = np.clip(np.asarray(nits, dtype=np.float32) / 10000.0, 0.0, 1.0)
-    m1 = 2610.0 / 16384.0
-    m2 = 2523.0 / 32.0
-    c1 = 3424.0 / 4096.0
-    c2 = 2413.0 / 128.0
-    c3 = 2392.0 / 128.0
+    m1, m2, c1, c2, c3 = PQ_M1, PQ_M2, PQ_C1, PQ_C2, PQ_C3
     powered = np.power(values, m1)
     return np.power((c1 + c2 * powered) / (1.0 + c3 * powered), m2)
 
@@ -28,11 +27,7 @@ def pq_oetf(nits: np.ndarray) -> np.ndarray:
 def pq_eotf(code: np.ndarray) -> np.ndarray:
     """Decode normalized ST 2084 values to absolute luminance in nits."""
     values = np.clip(np.asarray(code, dtype=np.float32), 0.0, 1.0)
-    m1 = 2610.0 / 16384.0
-    m2 = 2523.0 / 32.0
-    c1 = 3424.0 / 4096.0
-    c2 = 2413.0 / 128.0
-    c3 = 2392.0 / 128.0
+    m1, m2, c1, c2, c3 = PQ_M1, PQ_M2, PQ_C1, PQ_C2, PQ_C3
     powered = np.power(values, 1.0 / m2)
     ratio = np.maximum(powered - c1, 0.0) / np.maximum(c2 - c3 * powered, 1e-9)
     return 10000.0 * np.power(ratio, 1.0 / m1)

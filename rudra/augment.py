@@ -12,6 +12,8 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 
+from .radiometry import luma_cf
+
 
 @dataclass
 class RUDRAAugmentConfig:
@@ -64,7 +66,7 @@ class RUDRAHDRAugment:
         y = y * wb
 
         # Highlight gain only for high scene-linear values.
-        luminance = 0.2627 * y[:, 0:1] + 0.6780 * y[:, 1:2] + 0.0593 * y[:, 2:3]
+        luminance = luma_cf(y)
         mask = torch.sigmoid((torch.log1p(luminance.clamp(min=0.0)) - torch.log(torch.tensor(2.0, device=device, dtype=dtype))) / 0.25)
         hg = self.cfg.highlight_gain_min + (self.cfg.highlight_gain_max - self.cfg.highlight_gain_min) * self._rand((B, 1, 1, 1), device, dtype)
         x = x * (1.0 + mask * (hg - 1.0))

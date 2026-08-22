@@ -14,6 +14,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .radiometry import luma_cf
+
 from .spatial_descriptor import RUDRASpatialDescriptor
 
 _EPS = 1e-8
@@ -87,7 +89,7 @@ def exposure_consistency_loss(
 ) -> torch.Tensor:
     """L_exposure: L1 in median EV space — measures global exposure drift."""
     def ev(x: torch.Tensor) -> torch.Tensor:
-        y = (0.2627 * x[:, 0:1] + 0.6780 * x[:, 1:2] + 0.0593 * x[:, 2:3])
+        y = luma_cf(x)
         med = y.flatten(1).median(dim=-1).values.clamp(min=_EPS)
         return torch.log2(med / 0.18 + _EPS)
     return F.l1_loss(ev(pred), ev(target))

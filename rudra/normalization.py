@@ -9,6 +9,9 @@ from __future__ import annotations
 import torch
 
 from .config import FORMAT_NAMES, FORMAT_TO_ID
+from .radiometry import (
+    HLG_A, HLG_B, HLG_C, PQ_C1, PQ_C2, PQ_C3, PQ_M1, PQ_M2, PQ_REF_WHITE_NITS,
+)
 from .color_curves import LOG_TO_LINEAR, LINEAR_TO_LOG
 
 _EPS = 1e-8
@@ -26,7 +29,7 @@ def _srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
 # descriptors read the same physical scene stops apart depending on the
 # container format (AUDIT_2026-08-10 NEW-4: a PQ-tagged scene read ~5.6
 # stops darker than S-Log3 and produced identically-zero highlight features).
-_PQ_REF_WHITE_NITS = 203.0
+_PQ_REF_WHITE_NITS = PQ_REF_WHITE_NITS
 
 
 def _pq_eotf(x: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
@@ -39,11 +42,7 @@ def _pq_eotf(x: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
     white (203 nits) at 1.0: linear = (L * 10000) / 203.
     """
     x = x.clamp(0.0, 1.0)
-    m1 = 2610.0 / 16384.0
-    m2 = 2523.0 / 32.0
-    c1 = 3424.0 / 4096.0
-    c2 = 2413.0 / 128.0
-    c3 = 2392.0 / 128.0
+    m1, m2, c1, c2, c3 = PQ_M1, PQ_M2, PQ_C1, PQ_C2, PQ_C3
     xp = x.pow(1.0 / m2)
     num = (xp - c1).clamp(min=0.0)
     den = (c2 - c3 * xp).clamp(min=_EPS)
@@ -60,9 +59,7 @@ def _hlg_inverse_oetf(x: torch.Tensor) -> torch.Tensor:
     below the other formats).
     """
     x = x.clamp(min=0.0)
-    a = 0.17883277
-    b = 0.28466892
-    c = 0.55991073
+    a, b, c = HLG_A, HLG_B, HLG_C
     lin = torch.where(x <= 0.5, (x * x) / 3.0, (torch.exp((x - c) / a) + b) / 12.0).clamp(min=0.0)
     # Inverse OETF of the 0.75 reference-white signal ≈ 0.26496.
     _ref = (torch.exp(torch.tensor((0.75 - c) / a, dtype=x.dtype, device=x.device)) + b) / 12.0
@@ -183,11 +180,7 @@ def _pq_inverse_eotf(lin: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
     (AUDIT_2026-08-10 P2-12).
     """
     frac = (lin.clamp(min=0.0) * (_PQ_REF_WHITE_NITS / y_max)).clamp(0.0, 1.0)
-    m1 = 2610.0 / 16384.0
-    m2 = 2523.0 / 32.0
-    c1 = 3424.0 / 4096.0
-    c2 = 2413.0 / 128.0
-    c3 = 2392.0 / 128.0
+    m1, m2, c1, c2, c3 = PQ_M1, PQ_M2, PQ_C1, PQ_C2, PQ_C3
     yp = frac.pow(m1)
     return ((c1 + c2 * yp) / (1.0 + c3 * yp)).pow(m2)
 
@@ -195,9 +188,7 @@ def _pq_inverse_eotf(lin: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
 def _hlg_oetf(lin: torch.Tensor) -> torch.Tensor:
     """Diffuse-white-relative scene linear → HLG signal (inverse of
     _hlg_inverse_oetf, including the 75%-signal reference-white rescale)."""
-    a = 0.17883277
-    b = 0.28466892
-    c = 0.55991073
+    a, b, c = HLG_A, HLG_B, HLG_C
     _ref = (torch.exp(torch.tensor((0.75 - c) / a, dtype=lin.dtype, device=lin.device)) + b) / 12.0
     e = (lin.clamp(min=0.0) * _ref).clamp(min=0.0)   # undo reference-white rescale
     return torch.where(

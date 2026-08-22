@@ -104,8 +104,15 @@ else:
     __all__ = ["TORCH_AVAILABLE"]
 
     def __getattr__(name):
-        raise ImportError(
-            f"rudra.{name} requires torch, which is not installed in this "
-            "environment. The torch-free delivery layer is available as "
-            "rudra.delivery (ACES/EXR export, HDR metadata, grade controls, CLI)."
-        )
+        # Torch-free submodules (delivery, radiometry, hdr10, ...) must stay
+        # importable via `from rudra import X`; only torch-dependent ones
+        # should raise, and with a pointed message rather than a stack trace.
+        import importlib
+        try:
+            return importlib.import_module(f".{name}", __name__)
+        except ModuleNotFoundError as exc:
+            raise ImportError(
+                f"rudra.{name} requires torch, which is not installed in this "
+                "environment. The torch-free delivery layer is available as "
+                "rudra.delivery (ACES/EXR export, HDR metadata, grade controls, CLI)."
+            ) from exc
