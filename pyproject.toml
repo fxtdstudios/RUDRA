@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rudra-hdr"
+version = "0.3.2"
+description = "Radiometric dynamic-range conditioning and HDR decoder research"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = {file = "LICENSE"}
+dependencies = [
+  "numpy>=1.26,<3",
+  "torch>=2.3",
+  "safetensors>=0.4",
+  "PyYAML>=6",
+  "tqdm>=4.66",
+  "opencv-python-headless>=4.9",
+  "imageio>=2.34",
+  "Pillow>=10",
+]
+
+[project.scripts]
+rudra = "rudra.delivery.cli:main"
+
+[project.optional-dependencies]
+metrics = ["cvvdp>=0.5.1", "lpips>=0.1.4"]
+vae = [
+  "diffusers>=0.35",
+  "transformers>=4.45",
+  "accelerate>=1.0",
+  "huggingface-hub>=0.25",
+  "OpenEXR>=3.2",
+]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["rudra*", "config*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

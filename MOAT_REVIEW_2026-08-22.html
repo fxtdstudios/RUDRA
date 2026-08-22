@@ -1,0 +1,160 @@
+<title>RUDRA Delivery Moat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #14171c;
+    --bg-raise: #1b1f26;
+    --bg-inset: #101317;
+    --ink: #e8e6e1;
+    --ink-dim: #9aa0a8;
+    --line: #2a2f38;
+    --accent: #e8a33d;        /* PQ-curve amber: the specular highlight */
+    --accent-ink: #14171c;
+    --good: #6ec6a0;
+    --warn: #d9a13b;
+    --crit: #e06c5f;
+    --mono-bg: #0d0f13;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f3f2ef; --bg-raise: #ffffff; --bg-inset: #eae8e3;
+      --ink: #23262b; --ink-dim: #6b7078; --line: #d9d6cf;
+      --accent: #b3761a; --accent-ink: #ffffff;
+      --good: #2e8a66; --warn: #a37411; --crit: #bb4437;
+      --mono-bg: #eceae5;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f3f2ef; --bg-raise: #ffffff; --bg-inset: #eae8e3;
+    --ink: #23262b; --ink-dim: #6b7078; --line: #d9d6cf;
+    --accent: #b3761a; --accent-ink: #ffffff;
+    --good: #2e8a66; --warn: #a37411; --crit: #bb4437;
+    --mono-bg: #eceae5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+    font-size: 17px; line-height: 1.6;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", Georgia, serif; text-wrap: balance; }
+  h1 { font-size: 2.5rem; font-weight: 700; line-height: 1.1; margin: 8px 0 4px; }
+  h2 { font-size: 1.45rem; font-weight: 600; margin: 56px 0 12px; }
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 24px 0 8px; }
+  p { max-width: 68ch; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .lede { font-size: 1.12rem; color: var(--ink-dim); max-width: 62ch; }
+  .thesis {
+    border-left: 3px solid var(--accent); background: var(--bg-raise);
+    padding: 18px 22px; border-radius: 0 8px 8px 0; margin: 28px 0; max-width: 70ch;
+  }
+  .thesis strong { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+  .scroll { overflow-x: auto; margin: 16px 0; }
+  th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 0.7rem;
+       letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-dim);
+       padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  .num { font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; font-family: "IBM Plex Mono", monospace; font-size: 0.7rem;
+          padding: 2px 9px; border-radius: 99px; letter-spacing: 0.05em; white-space: nowrap; }
+  .pill.crit { background: color-mix(in srgb, var(--crit) 18%, transparent); color: var(--crit); }
+  .pill.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+  .pill.good { background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--good); }
+  .pill.acc  { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 20px 0; }
+  .card { background: var(--bg-raise); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .card h3 { margin: 0 0 6px; }
+  .card p { font-size: 0.92rem; color: var(--ink-dim); margin: 0; }
+  .card .mono-tag { font-family: "IBM Plex Mono", monospace; font-size: 0.75rem; color: var(--accent); }
+  code, pre { font-family: "IBM Plex Mono", monospace; }
+  code { background: var(--mono-bg); border-radius: 4px; padding: 1px 6px; font-size: 0.85em; }
+  pre { background: var(--mono-bg); border: 1px solid var(--line); border-radius: 10px;
+        padding: 16px 18px; overflow-x: auto; font-size: 0.82rem; line-height: 1.65; }
+  pre code { background: none; padding: 0; }
+  .cmt { color: var(--ink-dim); }
+  ul { max-width: 70ch; } li { margin: 6px 0; }
+  .footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line);
+            font-size: 0.85rem; color: var(--ink-dim); }
+  a { color: var(--accent); }
+</style>
+<main>
+  <div class="eyebrow">Hard review · system design vs the field · 22 Aug 2026</div>
+  <h1>RUDRA Delivery Moat</h1>
+  <p class="lede">The brief "compare to Runway Ruby and Topaz, make RUDRA unique and more powerful" sharpened into three questions: where is the structural advantage, where does the architecture leak it, and what code closes the gap this week without a GPU. This report answers all three — and the code shipped with it.</p>
+
+  <div class="thesis">
+    <p style="margin:0"><strong>The moat, stated precisely:</strong> every competitor starts from already-clipped 8-bit pixels and hallucinates highlights. RUDRA's latent path reconstructs radiance before tone-mapping destroys it, across seven open backbones. But pipeline position is only defensible if the <em>delivery half</em> exists — generate → grade → measure → master without leaving scene-linear. Until today, it didn't. Now it does, and it runs on any machine with numpy.</p>
+  </div>
+
+  <h2>Moat map — after today's build</h2>
+  <div class="scroll"><table>
+    <tr><th>Capability</th><th>Runway Ruby</th><th>Topaz Hyperion 2.5</th><th>Beeble SwitchHDR</th><th>RUDRA now</th></tr>
+    <tr><td>Latent-native HDR (no SDR round-trip)</td><td>Gen-4.5 only, closed</td><td>—</td><td>—</td><td class="num">7 open backbones <span class="pill warn">weights gated</span></td></tr>
+    <tr><td>Dolby Vision L1 + HDR10+ dynamic metadata</td><td>—</td><td>—</td><td>—</td><td><span class="pill good">shipped</span> shot-aware, dovi_tool-ready</td></tr>
+    <tr><td>ACES 2065-1 EXR + OCIO config</td><td>EXR only</td><td>ACES 2065-1</td><td>ACES EXR</td><td><span class="pill good">shipped</span> validated vs official OpenEXR</td></tr>
+    <tr><td>Artist controls (EV, regions, qualifiers, knee)</td><td>—</td><td>zero sliders (doctrine)</td><td>masks + prompts</td><td><span class="pill good">shipped</span> + per-pixel ITM strength</td></tr>
+    <tr><td>Headless CLI / render-farm safe</td><td>cloud, credits</td><td>app</td><td>app</td><td><span class="pill good">shipped</span> torch-free <code>rudra</code></td></tr>
+    <tr><td>Published quality numbers</td><td>none</td><td>none</td><td>none</td><td><span class="pill acc">harness ready</span> PU21-PSNR + CVVDP</td></tr>
+  </table></div>
+
+  <h2>Hard findings — the delivery half</h2>
+  <div class="scroll"><table>
+    <tr><th>#</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>D1</td><td><span class="pill crit">P0</span></td><td><b>MaxCLL/MaxFALL computed on luminance</b> in <code>export_hdr10.py</code>. CTA-861.3 defines both on max(R,G,B): a 1,000-nit saturated red specular reported ~263 nits — wrong static metadata on every HDR10 export ever produced.</td><td><span class="pill good">fixed</span></td></tr>
+    <tr><td>D2</td><td><span class="pill crit">P0</span></td><td><b>No dynamic metadata anywhere.</b> Static-only HDR10 throws away the scene-adaptive headroom that is RUDRA's whole thesis; graded output tone-maps badly on 600-nit consumer panels.</td><td><span class="pill good">built</span></td></tr>
+    <tr><td>D3</td><td><span class="pill crit">P0</span></td><td><b><code>save_exr_placeholder</code> refused to write.</b> The pro-delivery story ended at a float TIFF while Topaz ships 16-bit EXR and Beeble ships scene-linear ACES.</td><td><span class="pill good">built</span></td></tr>
+    <tr><td>D4</td><td><span class="pill warn">P1</span></td><td><b>No ACES/OCIO.</b> The Rec.2020 diffuse-white convention lived in docstrings; Resolve/Nuke users had to guess matrices.</td><td><span class="pill good">built</span></td></tr>
+    <tr><td>D5</td><td><span class="pill warn">P1</span></td><td><b>ComfyUI-only distribution</b> — all three rivals are one-click.</td><td><span class="pill good">built</span></td></tr>
+    <tr><td>D6</td><td><span class="pill warn">P1</span></td><td><b>No benchmark harness</b> despite CVVDP being the only public measuring stick (arXiv SOTA: 6.56–8.91 JOD). Claims were adjectives.</td><td><span class="pill good">built</span></td></tr>
+    <tr><td>D7</td><td><span class="pill warn">P2</span></td><td>Package root hard-imports torch — nothing usable on a render node.</td><td><span class="pill good">fixed</span></td></tr>
+    <tr><td>D8</td><td><span class="pill warn">P2</span></td><td>Knee/shoulder was the <em>only</em> control — SwitchHDR wins every colorist conversation.</td><td><span class="pill good">built</span></td></tr>
+  </table></div>
+
+  <h2>What shipped — <span class="eyebrow" style="font-size:0.9rem">rudra/delivery/, torch-free by design</span></h2>
+  <div class="grid">
+    <div class="card"><div class="mono-tag">metadata.py</div><h3>Dynamic metadata</h3><p>MaxRGB per-frame analysis, conservative shot detection, per-shot Dolby Vision L1 min/mid/max as 12-bit PQ, HDR10+ scene percentiles, CTA-861.3 statics. Emits dovi_tool generate-JSON, HDR10+ scenes, and a self-describing sidecar in nits + PQ.</p></div>
+    <div class="card"><div class="mono-tag">exr.py + aces.py</div><h3>ACES delivery</h3><p>Dependency-free uncompressed EXR writer/reader; ST 2065-4 container with AP0 chromaticities; matrices derived from primaries + Bradford CAT at runtime, never hardcoded; OCIO v2 config generator with the exact matrices embedded.</p></div>
+    <div class="card"><div class="mono-tag">controls.py</div><h3>Artist controls</h3><p>Global EV, per-region EV over soft masks, log-symmetric luminance qualifiers, highlight desat, hue-preserving shoulder — fixed documented order, JSON-recorded grades, bit-exact replay. <code>itm_strength_map</code> feeds the same masks into SDR2HDRNet as per-pixel recovery strength.</p></div>
+    <div class="card"><div class="mono-tag">cli.py + bench.py</div><h3>CLI + benchmark</h3><p><code>rudra info / grade / aces / metadata / bench</code>. PU21-PSNR (banding+glare) in pure numpy everywhere; CVVDP JOD when torch + pycvvdp exist — recorded as unavailable otherwise, never silently substituted.</p></div>
+  </div>
+
+  <h2>Verification</h2>
+  <ul>
+    <li><b>27/27 new regression tests green</b> in a torch-free sandbox (colorspace, EXR round-trips, metadata schemas, grade order, PU21, benchmark end-to-end, CLI subprocess).</li>
+    <li>EXR output <b>validated with the official OpenEXR bindings</b>: header parses, chromaticities intact, pixel round-trip ≤ 0.05% relative error at half precision.</li>
+    <li>BT.709→AP0 matches the ACES reference matrix to 2×10⁻³; white maps to white in every space pair; round-trip matrices are identity to 10⁻¹⁰.</li>
+    <li>Package import verified with torch absent; model symbols raise a pointed error instead of a stack trace.</li>
+    <li><b>Not yet exercised:</b> the generated JSON against real <code>dovi_tool</code> / <code>hdr10plus_tool</code> binaries (run once on the GPU box — schema risk is documented in-module), and the CVVDP path of <code>bench</code>.</li>
+  </ul>
+
+  <h2>One-command delivery</h2>
+  <pre><code><span class="cmt"># analyze a rendered clip → DoVi L1 + HDR10+ + sidecar</span>
+rudra metadata outputs/clip/ --nits-scale 203 --output outputs/clip/master --peak-nits 1000
+dovi_tool generate --json outputs/clip/master_dovi_generate.json --rpu-out clip.rpu
+
+<span class="cmt"># ACES 2065-1 master + OCIO config for Resolve/Nuke</span>
+rudra aces outputs/clip/ --output delivery/aces --ocio
+
+<span class="cmt"># +1 EV push on the 400–2000-nit band, mastered to 1000 nits</span>
+rudra grade in.exr --output graded/ --region 400:2000:1.0:0.5 --peak-nits 1000
+
+<span class="cmt"># Stuttgart/UBC-layout benchmark → publishable PU21-PSNR (+CVVDP on the GPU box)</span>
+rudra bench bench_root/ --output results/stuttgart.json</code></pre>
+
+  <h2>What today deliberately did not touch</h2>
+  <p>The model half is still gated by the 22 Aug post-fix audit, and no delivery code changes that: targets clipped at 10k nits with linear-quantised shadows (pipeline v3 re-ingest), temporal diverging on a two-clip corpus (Stuttgart's 26 videos clear the gate), 0/7 decoder retrains, Stage 3 untrained, the sigma question unsettled. The retrain order in <code>FIXES_2026-08-10.md</code> stands. <b>No quality number gets quoted until post-fix weights exist</b> — the bench harness is how those numbers get produced honestly when they do.</p>
+
+  <h2>Positioning line</h2>
+  <p style="font-family:'Bricolage Grotesque',Georgia,serif;font-size:1.25rem;font-weight:600;max-width:60ch">"HDR-native for open models — and the only tool that hands you a Dolby Vision L1 / HDR10+ analysis with the master."</p>
+
+  <div class="footer">
+    16 files committed to <code>D:\A.I\Devlopments\rudra</code> · new: <code>rudra/delivery/</code> (8 modules) + tests + 2 docs · wired: <code>rudra/__init__.py</code>, <code>sdr2hdr.py</code>, <code>exr_io.py</code>, <code>export_hdr10.py</code>, <code>pyproject.toml</code> (v0.3.2) · companion reports: COMPETITIVE_2026-08-22 · AUDIT_POSTFIX_RUN_2026-08-22
+  </div>
+</main>

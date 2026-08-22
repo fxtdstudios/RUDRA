@@ -31,17 +31,21 @@ def load_tensor_cache(path: str | Path) -> tuple[torch.Tensor, dict[str, Any]]:
     raise ValueError(f"Unsupported cache format: {path}")
 
 
-def save_exr_placeholder(path: str | Path, tensor: torch.Tensor, metadata: dict[str, Any] | None = None) -> None:
-    """Placeholder with a clear error unless OpenEXR is installed.
+def save_exr(path: str | Path, tensor: torch.Tensor, metadata: dict[str, Any] | None = None,
+             half: bool = True) -> Path:
+    """Write a (3,H,W) or (H,W,3) linear tensor as an uncompressed EXR.
 
-    This avoids silently writing broken HDR data. Integrate OpenImageIO, OpenEXR,
-    or ComfyUI's image pipeline for production EXR export.
+    Uses the dependency-free writer in ``rudra.delivery.exr`` — no OpenEXR
+    wheel required. Metadata values are stored as string attributes.
     """
-    try:
-        import OpenEXR  # noqa: F401
-        import Imath  # noqa: F401
-    except Exception as exc:
-        raise RuntimeError(
-            "OpenEXR Python bindings are not installed. Use save_tensor_cache() or install OpenEXR/OpenImageIO."
-        ) from exc
-    raise NotImplementedError("EXR writing is intentionally host-specific. Wire this to your studio EXR backend.")
+    from .delivery.exr import write_exr
+
+    array = tensor.detach().cpu().float().numpy()
+    if array.ndim == 3 and array.shape[0] in (3, 4):
+        array = array.transpose(1, 2, 0)
+    attributes = {f"rudra:{k}": str(v) for k, v in (metadata or {}).items()}
+    return write_exr(path, array, half=half, attributes=attributes)
+
+
+# Backwards-compatible alias: the placeholder used to refuse; now it writes.
+save_exr_placeholder = save_exr
