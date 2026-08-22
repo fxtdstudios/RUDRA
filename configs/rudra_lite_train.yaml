@@ -2,24 +2,12 @@ name: rudra_lite_train
 version: 0.3
 mode: rudra_lite
 model_type: flux
-precision: bf16
 batch_size: 4
 grad_accum: 4
 learning_rate: 1.0e-4
 max_steps: 80000
 validate_every: 1000
 checkpoint_every: 5000
-loss_schedule: staged_v0_3
-augmentation:
-  exposure_ev_min: -2.0
-  exposure_ev_max: 2.0
-  white_balance_min: 0.92
-  white_balance_max: 1.08
-  highlight_gain_min: 0.85
-  highlight_gain_max: 1.20
-  black_lift_max: 0.01
-  hflip_prob: 0.5
-sampler: highlight_balanced
 outputs:
   color_space: ACEScg
   output_domain: scene_linear

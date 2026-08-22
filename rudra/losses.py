@@ -114,7 +114,10 @@ def perceptual_loss(
     target_tm = tonemap_fn(target).clamp(0.0, 1.0)
 
     if lpips_net is not None:
-        return lpips_net(pred_tm, target_tm).mean()
+        # Standard lpips.LPIPS expects inputs in [-1, 1] (AUDIT_2026-08-10:
+        # feeding [0,1] evaluates the VGG features at a shifted operating
+        # point; metrics.py already does this correctly).
+        return lpips_net(pred_tm * 2.0 - 1.0, target_tm * 2.0 - 1.0).mean()
 
     # Fallback: multi-scale L1 as a simple perceptual proxy.
     loss = F.l1_loss(pred_tm, target_tm)

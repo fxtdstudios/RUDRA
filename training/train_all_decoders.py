@@ -335,7 +335,9 @@ def train_all(args):
                 batch_size=batch_size,
                 lr=args.lr,
                 highlight_weight=2.0,
-                knee=0.96,
+                # 0.6, not 0.96 — log codes top out ~0.79; at 0.96 the
+                # highlight loss never fires (AUDIT_2026-07-15 P1).
+                knee=0.6,
                 ema_decay=0.999,
                 val_split=args.val_split,
                 patience=args.patience,
@@ -354,7 +356,10 @@ def train_all(args):
                 os.path.dirname(_RADIANCE), "models", "radiance"
             )
             os.makedirs(radiance_dir, exist_ok=True)
-            deploy_name = f"{args.model_size}_decoder_{model_type}_ema.safetensors"
+            # Node filename contract: rudra_{size}_decoder_{tag}_ema.safetensors
+            # (AUDIT_2026-07-15 P0-3 — without the rudra_ prefix the ComfyUI
+            # radiance node never sees the deployed file).
+            deploy_name = f"rudra_{args.model_size}_decoder_{model_type}_ema.safetensors"
             deploy_path = os.path.join(radiance_dir, deploy_name)
 
             if final_path and os.path.isfile(final_path):

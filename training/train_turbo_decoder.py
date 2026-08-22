@@ -219,7 +219,7 @@ def train(
     grad_clip: float = 1.0,
     log_every: int = 100,
     eval_every: int = 2_000,
-    save_every: int = 5_000,
+    save_every: int = 100,
     highlight_weight: float = 2.0,
     mse_weight: float = 0.5,
     warmup_frac: float = 0.03,
@@ -274,13 +274,7 @@ def train(
         except ImportError:
             resolve_model_vae_config = None
 
-    try:
-        from .fast_vae import RadianceTurboDecoder, RadianceFullDecoder
-    except (ImportError, ValueError):
-        try:
-            from fast_vae import RadianceTurboDecoder, RadianceFullDecoder
-        except ImportError:
-            from hdr.fast_vae import RadianceTurboDecoder, RadianceFullDecoder
+    from rudra.fast_vae import RadianceTurboDecoder, RadianceFullDecoder
 
     cfg = resolve_model_vae_config(model_type) if resolve_model_vae_config else None
     if cfg:
@@ -367,6 +361,9 @@ def train(
 
     # ── Resume ────────────────────────────────────────────────────────────────
     start_step = 0
+    resume_best_psnr = -1.0
+    resume_best_step = 0
+    resume_stall = 0
     if resume and os.path.exists(resume):
         ckpt = torch.load(resume, map_location=device)
         model.load_state_dict(ckpt["model"])
@@ -374,7 +371,15 @@ def train(
         scheduler.load_state_dict(ckpt["scheduler"])
         ema.shadow = {k: v.to(device) for k, v in ckpt["ema_shadow"].items()}
         start_step = ckpt.get("step", 0)
-        logger.info(f"Resumed from step {start_step}: {resume}")
+        # AUDIT_2026-07-15 P0-4: restore best-PSNR tracking so a resumed run
+        # cannot overwrite a better *_ema_best with a worse checkpoint.
+        resume_best_psnr = float(ckpt.get("best_psnr", -1.0))
+        resume_best_step = int(ckpt.get("best_step", 0))
+        resume_stall = int(ckpt.get("stall_count", 0))
+        logger.info(
+            f"Resumed from step {start_step}: {resume} "
+            f"(best_psnr={resume_best_psnr:.2f} @ step {resume_best_step})"
+        )
 
     # ── Training loop ─────────────────────────────────────────────────────────
     model.train()
@@ -386,10 +391,16 @@ def train(
     running = {"loss": 0.0, "l1": 0.0, "mse": 0.0, "highlight": 0.0, "structural": 0.0}
     log_path = os.path.join(output_dir, "train_log.jsonl")
 
-    best_psnr = -1.0
+    best_psnr = resume_best_psnr
     best_ema_path = ""
-    best_step = 0
-    stall_count = 0
+    best_step = resume_best_step
+    stall_count = resume_stall
+    if best_psnr > -1.0:
+        # A previous best exists on disk; keep pointing at it so the caller's
+        # "deploy best" path stays valid even if this run never improves.
+        _prev_best = os.path.join(output_dir, f"{model_size}_decoder_ema_best.safetensors")
+        if os.path.exists(_prev_best):
+            best_ema_path = _prev_best
 
     pbar = tqdm(total=steps, initial=start_step, desc="Training") if _HAS_TQDM else None
 
@@ -554,6 +565,11 @@ def train(
                     "optimizer":  optimizer.state_dict(),
                     "scheduler":  scheduler.state_dict(),
                     "config":     config,
+                    # Persist best-tracking so resume can't clobber a better
+                    # *_ema_best (AUDIT_2026-07-15 P0-4).
+                    "best_psnr":   best_psnr,
+                    "best_step":   best_step,
+                    "stall_count": stall_count,
                 },
                 ckpt_path,
             )
@@ -678,12 +694,14 @@ if __name__ == "__main__":
                         help="Weight of the MSE term — raise to push PSNR (trades vs perceptual sharpness)")
     parser.add_argument("--warmup_frac", default=0.03,        type=float,
                         help="Fraction of steps for linear LR warmup before cosine decay")
-    parser.add_argument("--knee",        default=0.96,        type=float,
-                        help="Log-code threshold for highlight penalty (match encode profile)")
+    parser.add_argument("--knee",        default=0.6,         type=float,
+                        help="Log-code threshold for highlight penalty. The data's "
+                             "log codes top out ~0.79, so the legacy 0.96 default "
+                             "made the highlight loss never fire (DECODER_CHEATSHEET).")
     parser.add_argument("--num_workers", default=4,           type=int)
     parser.add_argument("--log_every",   default=100,         type=int)
     parser.add_argument("--eval_every",  default=2000,        type=int)
-    parser.add_argument("--save_every",  default=5000,        type=int)
+    parser.add_argument("--save_every",  default=100,         type=int)
     parser.add_argument("--resume",      default=None,        help="Checkpoint to resume from")
     parser.add_argument("--device",      default="cuda",      choices=["cuda", "cpu", "mps"])
     parser.add_argument("--val_split",   default=0.0,         type=float,

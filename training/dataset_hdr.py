@@ -29,6 +29,7 @@ import os
 import json
 import logging
 import math
+import re
 import hashlib
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict
@@ -263,8 +264,12 @@ class HDRPairDataset(Dataset):
         target = torch.from_numpy(data["log_coded"].astype(np.float32))
 
         if self.augment and torch.rand(1).item() > 0.5:
+            # latent is (C, h, w) -> width is the LAST dim.
+            # target is stored (H, W, 3) HWC -> width is dim 1, NOT the last
+            # dim (dims=[-1] on HWC reverses the RGB channels without any
+            # spatial flip — the AUDIT_2026-07-15 P0-1 corruption bug).
             latent = torch.flip(latent, dims=[-1])
-            target = torch.flip(target, dims=[-1])
+            target = torch.flip(target, dims=[1])
 
         return latent, target
 
@@ -273,12 +278,7 @@ class HDRPairDataset(Dataset):
     def _encode_online(self, path: str) -> Tuple[torch.Tensor, torch.Tensor]:
         img_linear = load_exr_as_linear(path)
         if img_linear is None:
-            # Return a dummy pair on load failure (prevents DataLoader crash)
-            W, H = self.image_size
-            return (
-                torch.zeros(16, H // 8, W // 8),
-                torch.zeros(H, W, 3),
-            )
+            raise RuntimeError(f"Could not load HDR source: {path}")
 
         img_linear = self._preprocess(img_linear)
         log_coded  = linear_to_log_coded(img_linear, self.log_curve)
@@ -286,8 +286,12 @@ class HDRPairDataset(Dataset):
         # Encode log-coded image with VAE
         t = torch.from_numpy(log_coded).unsqueeze(0)  # (1, H, W, 3)
         with torch.no_grad():
-            latent_dict = self.vae.encode(t.permute(0, 3, 1, 2))
-            latent = latent_dict["samples"].squeeze(0)   # (C, H//8, W//8)
+            encoded = self.vae.encode(t)
+            if isinstance(encoded, dict):
+                encoded = encoded.get("samples", encoded.get("latent"))
+            if encoded is None:
+                raise RuntimeError(f"VAE returned no latent for: {path}")
+            latent = encoded.squeeze(0)
 
         if self.augment and torch.rand(1).item() > 0.5:
             latent    = torch.flip(latent,                   dims=[-1])
@@ -378,15 +382,33 @@ class HDRPairDataset(Dataset):
                     meta = json.loads(str(data["meta"]))
                     source = meta.get("source", "")
                     
-                    # Determine scene ID
+                    # Determine scene ID.
+                    # Ingest naming (prepare_training_data.py):
+                    #   tif_{idx:07d}_{stem}          e.g. tif_0000001_shot_0001
+                    #   mxf_{idx:07d}_{stem}_f{i:04d} e.g. mxf_0000042_clipA_f0003
+                    # The ingest idx is unique PER FILE, so it must be dropped
+                    # from the scene key, and the trailing frame number (with
+                    # optional "f" prefix) must be stripped — otherwise every
+                    # frame becomes its own "scene" and the scene-grouped split
+                    # degenerates to a random split (AUDIT_2026-08-10 NEW-6).
                     filename = os.path.basename(source)
                     name, _ = os.path.splitext(filename)
-                    parts = name.split("_")
-                    if len(parts) > 2 and parts[0] == "tif":
-                        scene_id = "_".join(parts[:-1])
+                    m = re.match(
+                        r"^(?P<kind>tif|mxf)_(?P<ingest>\d+)_(?P<seq>.+?)_f?(?P<frame>\d+)$",
+                        name, re.IGNORECASE,
+                    )
+                    if m:
+                        scene_id = f"{m.group('kind').lower()}:{m.group('seq')}"
                     else:
-                        scene_id = name
-                        
+                        m2 = re.match(
+                            r"^(?P<kind>exr|hdr|tif|mxf)_(?P<ingest>\d+)_(?P<seq>.+)$",
+                            name, re.IGNORECASE,
+                        )
+                        scene_id = (
+                            f"{m2.group('kind').lower()}:{m2.group('seq')}"
+                            if m2 else name
+                        )
+
                     file_to_scene[p.name] = scene_id
                 except Exception as e:
                     file_to_scene[p.name] = p.name  # Fallback to unique filename as scene
@@ -446,6 +468,7 @@ class HDRPairDataset(Dataset):
         device: str = "cuda",
         crops_per_image: int = 1,
         target_count: int = -1,
+        vae_id: Optional[str] = None,
     ) -> int:
         """
         Pre-encode EXR files into (latent, log_coded) .npz pairs.
@@ -461,6 +484,36 @@ class HDRPairDataset(Dataset):
         from tqdm import tqdm
 
         os.makedirs(output_dir, exist_ok=True)
+
+        # ── Pair-dir config sentinel (AUDIT_2026-08-10 NEW-3) ────────────────
+        # Pair filenames are md5(source_path + crop_idx), which does NOT
+        # include the VAE, curve, or size — so writing pairs generated with a
+        # different VAE into an existing dir silently overwrites/mixes latent
+        # spaces and every downstream trainer consumes the poisoned cache.
+        # Record the generation config once and refuse mismatched re-use.
+        _cfg = {
+            "vae_id":     vae_id or type(vae).__name__,
+            "log_curve":  log_curve,
+            "image_size": list(image_size),
+        }
+        _cfg_path = os.path.join(output_dir, "_pair_config.json")
+        if os.path.exists(_cfg_path):
+            try:
+                with open(_cfg_path, "r", encoding="utf-8") as f:
+                    _prev = json.load(f)
+            except Exception:
+                _prev = None
+            if _prev is not None and _prev != _cfg:
+                raise RuntimeError(
+                    f"Pair dir {output_dir} was generated with a different "
+                    f"config ({_prev}) than requested ({_cfg}). Use a separate "
+                    f"--output_dir per VAE/curve/size, or delete the old pairs "
+                    f"explicitly if you intend to regenerate."
+                )
+        else:
+            with open(_cfg_path, "w", encoding="utf-8") as f:
+                json.dump(_cfg, f, indent=2)
+
         dataset_tmp = HDRPairDataset.__new__(HDRPairDataset)
         dataset_tmp.image_size = image_size
         dataset_tmp.log_curve  = log_curve
@@ -620,11 +673,34 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
                         self.backend = "diffusers_auto"
                 elif m_type in ("ltx-video", "ltx", "ltxav"):
                     try:
-                        from diffusers import AutoencoderKLLTXVideo
-                        self.vae_obj = AutoencoderKLLTXVideo.from_pretrained(
-                            "Lightricks/LTX-Video", subfolder="vae",
-                            torch_dtype=torch.bfloat16
-                        ).to(dev)
+                        from diffusers import AutoencoderKLLTX2Video, AutoencoderKLLTXVideo
+                        if path and os.path.isfile(path):
+                            config_candidates = [
+                                os.path.join(path_dir, "ltx2_vae_config.json"),
+                                os.path.join(path_dir, "config.json"),
+                            ]
+                            config_path = next((p for p in config_candidates if os.path.isfile(p)), None)
+                            if config_path is None:
+                                raise FileNotFoundError(
+                                    f"LTX VAE config missing next to {path}; expected ltx2_vae_config.json"
+                                )
+                            with open(config_path, "r", encoding="utf-8") as handle:
+                                local_config = json.load(handle)
+                            class_name = local_config.get("_class_name", "")
+                            vae_cls = AutoencoderKLLTX2Video if class_name == "AutoencoderKLLTX2Video" else AutoencoderKLLTXVideo
+                            self.vae_obj = vae_cls.from_config(local_config)
+                            state = load_file(path, device="cpu")
+                            missing, unexpected = self.vae_obj.load_state_dict(state, strict=False)
+                            if missing or unexpected:
+                                raise RuntimeError(
+                                    f"LTX local VAE state mismatch: missing={missing[:5]} unexpected={unexpected[:5]}"
+                                )
+                            self.vae_obj = self.vae_obj.to(device=dev, dtype=torch.bfloat16)
+                        else:
+                            self.vae_obj = AutoencoderKLLTXVideo.from_pretrained(
+                                "Lightricks/LTX-Video", subfolder="vae",
+                                torch_dtype=torch.bfloat16
+                            ).to(dev)
                         self.backend = "diffusers_ltx"
                     except (ImportError, Exception):
                         self.vae_obj = AutoModel.from_pretrained(
@@ -657,17 +733,23 @@ def load_vae_standalone(path: str, model_type: str = "flux", device: str = "cuda
                 raise RuntimeError("Could not load VAE via ComfyUI or diffusers.")
 
         def encode(self, pixels: torch.Tensor):
-            """pixels: (B, H, W, 3) in [0, 1]"""
+            """Encode image ``(B,H,W,C)`` or video ``(B,T,H,W,C)`` pixels."""
             if self.backend == "comfy":
                 return self.vae_obj.encode(pixels)
             
-            # diffusers expectations: (B, C, H, W) and often normalized to [-1, 1]
-            t = pixels.permute(0, 3, 1, 2).to(self.device)
+            if pixels.ndim == 5:
+                # (B,T,H,W,C) -> (B,C,T,H,W)
+                t = pixels.permute(0, 4, 1, 2, 3).to(self.device)
+            elif pixels.ndim == 4:
+                # (B,H,W,C) -> (B,C,H,W)
+                t = pixels.permute(0, 3, 1, 2).to(self.device)
+            else:
+                raise ValueError(f"Expected 4D image or 5D video pixels, got {tuple(pixels.shape)}")
             if "wan" not in self.backend and "ltx" not in self.backend:
                 t = t * 2.0 - 1.0  # [0,1] -> [-1,1]
             
-            # 3D Video VAEs expect 5D input: (B, C, T, H, W)
-            if "wan" in self.backend or "ltx" in self.backend or "hunyuan" in self.backend:
+            # A single image for a video VAE becomes a one-frame clip.
+            if t.ndim == 4 and ("wan" in self.backend or "ltx" in self.backend or "hunyuan" in self.backend):
                 t = t.unsqueeze(2)  # (B, C, H, W) -> (B, C, 1, H, W)
             
             # Match VAE weight data type (e.g., torch.bfloat16)
@@ -782,7 +864,10 @@ if __name__ == "__main__":
         max_samples=args.max_samples,
         device=args.device,
         crops_per_image=args.crops_per_image,
-        target_count=args.target_count
+        target_count=args.target_count,
+        # Identify the generating VAE so the pair-dir sentinel can refuse
+        # cross-VAE cache poisoning (AUDIT_2026-08-10 NEW-3).
+        vae_id=f"{args.vae_type}:{os.path.basename(args.vae_path)}",
     )
     
     logger.info(f"Done! Successfully generated {n_pairs} pairs in {args.output_dir}")

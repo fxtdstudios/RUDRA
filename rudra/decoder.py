@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import math
 from typing import Literal
 
 import torch
@@ -10,9 +11,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 try:
-    from radiance.config.model_map import resolve_model_vae_config
+    from config.model_map import resolve_model_vae_config
 except Exception:  # standalone package fallback
-    resolve_model_vae_config = None
+    try:
+        from radiance.config.model_map import resolve_model_vae_config
+    except Exception:
+        resolve_model_vae_config = None
 
 from .config import RUDRAConfig, make_rudra_config
 
@@ -83,21 +87,23 @@ class RUDRADecoder(nn.Module):
         channels: int = 64,
         output_domain: OutputDomain = "scene_linear_positive",
         upsample_mode: Literal["bilinear", "nearest"] = "bilinear",
+        n_upsample: int = 3,
     ):
         super().__init__()
         self.latent_channels = latent_channels
         self.dr_dim = dr_dim
         self.output_domain = output_domain
-        self.layers = nn.ModuleList([
-            RUDRADecoderBlock(latent_channels, channels, dr_dim=dr_dim),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim),
-        ])
+        if n_upsample < 1:
+            raise ValueError(f"n_upsample must be >= 1, got {n_upsample}")
+        self.n_upsample = n_upsample
+        self.layers = nn.ModuleList(
+            [RUDRADecoderBlock(latent_channels, channels, dr_dim=dr_dim)]
+            + [RUDRADecoderBlock(channels, channels, dr_dim=dr_dim) for _ in range(n_upsample)]
+        )
         if upsample_mode == "bilinear":
-            self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False) for _ in range(3)])
+            self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False) for _ in range(n_upsample)])
         else:
-            self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="nearest") for _ in range(3)])
+            self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="nearest") for _ in range(n_upsample)])
         self.out_conv = nn.Conv2d(channels, output_channels, 3, padding=1)
 
     def forward(self, x: torch.Tensor, dr_proj: torch.Tensor, return_raw: bool = False) -> torch.Tensor:
@@ -119,34 +125,36 @@ class RUDRAFullDecoder(nn.Module):
         dr_dim: int = 64,
         channels: int = 128,
         output_domain: OutputDomain = "scene_linear_positive",
+        n_upsample: int = 3,
     ):
         super().__init__()
         self.latent_channels = latent_channels
         self.dr_dim = dr_dim
         self.output_domain = output_domain
-        self.layers = nn.ModuleList([
-            RUDRADecoderBlock(latent_channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-            RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6),
-        ])
-        self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False) for _ in range(3)])
+        if n_upsample < 1:
+            raise ValueError(f"n_upsample must be >= 1, got {n_upsample}")
+        self.n_upsample = n_upsample
+        n_blocks = 2 * n_upsample + 1
+        self.layers = nn.ModuleList(
+            [RUDRADecoderBlock(latent_channels, channels, dr_dim=dr_dim, n_conv=6)]
+            + [RUDRADecoderBlock(channels, channels, dr_dim=dr_dim, n_conv=6) for _ in range(n_blocks - 1)]
+        )
+        self.upsample = nn.ModuleList([nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False) for _ in range(n_upsample)])
         self.out_conv = nn.Conv2d(channels, output_channels, 3, padding=1)
 
     def forward(self, x: torch.Tensor, dr_proj: torch.Tensor, return_raw: bool = False) -> torch.Tensor:
         h = self.layers[0](x, dr_proj)
-        h = self.layers[1](h, dr_proj)
-        h = self.upsample[0](h)
-        h = self.layers[2](h, dr_proj)
-        h = self.layers[3](h, dr_proj)
-        h = self.upsample[1](h)
-        h = self.layers[4](h, dr_proj)
-        h = self.layers[5](h, dr_proj)
-        h = self.upsample[2](h)
-        h = self.layers[6](h, dr_proj)
+        idx = 1
+        # Preserve the legacy 3-stage topology: two blocks before/between
+        # upsampling operations and one block after the final operation.
+        h = self.layers[idx](h, dr_proj)
+        idx += 1
+        for stage, upsample in enumerate(self.upsample):
+            h = upsample(h)
+            n_post = 1 if stage == self.n_upsample - 1 else 2
+            for _ in range(n_post):
+                h = self.layers[idx](h, dr_proj)
+                idx += 1
         raw = self.out_conv(h)
         return raw if return_raw else apply_hdr_output_transform(raw, self.output_domain)
 
@@ -160,14 +168,18 @@ def load_rudra_decoder(
 ) -> nn.Module:
     cfg = make_rudra_config(model_type)
     latent_channels = cfg.latent_channels
+    spatial_factor = cfg.vae_spatial_factor
     if resolve_model_vae_config is not None:
         resolved = resolve_model_vae_config(model_type) or {}
         latent_channels = resolved.get("latent_channels", latent_channels)
+        spatial_factor = resolved.get("vae_spatial_factor", spatial_factor)
+
+    n_upsample = max(1, int(round(math.log2(spatial_factor))))
 
     if model_size == "full":
-        model = RUDRAFullDecoder(latent_channels=latent_channels, dr_dim=dr_dim, output_domain=output_domain)
+        model = RUDRAFullDecoder(latent_channels=latent_channels, dr_dim=dr_dim, output_domain=output_domain, n_upsample=n_upsample)
     else:
-        model = RUDRADecoder(latent_channels=latent_channels, dr_dim=dr_dim, output_domain=output_domain)
+        model = RUDRADecoder(latent_channels=latent_channels, dr_dim=dr_dim, output_domain=output_domain, n_upsample=n_upsample)
 
     if checkpoint_path and os.path.exists(checkpoint_path):
         if checkpoint_path.endswith(".safetensors"):

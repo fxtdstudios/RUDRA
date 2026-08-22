@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -61,18 +62,43 @@ def find_sdxl() -> str:
     return ""
 
 
-def run(cmd: list[str], dry: bool) -> bool:
+def run(cmd: list[str] | None, dry: bool) -> bool:
+    if cmd is None:        # base_cmd returned None = phase already complete
+        return True
     print("  " + " ".join(cmd))
     if dry:
         return True
     return subprocess.run(cmd, env=env()).returncode == 0
 
 
-def base_cmd(stage: str, model_path: str, pairs: str, out: str, steps: int, args) -> list[str]:
-    return [sys.executable, str(TRAIN), "--stage", stage, "--model_type", "sdxl",
-            "--model_path", model_path, "--pair_dir", str(REPO / pairs),
-            "--output_dir", str(CKPT / out), "--steps", str(steps),
-            "--batch_size", str(args.batch_size), "--lr", str(args.lr)]
+_STAGE_SUB = {"lora": "rudra_stage2", "dre": "rudra_stage3"}
+
+
+def latest_ckpt(stage: str, out: str) -> tuple[str | None, int]:
+    """Find the newest stageN checkpoint + its step for resuming."""
+    sub = CKPT / out / f"sdxl_{_STAGE_SUB[stage]}"
+    cks = sorted(glob.glob(str(sub / f"{_STAGE_SUB[stage]}_step*.pth")),
+                 key=lambda p: int(re.search(r"step0*(\d+)", p).group(1)) if re.search(r"step0*(\d+)", p) else -1)
+    if not cks:
+        return None, 0
+    step = int(re.search(r"step0*(\d+)", os.path.basename(cks[-1])).group(1))
+    return cks[-1], step
+
+
+def base_cmd(stage: str, model_path: str, pairs: str, out: str, steps: int, args) -> list[str] | None:
+    cmd = [sys.executable, str(TRAIN), "--stage", stage, "--model_type", "sdxl",
+           "--model_path", model_path, "--pair_dir", str(REPO / pairs),
+           "--output_dir", str(CKPT / out), "--steps", str(steps),
+           "--batch_size", str(args.batch_size), "--lr", str(args.lr)]
+    if args.resume and stage in _STAGE_SUB:
+        ck, st = latest_ckpt(stage, out)
+        if ck and st >= steps:
+            print(f"  [skip] {out} already at step {st}/{steps}")
+            return None
+        if ck:
+            cmd += ["--resume", ck]
+            print(f"  [resume] {out} from step {st}")
+    return cmd
 
 
 def main():
@@ -85,6 +111,8 @@ def main():
     ap.add_argument("--sweep-steps", type=int, default=6000, help="Steps per sweep/ablation run.")
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--resume", action="store_true",
+                    help="Continue stage2/stage3 from their latest checkpoint; skip if already at target steps.")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -120,7 +148,8 @@ def main():
     if "stage3" in phases:
         print("\n=== stage3 — DRE + cross-attention injection (core thesis) ===")
         cmd = base_cmd("dre", model_path, args.pairs, "sdxl_dre", args.steps, args)
-        cmd += ["--lambda_init", "0.8"]          # learnable λ, paper operating point
+        if cmd is not None:
+            cmd += ["--lambda_init", "0.8"]      # learnable λ, paper operating point
         if not run(cmd, args.dry_run):
             failures.append("stage3")
 
@@ -130,7 +159,8 @@ def main():
         for lam in LAMBDAS:
             tag = f"sdxl_dre_lam{str(lam).replace('.', 'p')}"
             cmd = base_cmd("dre", model_path, args.pairs, tag, args.sweep_steps, args)
-            cmd += ["--lambda_init", str(lam), "--fixed_lambda"]
+            if cmd is not None:
+                cmd += ["--lambda_init", str(lam), "--fixed_lambda"]
             if not run(cmd, args.dry_run):
                 failures.append(tag)
 
@@ -140,7 +170,8 @@ def main():
         for chans in CHANNEL_SETS:
             tag = "sdxl_dre_ch_" + chans.replace(",", "")
             cmd = base_cmd("dre", model_path, args.pairs, tag, args.sweep_steps, args)
-            cmd += ["--desc_channels", chans]
+            if cmd is not None:
+                cmd += ["--desc_channels", chans]
             if not run(cmd, args.dry_run):
                 failures.append(tag)
 

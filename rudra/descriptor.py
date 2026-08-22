@@ -59,8 +59,15 @@ class RUDRADescriptor(nn.Module):
         color_space: str = "rec2020",
         y_max_nits: float = 10000.0,
         normalize_input: bool = True,
+        highlight_ev_threshold: float = 2.0,
+        highlight_ev_softness: float = 4.0,
     ):
         super().__init__()
+        # EV-over-grey highlight parameterization — same formulation as
+        # RUDRASpatialDescriptor and RUDRAConfig.highlight_ev_* (see
+        # _highlight_descriptor for why the old form was structurally dead).
+        self.hl_ev_thr = float(highlight_ev_threshold)
+        self.hl_ev_soft = float(highlight_ev_softness)
         if color_space not in LUMA_WEIGHTS:
             raise ValueError(f"Unsupported color_space={color_space}. Expected one of {list(LUMA_WEIGHTS)}")
         self.color_space = color_space
@@ -91,7 +98,7 @@ class RUDRADescriptor(nn.Module):
 
         lum_desc = self._luminance_descriptor(log_luma)
         exp_desc = self._exposure_descriptor(luma, log_luma)
-        hl_desc = self._highlight_descriptor(log_luma)
+        hl_desc = self._highlight_descriptor(luma)
         color_desc = self._color_volume_descriptor(image_linear)
         return torch.cat([lum_desc, exp_desc, hl_desc, color_desc], dim=-1)
 
@@ -136,22 +143,38 @@ class RUDRADescriptor(nn.Module):
         peak_to_mean = (peak / (mean_luma + _EPS)).clamp(max=1000.0)
         return torch.stack([ev_median, stops_above_grey, log_std, peak_to_mean], dim=-1)
 
-    @staticmethod
-    def _highlight_descriptor(log_luma: torch.Tensor) -> torch.Tensor:
-        x = log_luma.flatten(2)
-        thresholds = [0.50, 0.75, 0.85, 0.90, 0.95]
-        temp = 0.03
+    def _highlight_descriptor(self, luma: torch.Tensor) -> torch.Tensor:
+        """6-dim highlight block in EV-over-grey space.
+
+        The previous formulation thresholded log10(1+Y)/log10(1+10000) at
+        0.50-0.95 — threshold 0.50 requires linear luminance >= ~99 (+9.1 EV
+        over middle grey), unreachable for diffuse-white-relative data, so
+        all 6 dims were identically ~0 on real content (AUDIT_2026-08-10
+        NEW-5; the same bug spatial_descriptor.py:52 documents and fixed).
+        This port uses stops above 0.18 grey, anchored at the config's
+        highlight_ev_threshold with progressively higher bands, so the block
+        fires on any scene-linear convention.
+        """
+        ev = torch.log2(luma.clamp(min=_EPS) / 0.18).flatten(2)
+        # Bands at thr, thr+1, thr+2, thr+3 stops over grey (default 2..5 EV;
+        # diffuse white is ~2.5 EV over grey, speculars land above it).
+        thresholds = [self.hl_ev_thr + k for k in (0.0, 1.0, 2.0, 3.0)]
+        temp = max(self.hl_ev_soft / 8.0, 0.25)   # soft transition in EV units
         features = []
         for t in thresholds:
-            mask = torch.sigmoid((x - t) / temp)
+            mask = torch.sigmoid((ev - t) / temp)
             coverage = mask.mean(dim=-1).squeeze(1)
-            energy = ((x - t).clamp(min=0.0) * mask).mean(dim=-1).squeeze(1)
-            # Use energy for high thresholds, coverage for lower thresholds by combining smoothly.
+            energy = ((ev - t).clamp(min=0.0) * mask).mean(dim=-1).squeeze(1)
             features.append(0.5 * coverage + 0.5 * energy)
-        mask_09 = torch.sigmoid((x - 0.90) / temp)
-        highlight_mean = (x * mask_09).sum(dim=-1).squeeze(1) / (mask_09.sum(dim=-1).squeeze(1) + _EPS)
-        skew = (highlight_mean - 0.90).clamp(min=0.0)
-        return torch.stack(features + [skew], dim=-1)
+        # Dim 5: mean EV of pixels above the top band (highlight brightness).
+        top = thresholds[-1]
+        mask_top = torch.sigmoid((ev - top) / temp)
+        highlight_mean = (ev * mask_top).sum(dim=-1).squeeze(1) / (mask_top.sum(dim=-1).squeeze(1) + _EPS)
+        skew = (highlight_mean - top).clamp(min=0.0)
+        # Dim 6: total highlight coverage at the base threshold (hard mask) —
+        # replaces the old always-zero 0.95-band feature.
+        hard_cov = (ev > self.hl_ev_thr).float().mean(dim=-1).squeeze(1)
+        return torch.stack(features + [skew, hard_cov], dim=-1)
 
     def _rgb_to_xy(self, image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # image: (B, 3, H, W); matrix multiply in channel dimension.

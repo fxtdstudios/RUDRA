@@ -40,3 +40,9 @@ Thumbs.db
 *.jsonl
 outputs/
 tmp/
+
+# ── Session scratch (2026-08-22) ─────────────────────────────────────────────
+hf_upload/
+_to_delete/
+.keep_running
+training/input.jpg

@@ -552,9 +552,10 @@ def load_diffusion_model(
     dev = torch.device(device if torch.cuda.is_available() else "cpu")
 
     # ── Path resolution for standalone usage ──────────────────────────────────
-    # Script lives at: <ComfyUI>/custom_nodes/radiance/scripts/training/
-    # Go up 4 levels to reach ComfyUI root
-    comfy_path = r"D:\A.I\ComfyUI"
+    # COMFY_ROOT env var wins (same convention as build_all_decoders.py /
+    # train_full_decoders.py); the old hardcoded D:\A.I\ComfyUI broke Stage 2/3
+    # on every other machine (AUDIT_2026-07-15 P1 / 2026-08-10).
+    comfy_path = os.environ.get("COMFY_ROOT", r"D:\A.I\ComfyUI")
     if comfy_path not in sys.path:
         sys.path.insert(0, comfy_path)
     logger.info("[Loader] ComfyUI root resolved to: %s", comfy_path)
@@ -1096,10 +1097,17 @@ def train(
         _uses_context_hdr = (_dm_cls_hdr in _CONTEXT_MODELS_HDR) or (_comfy_cls_hdr in _CONTEXT_MODELS_HDR)
 
         # ── Forward pass ──────────────────────────────────────────────────────
+        # IMPORTANT: ComfyUI's apply_model() runs calculate_denoised()
+        # internally, so its output is a *denoised x0 prediction*, not a
+        # velocity/noise. Track which path was taken and pick the matching
+        # loss target below (AUDIT_2026-08-10 NEW-1; same convention as
+        # train_rudra.py Stage 2).
+        used_apply_model = False
         optimizer.zero_grad()
         if hasattr(diffusion_model, "comfy_model"):
             try:
                 pred = diffusion_model.comfy_model.apply_model(noisy, t_val, c_crossattn=t_emb)
+                used_apply_model = True  # pred is x0_pred — compare against clean x0
             except Exception as e:
                 logger.warning(f"[Train] comfy_model.apply_model failed: {e}. Falling back to direct call.")
                 try:
@@ -1133,7 +1141,10 @@ def train(
             pred = pred.sample
 
         # ── Loss ──────────────────────────────────────────────────────────────
-        losses = criterion(pred, target, clean)
+        # apply_model -> denoised x0 -> compare against clean x0;
+        # raw forward -> velocity/epsilon -> compare against noise_target.
+        train_target = clean if used_apply_model else target
+        losses = criterion(pred, train_target, clean)
         losses["loss"].backward()
 
         if grad_clip > 0:
@@ -1187,12 +1198,14 @@ def train(
                     eval_noisy_latent = eval_noisy["noisy_latent"].to(device)
                     eval_t_val = eval_noisy["timestep"].to(device)
                     eval_t_emb = eval_noisy["text_embed"].to(device)
+                    _eval_used_apply = False
                     if hasattr(diffusion_model, "comfy_model"):
                         eval_pred = diffusion_model.comfy_model.apply_model(
                             eval_noisy_latent,
                             eval_t_val,
                             c_crossattn=eval_t_emb
                         )
+                        _eval_used_apply = True
                     else:
                         eval_pred = diffusion_model(
                             eval_noisy_latent,
@@ -1201,7 +1214,11 @@ def train(
                         )
                     if hasattr(eval_pred, "sample"):
                         eval_pred = eval_pred.sample
-                    eval_loss = F.mse_loss(eval_pred, eval_noisy["noise_target"]).item()
+                    # apply_model returns denoised x0 — compare against the
+                    # clean latent, not the velocity (AUDIT_2026-08-10 NEW-1).
+                    _eval_target = (eval_noisy["clean_latent"]
+                                    if _eval_used_apply else eval_noisy["noise_target"])
+                    eval_loss = F.mse_loss(eval_pred, _eval_target.to(eval_pred.dtype)).item()
                     logger.info("  [EMA EVAL] step %d  val_loss=%.5f", step, eval_loss)
                     with open(log_path, "a") as fh:
                         fh.write(json.dumps({"step": step, "eval": True,

@@ -8,7 +8,7 @@ This implementation contains two compatible paths:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Literal
 
 FORMAT_NAMES = [
@@ -35,6 +35,11 @@ LUMA_WEIGHTS = {
 class RUDRAConfig:
     model_type: str = "flux"
     latent_channels: int = 16
+    # Spatial compression of the source VAE. Decoder output geometry must be
+    # exactly latent H/W multiplied by this factor (8 for Flux/SDXL/Wan,
+    # 16 for Flux.2 Klein, 32 for LTX-2/2.3).
+    vae_spatial_factor: int = 8
+    vae_temporal_factor: int = 1
 
     # Global RUDRA-Lite path.
     dr_raw_dim: int = 26
@@ -81,12 +86,12 @@ class RUDRAConfig:
 
 RUDRA_MODEL_CONFIGS = {
     # Flux uses BOTH a scale (0.3611) and a shift (0.1159) — not the SD1.5 0.18215.
-    "flux": {"latent_channels": 16, "scale_factor": 0.3611, "shift_factor": 0.1159, "log_curve": "ARRI LogC4", "compression_ratio": 0.50},
+    "flux": {"latent_channels": 16, "vae_spatial_factor": 8, "scale_factor": 0.3611, "shift_factor": 0.1159, "log_curve": "ARRI LogC4", "compression_ratio": 0.50},
     # Wan/Hunyuan/Cog VAEs use per-channel mean/std internally; scale_factor here
     # is an approximation applied only where a scalar is required.
-    "wan": {"latent_channels": 16, "scale_factor": 0.18215, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
-    "hunyuanvideo": {"latent_channels": 16, "scale_factor": 0.476986, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
-    "ltx-video": {"latent_channels": 128, "scale_factor": 1.0, "log_curve": "Sony S-Log3", "compression_ratio": 0.50, "full_decoder_channels": 256},
+    "wan": {"latent_channels": 16, "vae_spatial_factor": 8, "vae_temporal_factor": 4, "scale_factor": 0.18215, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
+    "hunyuanvideo": {"latent_channels": 16, "vae_spatial_factor": 8, "vae_temporal_factor": 4, "scale_factor": 0.476986, "log_curve": "ARRI LogC4", "compression_ratio": 0.60},
+    "ltx-video": {"latent_channels": 128, "vae_spatial_factor": 32, "vae_temporal_factor": 8, "scale_factor": 1.0, "log_curve": "Sony S-Log3", "compression_ratio": 0.50, "full_decoder_channels": 256},
     "cogvideox": {"latent_channels": 16, "scale_factor": 0.7, "log_curve": "ARRI LogC4", "compression_ratio": 0.45},
     "sd3": {"latent_channels": 16, "scale_factor": 1.5305, "shift_factor": 0.0609, "log_curve": "ARRI LogC4", "compression_ratio": 0.50},
     "sdxl": {"latent_channels": 4, "scale_factor": 0.13025, "log_curve": "ARRI LogC3", "compression_ratio": 0.40},
@@ -100,6 +105,15 @@ RUDRA_MODEL_CONFIGS = {
 
 def make_rudra_config(model_type: str, **overrides) -> RUDRAConfig:
     cfg = RUDRA_MODEL_CONFIGS.get(model_type, RUDRA_MODEL_CONFIGS["flux"]).copy()
+    # The unified registry is authoritative when available. Filter its richer
+    # deployment metadata to fields understood by this dataclass.
+    try:
+        from config.model_map import resolve_model_vae_config
+        resolved = resolve_model_vae_config(model_type) or {}
+        allowed = {f.name for f in fields(RUDRAConfig)}
+        cfg.update({k: v for k, v in resolved.items() if k in allowed})
+    except Exception:
+        pass
     cfg["model_type"] = model_type
     cfg.update(overrides)
     return RUDRAConfig(**cfg)

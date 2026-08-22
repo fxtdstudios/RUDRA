@@ -167,9 +167,11 @@ def load_yaml_overrides(path: str) -> dict:
     out: dict = {}
     if "model_type" in y:       out["model_type"] = y["model_type"]
     if "batch_size" in y:       out["batch_size"] = int(y["batch_size"])
+    if "grad_accum" in y:       out["grad_accum"] = int(y["grad_accum"])
     if "learning_rate" in y:    out["lr"] = float(y["learning_rate"])
     if "max_steps" in y:        out["steps"] = int(y["max_steps"])
     if "validate_every" in y:   out["eval_every"] = int(y["validate_every"])
+    if "checkpoint_every" in y: out["save_every"] = int(y["checkpoint_every"])
     if "mode" in y and y["mode"] in _MODE:
         out["stage"] = _MODE[y["mode"]]
     outputs = y.get("outputs", {}) or {}
@@ -177,6 +179,10 @@ def load_yaml_overrides(path: str) -> dict:
         out["color_space"] = _COLOR.get(str(outputs["color_space"]).lower(), "rec2020")
     if "output_domain" in outputs:
         out["output_domain"] = _ODOMAIN.get(str(outputs["output_domain"]).lower(), "scene_linear_positive")
+    spatial = y.get("spatial_descriptor", {}) or {}
+    if "dre_depth" in spatial: out["dre_depth"] = int(spatial["dre_depth"])
+    if "dre_dim" in spatial: out["dre_dim"] = int(spatial["dre_dim"])
+    if "patch_size" in spatial: out["dre_patch_size"] = int(spatial["patch_size"])
     return out
 
 
@@ -190,6 +196,28 @@ def _compute_dtype(model):
     if pdt in (torch.float8_e4m3fn, torch.float8_e5m2):
         return torch.bfloat16
     return pdt
+
+
+def _maybe_null_y(diffusion_model, batch_size, device, dtype):
+    """SDXL-style class-conditional U-Nets (``num_classes`` set) require a pooled
+    *added-conditioning* vector ``y`` (CLIP-pooled text + size/crop embedding,
+    2816-dim for SDXL base). Flux/Wan/LTX transformers have no ``y``.
+
+    Returns a zero ``y`` of the correct width for training with null conditioning,
+    or ``None`` when the model is not class-conditional.
+    """
+    if getattr(diffusion_model, "num_classes", None) is None:
+        return None
+    adm = None
+    label_emb = getattr(diffusion_model, "label_emb", None)
+    if label_emb is not None:
+        for m in label_emb.modules():
+            if isinstance(m, torch.nn.Linear):
+                adm = m.in_features
+                break
+    if adm is None:
+        adm = 2816  # SDXL base default (1280 pooled CLIP-G + 1536 size/crop embeds)
+    return torch.zeros(batch_size, adm, device=device, dtype=dtype)
 
 
 def _select_text_embed(batch, model_type, batch_size, device, get_null_embed, text_dropout):
@@ -243,6 +271,7 @@ def train_decoder_stage(
     color_space: str = "rec2020",
     output_domain: str = "scene_linear_positive",
     resume: Optional[str] = None,
+    grad_accum: int = 1,
 ) -> str:
     """Train RUDRA decoder (Stage 1) with dynamic format scaling and updated losses."""
     os.makedirs(output_dir, exist_ok=True)
@@ -296,6 +325,9 @@ def train_decoder_stage(
 
     # ── Resume ─────────────────────────────────────────────────────────────
     start_step = 0
+    resume_best_psnr = -1.0
+    resume_best_step = 0
+    resume_stall = 0
     if resume and os.path.exists(resume):
         if str(resume).lower().endswith(".safetensors"):
             sd = safetensors.torch.load_file(resume, device=str(device))
@@ -326,7 +358,15 @@ def train_decoder_stage(
             if "ema_projection" in ckpt:
                 ema_proj.shadow = {k: v.to(device) for k, v in ckpt["ema_projection"].items()}
             start_step = ckpt.get("step", 0)
-            logger.info(f"Resumed Stage 1 from step {start_step}: {resume}")
+            # AUDIT_2026-07-15 P0-4: restore best-PSNR tracking so a resumed
+            # run cannot overwrite a better *_ema_best with a worse eval.
+            resume_best_psnr = float(ckpt.get("best_psnr", -1.0))
+            resume_best_step = int(ckpt.get("best_step", 0))
+            resume_stall = int(ckpt.get("stall_count", 0))
+            logger.info(
+                f"Resumed Stage 1 from step {start_step}: {resume} "
+                f"(best_psnr={resume_best_psnr:.2f} @ step {resume_best_step})"
+            )
 
     CURVE_KEYS = list(CURVE_TO_FORMAT_ID.keys())
 
@@ -351,10 +391,14 @@ def train_decoder_stage(
     running = {"total": 0.0, "l1": 0.0, "highlight": 0.0, "chromaticity": 0.0, "exposure": 0.0}
     log_path = os.path.join(output_dir, "rudra_decoder_log.jsonl")
 
-    best_psnr = -1.0
+    best_psnr = resume_best_psnr
     best_ema_path = ""
-    best_step = 0
-    stall_count = 0
+    best_step = resume_best_step
+    stall_count = resume_stall
+    if best_psnr > -1.0:
+        _prev_best = os.path.join(output_dir, f"rudra_{model_size}_decoder_ema_best.safetensors")
+        if os.path.exists(_prev_best):
+            best_ema_path = _prev_best
 
     pbar = tqdm(total=steps, initial=start_step, desc="RUDRA Decoder") if _HAS_TQDM else None
 
@@ -368,6 +412,10 @@ def train_decoder_stage(
     with open(os.path.join(output_dir, "train_config.json"), "w") as f:
         json.dump(config_dict, f, indent=2)
 
+    if grad_accum < 1:
+        raise ValueError("grad_accum must be >= 1")
+    optimizer.zero_grad(set_to_none=True)
+    accum_counter = 0
     while step < steps:
         try:
             latent_batch, target_batch = next(data_iter)
@@ -379,8 +427,6 @@ def train_decoder_stage(
         # so a single bad pair can't poison the decoder.
         latent_batch = torch.nan_to_num(latent_batch.to(device), nan=0.0, posinf=1e4, neginf=-1e4)
         target_batch = target_batch.to(device)  # (B, H, W, 3) log-coded target
-
-        optimizer.zero_grad()
 
         # Target image representation in B, C, H, W — log-coded in the model's
         # canonical curve.
@@ -445,12 +491,16 @@ def train_decoder_stage(
         if not torch.isfinite(loss_dict["total"]):
             logger.warning(f"step {step}: non-finite loss, skipping update.")
             optimizer.zero_grad(set_to_none=True)
+            accum_counter = 0
             step += 1
             if pbar:
                 pbar.update(1)
             continue
 
-        loss_dict["total"].backward()
+        (loss_dict["total"] / grad_accum).backward()
+        accum_counter += 1
+        if accum_counter < grad_accum:
+            continue
 
         # Scrub non-finite gradients before clipping: a single inf grad makes
         # clip_grad_norm_ compute inf*0 = NaN and poison the weights permanently.
@@ -463,6 +513,8 @@ def train_decoder_stage(
 
         optimizer.step()
         scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        accum_counter = 0
         ema.update()
         ema_proj.update()
 
@@ -618,6 +670,10 @@ def train_decoder_stage(
             torch.save({
                 "step": step,
                 "best_step": best_step,
+                # Persist best tracking so resume can't clobber a better
+                # *_ema_best (AUDIT_2026-07-15 P0-4).
+                "best_psnr": best_psnr,
+                "stall_count": stall_count,
                 "decoder": pipeline.decoder.state_dict(),
                 "projection": pipeline.projection.state_dict(),
                 "ema_decoder":    {k: v.detach().cpu() for k, v in ema.shadow.items()},
@@ -661,13 +717,14 @@ def train_lora_stage(
     ema_decay: float = 0.999,
     highlight_weight: float = 0.5,
     log_every: int = 50,
-    save_every: int = 100,
+    save_every: int = 200,
     eval_every: int = 500,
     num_workers: int = 4,
     device_str: str = "cuda",
     text_dropout: float = 0.1,
     lora_include_mlp: bool = False,
     resume: Optional[str] = None,
+    grad_accum: int = 1,
 ) -> str:
     """Train dynamic-range gated LoRA adapters (Stage 2) with frozen backbone."""
     os.makedirs(output_dir, exist_ok=True)
@@ -736,6 +793,11 @@ def train_lora_stage(
         if os.path.exists(lora_safetensors):
             from train_hdr_lora import load_lora_safetensors
             load_lora_safetensors(diffusion_model, lora_safetensors)
+            # Re-seed the EMA shadow from the *loaded* LoRA weights — the EMA
+            # was constructed from the zero-init layers above, and blending
+            # toward zero-init for thousands of steps silently degrades the
+            # exported EMA (AUDIT_2026-08-10 P1-13).
+            ema = LoRAEMA({k: v for k, v in lora_layers}, decay=ema_decay)
         start_step = ckpt.get("step", 0)
         logger.info(f"Resumed Stage 2 from step {start_step}")
 
@@ -751,6 +813,10 @@ def train_lora_stage(
 
     pbar = tqdm(total=steps, initial=start_step, desc="RUDRA Stage 2") if _HAS_TQDM else None
 
+    if grad_accum < 1:
+        raise ValueError("grad_accum must be >= 1")
+    optimizer.zero_grad(set_to_none=True)
+    accum_counter = 0
     while step < steps:
         try:
             batch = next(data_iter)
@@ -774,6 +840,20 @@ def train_lora_stage(
             )
             del target_cpu, target_bchw_cpu  # keep off GPU
             has_bright_ratio = True
+            curve_key = LOG_CURVES.get(pipeline.config.log_curve, "logc4")
+            format_ids = torch.full(
+                (clean_latent.shape[0],),
+                CURVE_TO_FORMAT_ID.get(curve_key, FORMAT_TO_ID["logc4"]),
+                dtype=torch.long,
+                device=device,
+            )
+            # Descriptor computation is deterministic/frozen, but it must see
+            # the actual HDR target. The previous zero proxy made every LoRA
+            # gate receive identical radiometric conditioning.
+            with torch.no_grad():
+                descriptor_image = target.permute(0, 3, 1, 2).to(device)
+                dr_raw = pipeline.descriptor(descriptor_image, format_ids)
+            del descriptor_image
         elif "dr_raw" in batch:
             # Cache carries a precomputed descriptor — use it directly.
             clean_latent = batch["clean_latent"].to(device)
@@ -793,16 +873,11 @@ def train_lora_stage(
             )
 
         # 1. Compute dynamic range projection
-        format_ids = torch.full((clean_latent.shape[0],), FORMAT_TO_ID["logc4"], dtype=torch.long, device=device)
+        if not has_bright_ratio:
+            format_ids = torch.full((clean_latent.shape[0],), FORMAT_TO_ID["linear"], dtype=torch.long, device=device)
         if has_bright_ratio:
-            # Re-derive dr_proj from the clean latent (image already freed from GPU)
-            # For gate conditioning, use a zero descriptor when no image is on GPU;
-            # bright_ratio is kept for gate regularization separately.
             fmt_oh = pipeline._format_onehot(format_ids, clean_latent.shape[0], device)
-            # Use zero dr_raw as a proxy when image is not available on GPU.
-            # The gate_reg loss is driven by bright_ratio computed on CPU above.
-            dr_raw_proxy = torch.zeros(clean_latent.shape[0], getattr(pipeline.config, "dr_raw_dim", 26), device=device)
-            dr_proj = pipeline.projection(dr_raw_proxy, fmt_oh)
+            dr_proj = pipeline.projection(dr_raw, fmt_oh)
         else:
             fmt_oh = pipeline._format_onehot(format_ids, clean_latent.shape[0], device)
             dr_proj = pipeline.projection(batch["dr_raw"].to(device), fmt_oh)
@@ -838,8 +913,6 @@ def train_lora_stage(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        optimizer.zero_grad()
-
         # Detect model architecture from the ComfyUI BaseModel wrapper class name.
         # Raw transformer class names: Flux -> "Flux", Wan -> "WanModel", LTX -> "LTXVModel".
         # ComfyUI BaseModel class names: Flux -> "Flux"/"Flux2", Wan -> "WAN21", LTX -> "LTXV"/"LTXAV".
@@ -860,34 +933,41 @@ def train_lora_stage(
         # so its output is a *denoised x0 prediction*, not a velocity/noise.
         # The raw diffusion_model forward (bypassing apply_model) returns raw velocity v_t.
         # We track which path was taken to use the correct loss target.
+        # SDXL-style class-conditional U-Nets require a pooled added-cond `y`.
+        _null_y = _maybe_null_y(diffusion_model, noisy.shape[0], noisy.device, _cdt)
+        _ykw = {"y": _null_y} if _null_y is not None else {}
+
         used_apply_model = False
         if hasattr(diffusion_model, "comfy_model"):
             try:
-                pred = diffusion_model.comfy_model.apply_model(noisy, t_val, c_crossattn=t_emb)
+                pred = diffusion_model.comfy_model.apply_model(noisy, t_val, c_crossattn=t_emb, **_ykw)
                 used_apply_model = True  # pred is x0_pred — compare against clean x0
             except Exception as e:
                 logger.warning(f"[Train] Stage 2 comfy_model.apply_model failed: {e}. Falling back to direct call.")
                 # diffusion_model IS the raw transformer (e.g. comfy.ldm.flux.model.Flux).
                 # Direct call returns raw velocity/noise — compare against noise_target.
                 try:
-                    pred = diffusion_model(noisy, t_val, t_emb)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                     if hasattr(pred, "sample"):
                         pred = pred.sample
                 except Exception as e2:
                     logger.warning(f"[Train] Stage 2 direct call failed: {e2}. Last resort.")
-                    pred = diffusion_model(noisy, t_val, t_emb)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                     if hasattr(pred, "sample"):
                         pred = pred.sample
         else:
             try:
-                if _uses_context:
+                if _null_y is not None:
+                    # SDXL U-Net: forward(x, timesteps, context, y)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
+                elif _uses_context:
                     pred = diffusion_model(noisy, t_val, t_emb)
                 else:
                     pred = diffusion_model(noisy, timestep=t_val, encoder_hidden_states=t_emb)
                 if hasattr(pred, "sample"):
                     pred = pred.sample
             except Exception:
-                pred = diffusion_model(noisy, t_val, t_emb)
+                pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                 if hasattr(pred, "sample"):
                     pred = pred.sample
 
@@ -908,13 +988,18 @@ def train_lora_stage(
             gate_reg = torch.zeros((), device=device)
 
         loss = base_mse + gate_reg
-        loss.backward()
+        (loss / grad_accum).backward()
+        accum_counter += 1
+        if accum_counter < grad_accum:
+            continue
 
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(trainable_params, grad_clip)
 
         optimizer.step()
         scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        accum_counter = 0
 
         ema.update({k: v for k, v in lora_layers})
         ema_proj.update()
@@ -985,6 +1070,10 @@ def train_dre_stage(
     learnable_lambda: bool = True,
     desc_channels: str = "L,E,H,x,y",
     resume: Optional[str] = None,
+    grad_accum: int = 1,
+    dre_depth: int = 12,
+    dre_dim: int = 512,
+    dre_patch_size: int = 8,
 ) -> str:
     """Train dynamic range encoder (DRE) spatial transformer & cross-attention tokens (Stage 3).
 
@@ -1015,6 +1104,9 @@ def train_dre_stage(
         model_type=model_type,
         mode=PipelineMode.FULL_DRE,
         text_embed_dim=text_embed_dim,
+        dre_depth=dre_depth,
+        dre_embed_dim=dre_dim,
+        dre_patch_size=dre_patch_size,
     ).to(device)
 
     pipeline.freeze_for_training(PipelineMode.FULL_DRE)
@@ -1082,6 +1174,10 @@ def train_dre_stage(
 
     pbar = tqdm(total=steps, initial=start_step, desc="RUDRA Stage 3") if _HAS_TQDM else None
 
+    if grad_accum < 1:
+        raise ValueError("grad_accum must be >= 1")
+    optimizer.zero_grad(set_to_none=True)
+    accum_counter = 0
     while step < steps:
         try:
             batch = next(data_iter)
@@ -1130,8 +1226,9 @@ def train_dre_stage(
         t_val = noisy_batch["timestep"].to(_cdt)
         t_emb = noisy_batch["text_embed"].to(_cdt)
         target_noise = noisy_batch["noise_target"].to(_cdt)
-
-        optimizer.zero_grad()
+        # apply_model returns a denoised x0 prediction (see Stage 2 comment) —
+        # keep the clean latent around as the x0 target (AUDIT_2026-08-10 NEW-1).
+        target_x0_s3 = noisy_batch["clean_latent"].to(_cdt)
 
         # Same model-type detection as Stage 2 — derive from comfy_model class name first.
         _comfy_cls_s3 = type(getattr(diffusion_model, "comfy_model", None)).__name__ if hasattr(diffusion_model, "comfy_model") else ""
@@ -1143,41 +1240,58 @@ def train_dre_stage(
         }
         _uses_context_s3 = (_dm_cls_s3 in _CONTEXT_MODELS_S3) or (_comfy_cls_s3 in _CONTEXT_MODELS_S3)
 
+        # SDXL-style class-conditional U-Nets require a pooled added-cond `y`.
+        _null_y = _maybe_null_y(diffusion_model, noisy.shape[0], noisy.device, _cdt)
+        _ykw = {"y": _null_y} if _null_y is not None else {}
+
+        used_apply_model_s3 = False
         if hasattr(diffusion_model, "comfy_model"):
             try:
-                pred = diffusion_model.comfy_model.apply_model(noisy, t_val, c_crossattn=t_emb)
+                pred = diffusion_model.comfy_model.apply_model(noisy, t_val, c_crossattn=t_emb, **_ykw)
+                used_apply_model_s3 = True  # pred is x0_pred — compare against clean x0
             except Exception as e:
                 logger.warning(f"[Train] Stage 3 comfy_model.apply_model failed: {e}. Falling back to direct call.")
                 try:
-                    pred = diffusion_model(noisy, t_val, t_emb)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                     if hasattr(pred, "sample"):
                         pred = pred.sample
                 except Exception as e2:
                     logger.warning(f"[Train] Stage 3 direct call failed: {e2}. Last resort.")
-                    pred = diffusion_model(noisy, t_val, t_emb)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                     if hasattr(pred, "sample"):
                         pred = pred.sample
         else:
             try:
-                if _uses_context_s3:
+                if _null_y is not None:
+                    # SDXL U-Net: forward(x, timesteps, context, y)
+                    pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
+                elif _uses_context_s3:
                     pred = diffusion_model(noisy, t_val, t_emb)
                 else:
                     pred = diffusion_model(noisy, timestep=t_val, encoder_hidden_states=t_emb)
                 if hasattr(pred, "sample"):
                     pred = pred.sample
             except Exception:
-                pred = diffusion_model(noisy, t_val, t_emb)
+                pred = diffusion_model(noisy, t_val, t_emb, **_ykw)
                 if hasattr(pred, "sample"):
                     pred = pred.sample
 
-        loss = F.mse_loss(pred.to(torch.float32), target_noise.to(torch.float32))
-        loss.backward()
+        # AUDIT_2026-08-10 NEW-1: apply_model output is a denoised x0
+        # prediction, not a velocity/noise — same convention as Stage 2.
+        _s3_target = target_x0_s3 if used_apply_model_s3 else target_noise
+        loss = F.mse_loss(pred.to(torch.float32), _s3_target.to(torch.float32))
+        (loss / grad_accum).backward()
+        accum_counter += 1
+        if accum_counter < grad_accum:
+            continue
 
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(trainable_params, grad_clip)
 
         optimizer.step()
         scheduler.step()
+        optimizer.zero_grad(set_to_none=True)
+        accum_counter = 0
 
         # Cleanup current_dr_tokens context
         for name, inj in injectors:
@@ -1243,6 +1357,8 @@ if __name__ == "__main__":
                         help="Number of training steps")
     parser.add_argument("--batch_size", default=8, type=int,
                         help="Training batch size")
+    parser.add_argument("--grad_accum", default=1, type=int,
+                        help="Microbatches per optimizer step")
     parser.add_argument("--lr", default=3e-4, type=float,
                         help="Learning rate")
     parser.add_argument("--multi_curve", action="store_true",
@@ -1261,6 +1377,9 @@ if __name__ == "__main__":
                         help="Stage 3: keep λ fixed (for the §7.3 conditioning-strength sweep)")
     parser.add_argument("--desc_channels", default="L,E,H,x,y",
                         help="Stage 3 descriptor channels to keep (§7.2 ablation), e.g. 'L' or 'L,E'")
+    parser.add_argument("--dre_depth", default=12, type=int)
+    parser.add_argument("--dre_dim", default=512, type=int)
+    parser.add_argument("--dre_patch_size", default=8, type=int)
     parser.add_argument("--config", default="",
                         help="Optional YAML config (configs/*.yaml) to override defaults")
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu", "mps"])
@@ -1271,8 +1390,13 @@ if __name__ == "__main__":
                         help="Decoder HDR output parameterization")
     parser.add_argument("--resume", default=None,
                         help="Checkpoint path to resume training from")
-    parser.add_argument("--save_every", default=100, type=int,
-                        help="Save checkpoint every N steps (default: 100)")
+    parser.add_argument("--save_every", default=5000, type=int,
+                        help="Save checkpoint every N steps (default: 5000). "
+                             "Stage-1 .pth checkpoints carry decoder+projection+"
+                             "2xEMA+optimizer; the old default of 100 wrote "
+                             "hundreds of GB over a long run.")
+    parser.add_argument("--eval_every", default=500, type=int,
+                        help="Run validation every N optimizer steps")
 
     # Apply YAML overrides as defaults so explicit CLI flags still win (review §5).
     _pre, _ = parser.parse_known_args()
@@ -1313,6 +1437,8 @@ if __name__ == "__main__":
             output_domain=args.output_domain,
             resume=args.resume,
             save_every=args.save_every,
+            grad_accum=args.grad_accum,
+            eval_every=args.eval_every,
         )
         logger.info(f"Stage 1 Decoder training complete. Saved to: {final_path}")
 
@@ -1338,6 +1464,8 @@ if __name__ == "__main__":
             lora_include_mlp=args.lora_mlp,
             resume=args.resume,
             save_every=args.save_every,
+            grad_accum=args.grad_accum,
+            eval_every=args.eval_every,
         )
         logger.info(f"Stage 2 LoRA training complete. Checkpoint: {final_path}")
 
@@ -1363,5 +1491,10 @@ if __name__ == "__main__":
             desc_channels=args.desc_channels,
             resume=args.resume,
             save_every=args.save_every,
+            grad_accum=args.grad_accum,
+            eval_every=args.eval_every,
+            dre_depth=args.dre_depth,
+            dre_dim=args.dre_dim,
+            dre_patch_size=args.dre_patch_size,
         )
         logger.info(f"Stage 3 DRE training complete. Checkpoint: {final_path}")

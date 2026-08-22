@@ -3,6 +3,8 @@
 **Radiometric Dynamic-Range Conditioning for HDR-Aware Diffusion Models**
 FXTD Studios / Radiance Research
 
+📦 **Pretrained weights:** [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main)
+
 RUDRA makes latent-diffusion backbones HDR-aware. Instead of tone-mapping scene-linear
 imagery down to SDR before the model ever sees it, RUDRA (a) decodes diffusion latents
 directly into scene-linear HDR / OpenEXR, and (b) conditions the backbone on a compact
@@ -13,7 +15,7 @@ exposure, highlight structure and wide-gamut color.
 
 ## What's here
 
-The repo has **two cooperating systems**:
+The repo has **three cooperating systems**:
 
 1. **Production HDR decoders** (`fast_vae.py` in the ComfyUI `radiance` node) — fast,
    distilled `latent → log image → scene-linear` decoders. Trained by
@@ -23,6 +25,10 @@ The repo has **two cooperating systems**:
    spatial descriptor → 12-layer Dynamic Range Encoder (DRE) → cross-attention token
    injection, plus a FiLM-conditioned decoder and DR-gated LoRA. Trained by
    `training/train_rudra.py` (Stages 1–3).
+3. **Direct SDR recovery** (`rudra/sdr2hdr.py`) — a compact mask-aware image network
+   accepting ordinary 8-bit sRGB pixels, plus an optional lightweight real-clip temporal
+   refiner. Trained by `training/train_sdr2hdr.py`. Unlike systems 1–2, this path does not
+   require diffusion/VAE latents as input.
 
 ## Trained decoders (production)
 
@@ -38,6 +44,26 @@ The repo has **two cooperating systems**:
 
 See **[DECODER_CHEATSHEET.md](DECODER_CHEATSHEET.md)** for which `decoder_size` to select
 per backbone and the node settings.
+
+### Pretrained weights (Hugging Face)
+
+Trained decoders are hosted at
+**[huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main)**
+(they are intentionally not committed to git). Download the ones you need into the ComfyUI
+models folder:
+
+```bash
+huggingface-cli download fxtdstudios/RUDRA --include "rudra_*_decoder_*.safetensors" \
+    --local-dir "ComfyUI/models/radiance"
+```
+or in Python:
+```python
+from huggingface_hub import hf_hub_download
+hf_hub_download("fxtdstudios/RUDRA", "rudra_full_decoder_flux_ema.safetensors",
+               local_dir="ComfyUI/models/radiance")
+```
+File names follow `rudra_{turbo|full}_decoder_{backbone}_ema.safetensors` — drop them in
+`ComfyUI/models/radiance/`, enable `rudra_decoder` in the node, and pick `decoder_size`.
 
 ---
 
@@ -60,6 +86,20 @@ python training/build_all_decoders.py --only flux,wan,ltx,sdxl,qwen,flux2-klein
 python training/scan_model.py hdrdata/checkpoints/turbo_flux --model-type flux \
     --pair_dir hdrdata/hdr_pairs --samples 200
 ```
+
+### Train direct 8-bit SDR to HDR recovery
+
+```bash
+python training/build_sdr_hdr_manifest.py --sdr-dir G:/data/sdr --hdr-dir G:/data/hdr \
+  --metadata-dir G:/data/meta --output hdrdata/sdr_hdr_manifest.jsonl
+python training/train_sdr2hdr.py --mode image --manifest hdrdata/sdr_hdr_manifest.jsonl \
+  --output-dir hdrdata/checkpoints/sdr2hdr_image_50k --steps 50000 --device cuda
+python training/evaluate_sdr2hdr.py --manifest hdrdata/sdr_hdr_manifest.jsonl \
+  --checkpoint hdrdata/checkpoints/sdr2hdr_image_50k/best.pt --split test
+```
+
+`best.pt` is protected by a held-out baseline gate: training starts with the analytic
+inverse-tone-map checkpoint and only replaces it when validation log-radiance error improves.
 
 ### The research program (RUDRA-Full, on SDXL — the paper's intended backbone)
 ```bash
@@ -84,6 +124,9 @@ rudra/            Research package: descriptor, DRE transformer, cross-attention
 training/         Trainers + orchestration:
                     train_turbo_decoder.py   production decoder (node)
                     train_rudra.py           Stages 1–3 (decoder / LoRA / DRE)
+                    train_sdr2hdr.py         direct 8-bit SDR image / temporal recovery
+                    evaluate_sdr2hdr.py      frozen-test comparison vs physical baseline
+                    infer_sdr2hdr.py         image/video to float HDR frame sequence
                     build_all_decoders.py    download → pairs → train → deploy
                     research_sdxl.py         full SDXL research program
                     scan_model.py / scan_highlights.py / benchmark_hdr.py

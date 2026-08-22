@@ -14,6 +14,7 @@ complementing the LoRA-gating approach in adapter.py (RUDRA-Lite).
 
 from __future__ import annotations
 
+import inspect
 import math
 from typing import List, Optional, Set
 
@@ -96,6 +97,25 @@ class RUDRACrossAttentionInjector(nn.Module):
         self.original_attn = original_attn
         self.text_embed_dim = text_embed_dim
 
+        # The wrapped attention module may use either the diffusers API
+        # (`encoder_hidden_states=`) or the ComfyUI API (`context=`) for its
+        # conditioning sequence. SDXL loaded via comfy.sd uses `context`.
+        # Detect the correct keyword once so forward() concatenates the
+        # radiometric tokens into the sequence the module actually reads, and
+        # dispatches with the keyword it actually accepts. Without this the
+        # injection is silently skipped AND the wrapped module raises on an
+        # unexpected `encoder_hidden_states` kwarg.
+        try:
+            params = inspect.signature(original_attn.forward).parameters
+        except (ValueError, TypeError):
+            params = {}
+        if "encoder_hidden_states" in params:
+            self._cond_kw = "encoder_hidden_states"
+        elif "context" in params:
+            self._cond_kw = "context"
+        else:
+            self._cond_kw = "encoder_hidden_states"  # diffusers default
+
         # λ controls radiometric conditioning strength (paper §3.5).
         if learnable_lambda:
             self.lambda_param = nn.Parameter(
@@ -118,6 +138,7 @@ class RUDRACrossAttentionInjector(nn.Module):
         hidden_states: torch.Tensor,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         dr_tokens: Optional[torch.Tensor] = None,
+        context: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
         """Forward pass with optional radiometric token injection.
@@ -126,25 +147,28 @@ class RUDRACrossAttentionInjector(nn.Module):
             C_total = concat(C_text, λ · C_R)
         Then runs the original attention with the augmented sequence.
 
+        Supports both the diffusers (`encoder_hidden_states`) and ComfyUI
+        (`context`) cross-attention calling conventions — the conditioning
+        sequence is whichever one the wrapped module was called with.
+
         Args:
             hidden_states: Query states from the U-Net (B, S_q, D).
-            encoder_hidden_states: Text conditioning tokens C_text (B, S_text, D).
+            encoder_hidden_states: Text tokens C_text (diffusers API).
             dr_tokens: Projected radiometric tokens C_R (B, S_r, D), or None.
-            **kwargs: Passed through to the original attention module.
+            context: Text tokens C_text (ComfyUI API).
+            **kwargs: Passed through to the original attention module (value, mask…).
         """
+        # The conditioning sequence may arrive under either keyword.
+        cond = encoder_hidden_states if encoder_hidden_states is not None else context
+
         if dr_tokens is None:
             dr_tokens = getattr(self, "current_dr_tokens", None)
-        if dr_tokens is not None and encoder_hidden_states is not None:
+        if dr_tokens is not None and cond is not None:
             lam = self.lambda_value.to(dr_tokens.dtype)
-            scaled_dr = lam * dr_tokens
-            encoder_hidden_states = torch.cat(
-                [encoder_hidden_states, scaled_dr], dim=1
-            )
-        return self.original_attn(
-            hidden_states,
-            encoder_hidden_states=encoder_hidden_states,
-            **kwargs,
-        )
+            cond = torch.cat([cond, lam * dr_tokens.to(cond.dtype)], dim=1)
+
+        # Dispatch using the keyword the wrapped module actually accepts.
+        return self.original_attn(hidden_states, **{self._cond_kw: cond}, **kwargs)
 
 
 # Default cross-attention module names in common diffusion backbones.

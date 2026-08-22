@@ -106,15 +106,15 @@ def main():
     print("=" * 64)
 
     if pct_any < 10:
-        print("VERDICT: ❌ Almost no highlights — the highlight loss will rarely fire.")
+        print("VERDICT: FAIL - Almost no highlights; the highlight loss will rarely fire.")
         print("  RUDRA's HDR advantage cannot show up on this data. Options:")
-        print("   • curate high-DR sources (skies, sun, neon, specular, fire, windows),")
-        print("   • or lower --ev-threshold (default +2 stops over grey).")
+        print("   - curate high-DR sources (skies, sun, neon, specular, fire, windows),")
+        print("   - or lower --ev-threshold (default +2 stops over grey).")
     elif pct_any < 40:
-        print("VERDICT: ⚠️  Some highlights, but sparse. Consider enriching the dataset")
+        print("VERDICT: WARN - Some highlights, but sparse. Consider enriching the dataset")
         print("  with brighter sources so the highlight objective trains meaningfully.")
     else:
-        print("VERDICT: ✅ Plenty of highlight content — the HDR objective will engage.")
+        print("VERDICT: PASS - Plenty of highlight content; the HDR objective will engage.")
     return 0
 
 

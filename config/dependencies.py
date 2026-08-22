@@ -6,8 +6,8 @@ import logging
 import sys
 from typing import Iterable, Optional, Sequence, Tuple
 
-from radiance.config.constants import PACKAGE_NAME
-from radiance.config.env import ENV
+from .constants import PACKAGE_NAME
+from .env import ENV
 
 
 class DependencySpec:

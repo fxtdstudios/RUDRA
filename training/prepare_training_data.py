@@ -150,8 +150,16 @@ def _detect_encoding(path: Path) -> EncodingHint:
 # EOTFs (NumPy, no torch required)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def eotf_pq(v: np.ndarray, peak_nits: float = 1000.0) -> np.ndarray:
-    """ST.2084 PQ EOTF: [0,1] code value → scene-linear (ref white = 203 nits)."""
+def eotf_pq(v: np.ndarray, peak_nits: float = 10000.0) -> np.ndarray:
+    """ST.2084 PQ EOTF: [0,1] code value → scene-linear (ref white = 203 nits).
+
+    The PQ transfer function's L is defined as an ABSOLUTE fraction of
+    10,000 cd/m² (SMPTE ST 2084), independent of the mastering display peak.
+    peak_nits therefore defaults to 10000.0 and should not be changed for
+    standards-conformant HDR10 content. (AUDIT_2026-08-10 NEW-2b: the old
+    default of 1000.0 decoded every PQ source 10x too dark relative to the
+    linear/EXR sources in the corpus.)
+    """
     M1, M2 = 0.1593017578125, 78.84375
     C1, C2, C3 = 0.8359375, 18.8515625, 18.6875
     v   = np.clip(v, 0.0, 1.0).astype(np.float64)
@@ -159,7 +167,8 @@ def eotf_pq(v: np.ndarray, peak_nits: float = 1000.0) -> np.ndarray:
     num = np.maximum(vp - C1, 0.0)
     den = np.maximum(C2 - C3 * vp, 1e-9)
     L   = (num / den) ** (1.0 / M1)
-    # L ∈ [0,1] relative to peak_nits; convert to scene-linear (ref 203 nits)
+    # L ∈ [0,1] relative to 10,000 nits; convert to scene-linear with
+    # BT.2408 diffuse white (203 nits) mapped to 1.0.
     return (L * peak_nits / HDR_REF_NITS).astype(np.float32)
 
 
@@ -209,20 +218,33 @@ def eotf_logc4(v: np.ndarray) -> np.ndarray:
 
 
 def eotf_slog3(v: np.ndarray) -> np.ndarray:
-    """Sony S-Log3 → scene-linear float."""
+    """Sony S-Log3 → scene-linear float (official Sony S-Log3 spec).
+
+    Anchors: code 0.4106 (=420/1023) → 0.18 (18% grey), code 1.0 → 38.42.
+    (AUDIT_2026-08-10 NEW-2a: the previous ad-hoc constants decoded grey to
+    0.337 and clipped highlights 4.4x too dark, with a discontinuity at the
+    linear/log breakpoint. This matches rudra/color_curves.py, which was
+    already spec-exact.)
+    """
     v   = v.astype(np.float64)
+    cut = 171.2102946929 / 1023.0
     lin = np.where(
-        v >= 171.2102946929 / 1023.0,
-        ((10.0 ** ((v - 0.616596) / 0.432699) - 0.037584) * 0.18 /
-         (0.028511 / 0.18)),
-        (v - 95.0 / 1023.0) / (171.2102946929 / 1023.0 - 95.0 / 1023.0) *
-        0.01125000,
+        v >= cut,
+        np.power(10.0, (v * 1023.0 - 420.0) / 261.5) * (0.18 + 0.01) - 0.01,
+        (v * 1023.0 - 95.0) * 0.01125000 / (171.2102946929 - 95.0),
     )
     return np.maximum(lin, 0.0).astype(np.float32)
 
 
 def eotf_hlg(v: np.ndarray) -> np.ndarray:
-    """HLG inverse OETF: signal [0,1] → scene-linear."""
+    """HLG inverse OETF: signal [0,1] → scene-linear (diffuse white = 1.0).
+
+    The raw BT.2100 inverse OETF maps signal 1.0 → 1.0, which puts HLG
+    diffuse white (75% signal, BT.2408) at ~0.265 — ~1.9 stops below the
+    corpus convention where diffuse white is 1.0. We rescale so that
+    signal 0.75 → 1.0, matching every other format's radiometric anchor.
+    (AUDIT_2026-08-10 NEW-4 / prior P1.)
+    """
     a = 0.17883277
     b = 0.28466892
     c = 0.55991073
@@ -232,6 +254,9 @@ def eotf_hlg(v: np.ndarray) -> np.ndarray:
         (v ** 2) / 3.0,
         (np.exp((v - c) / a) + b) / 12.0,
     )
+    # Rescale: HLG reference/diffuse white at 75% signal → 1.0.
+    _ref_white = (np.exp((0.75 - c) / a) + b) / 12.0   # ≈ 0.26496
+    lin = lin / _ref_white
     return np.maximum(lin, 0.0).astype(np.float32)
 
 
@@ -356,29 +381,30 @@ def save_png_8bit(arr: np.ndarray, path: Path):
 
 
 def save_png_16bit(arr: np.ndarray, path: Path):
-    """Save uint16 (H,W,3) as 16-bit PNG."""
-    if HAS_PIL:
-        # PIL needs mode 'I;16' trick for RGB 16-bit
-        # Workaround: save each channel then recombine, or use tifffile for 16-bit
-        if HAS_TIFFFILE:
-            tifffile.imwrite(str(path.with_suffix(".tif")), arr,
-                             photometric="rgb", compression="deflate")
-            # rename to .png extension (tifffile can write lossless 16-bit PNG)
-            tif_path = path.with_suffix(".tif")
-            tif_path.rename(path)
-            return
-        # Fallback: use PIL per-channel
-        PILImage.fromarray(arr[:, :, 0], mode="I").save(
-            str(path.with_name(path.stem + "_R.png")))
-        raise RuntimeError("tifffile required for 16-bit PNG. "
-                           "Install with: pip install tifffile")
-    elif HAS_TIFFFILE:
-        tifffile.imwrite(str(path), arr, photometric="rgb",
-                         compression="deflate")
-    elif HAS_CV2:
-        cv2.imwrite(str(path), cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
-    else:
-        raise RuntimeError("tifffile, PIL, or cv2 required to save 16-bit PNG.")
+    """Save a real uint16 RGB PNG atomically.
+
+    The old implementation wrote a TIFF and renamed it to ``.png``. Besides
+    lying about the container, concurrent duplicate work items collided on the
+    shared temporary ``.tif`` name and left thousands of files behind.
+    OpenCV supports true 16-bit three-channel PNG directly.
+    """
+    if not HAS_CV2:
+        raise RuntimeError(
+            "opencv-python-headless is required for true 16-bit RGB PNG output"
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.stem}.", suffix=".tmp.png", dir=str(path.parent)
+    )
+    os.close(fd)
+    try:
+        ok = cv2.imwrite(temp_name, cv2.cvtColor(arr, cv2.COLOR_RGB2BGR))
+        if not ok:
+            raise RuntimeError(f"OpenCV failed to encode PNG: {path}")
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -31,11 +31,35 @@ REPO = Path(__file__).resolve().parent.parent
 CKPT = REPO / "hdrdata" / "checkpoints"
 
 
+# Directory name patterns each pipeline actually creates under hdrdata/checkpoints
+# (AUDIT_2026-07-15 P0-6: the old turbo_*/full_*-only check misclassified live
+# runs from train_all_decoders / retrain_all / train_sdr2hdr / train_rudra as
+# dead, and --dead delete destroyed them).
+_LIVE_NAME_RE = re.compile(
+    r"^("
+    r"turbo_.+|full_.+"                      # build_all_decoders / train_full_decoders
+    r"|.+_(turbo|full)(_decoder)?"           # train_all_decoders ({model}_{size}_decoder), retrain_all ({model}_{size})
+    r"|.+_lora|.+_dre"                       # retrain_all stage 2/3 runs
+    r"|.+_rudra_stage\d.*"                   # train_rudra stage dirs
+    r"|sdr2hdr.*"                            # train_sdr2hdr
+    r")$"
+)
+
+# Artifacts whose presence marks a run as live even if the name is unusual.
+_LIVE_ARTIFACTS = (
+    "*_ema_best.safetensors",   # any best-EMA (decoder, LoRA, ...)
+    "train_config.json",        # trainer metadata written at run start
+    "best.pt",                  # train_sdr2hdr best checkpoint
+)
+
+
 def is_node_run(d: Path) -> bool:
-    """Good runs are turbo_* / full_* dirs containing a RadianceDecoder best-EMA."""
-    if not (d.name.startswith("turbo_") or d.name.startswith("full_")):
-        return False
-    return any(d.rglob("*_decoder_ema_best.safetensors"))
+    """A run is live if its name matches any known trainer pattern OR it
+    contains a recognizable training artifact. Only runs that match neither
+    are eligible for archive/delete."""
+    if _LIVE_NAME_RE.match(d.name):
+        return True
+    return any(any(d.rglob(pat)) for pat in _LIVE_ARTIFACTS)
 
 
 def dir_size(p: Path) -> int:

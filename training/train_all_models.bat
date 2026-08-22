@@ -164,12 +164,14 @@ REM  3. FLUX 2 KLEIN — TurboDecoder + LoRA
 REM ============================================================
 :flux2_turbo_decoder
 echo [FLUX 2] Generating TurboDecoder training pairs...
+REM AUDIT_2026-08-10 NEW-3: flux2 pairs MUST NOT share the flux1 pair dir
+REM (same md5 filenames, different VAE -> silent latent-space corruption).
 set FLUX2_VAE=D:\A.I\ComfyUI\models\vae\flux2-vae.safetensors
 set FLUX2_MODEL=D:\A.I\ComfyUI\models\diffusion_models\flux-2-klein-9b-fp8.safetensors
 
 python %RUDRA_ROOT%\training\dataset_hdr.py ^
     --exr_dir G:\data\hdr ^
-    --output_dir D:\A.I\Devlopments\rudra\hdrdata\hdr_pairs ^
+    --output_dir D:\A.I\Devlopments\rudra\hdrdata\flux2_hdr_pairs ^
     --vae_path %FLUX2_VAE% ^
     --vae_type flux ^
     --size 512 ^
@@ -179,7 +181,7 @@ python %RUDRA_ROOT%\training\dataset_hdr.py ^
 
 echo [FLUX 2] Training TurboDecoder...
 python %RUDRA_ROOT%\training\train_turbo_decoder.py ^
-    --pair_dir D:\A.I\Devlopments\rudra\hdrdata\hdr_pairs ^
+    --pair_dir D:\A.I\Devlopments\rudra\hdrdata\flux2_hdr_pairs ^
     --output_dir %OUT%\flux2_turbo_decoder ^
     --model_type flux ^
     --model_size turbo ^
@@ -286,10 +288,11 @@ REM ============================================================
 set WAN22_VAE=D:\A.I\ComfyUI\models\vae\wan2.2_vae.safetensors
 set WAN22_MODEL=D:\A.I\ComfyUI\models\diffusion_models\wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors
 
+REM AUDIT_2026-08-10 NEW-3: wan2.2 pairs MUST NOT share the wan2.1 pair dir.
 echo [WAN 2.2] Generating FullDecoder training pairs...
 python %RUDRA_ROOT%\training\dataset_hdr.py ^
     --exr_dir G:\data\hdr ^
-    --output_dir D:\A.I\Devlopments\rudra\hdrdata\wan_hdr_pairs ^
+    --output_dir D:\A.I\Devlopments\rudra\hdrdata\wan22_hdr_pairs ^
     --vae_path %WAN22_VAE% ^
     --vae_type wan ^
     --size 512 ^
@@ -299,7 +302,7 @@ python %RUDRA_ROOT%\training\dataset_hdr.py ^
 
 echo [WAN 2.2] Training FullDecoder (200k steps)...
 python %RUDRA_ROOT%\training\train_turbo_decoder.py ^
-    --pair_dir D:\A.I\Devlopments\rudra\hdrdata\wan_hdr_pairs ^
+    --pair_dir D:\A.I\Devlopments\rudra\hdrdata\wan22_hdr_pairs ^
     --output_dir %OUT%\wan22_full_decoder ^
     --model_type wan ^
     --model_size full ^

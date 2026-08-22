@@ -102,6 +102,8 @@ class RUDRAPipeline(nn.Module):
             color_space=self.config.color_space,
             y_max_nits=self.config.y_max_nits,
             normalize_input=True,
+            highlight_ev_threshold=self.config.highlight_ev_threshold,
+            highlight_ev_softness=self.config.highlight_ev_softness,
         )
 
         self.projection = RUDRAProjection(
@@ -115,6 +117,8 @@ class RUDRAPipeline(nn.Module):
             color_space=self.config.color_space,
             y_max_nits=self.config.y_max_nits,
             normalize_input=True,
+            highlight_ev_threshold=self.config.highlight_ev_threshold,
+            highlight_ev_softness=self.config.highlight_ev_softness,
         )
 
         self.dre = RUDRADynamicRangeEncoder(
@@ -137,6 +141,7 @@ class RUDRAPipeline(nn.Module):
                 dr_dim=self.config.dr_proj_dim,
                 channels=self.config.full_decoder_channels,
                 output_domain=self.config.output_domain,
+                n_upsample=max(1, (self.config.vae_spatial_factor).bit_length() - 1),
             )
         else:
             self.decoder = RUDRADecoder(
@@ -144,6 +149,7 @@ class RUDRAPipeline(nn.Module):
                 dr_dim=self.config.dr_proj_dim,
                 channels=self.config.decoder_channels,
                 output_domain=self.config.output_domain,
+                n_upsample=max(1, (self.config.vae_spatial_factor).bit_length() - 1),
             )
 
     # ─── DR Conditioning Extraction ───────────────────────────────────────
@@ -358,7 +364,10 @@ class RUDRAPipeline(nn.Module):
         # Infer text_embed_dim from model type if not specified
         if text_embed_dim is None:
             try:
-                from radiance.config.model_map import resolve_model_vae_config
+                try:
+                    from config.model_map import resolve_model_vae_config
+                except Exception:
+                    from radiance.config.model_map import resolve_model_vae_config
                 vae_cfg = resolve_model_vae_config(model_type)
                 if vae_cfg:
                     text_embed_dim = vae_cfg.get("text_embed_hidden", 768)

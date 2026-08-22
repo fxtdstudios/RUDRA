@@ -61,8 +61,12 @@ REGISTRY = {
     "wan":       dict(type="wan",       latent=16, deploy_tag="wan",
                       vae=("wan_2.1_vae.safetensors", "vae", ""),       # TODO url if missing
                       pairs="hdrdata/wan_hdr_pairs", supported=True),
+    # LTX-2 / LTX-2.3 Video-VAE (AutoencoderKLLTX2Video): 32x spatial / 8x temporal /
+    # 128ch. Co-locate config.json next to this file so the loader builds the real
+    # 2.3 VAE (see load_vae_standalone ltx branch). 2.44 GB — NOT the 46 GB transformer.
     "ltx":       dict(type="ltx-video", latent=128, deploy_tag="ltx-video",
-                      vae=("ltx_vae.safetensors", "vae", ""),           # TODO url if missing
+                      vae=("diffusion_pytorch_model.safetensors", "vae/ltx2",
+                           "https://huggingface.co/Lightricks/LTX-2/resolve/main/vae/diffusion_pytorch_model.safetensors"),
                       pairs="hdrdata/ltx_pairs", supported=True),
     "sdxl":      dict(type="sdxl",      latent=4, deploy_tag="sdxl",
                       vae=("sdxl_vae.safetensors", "vae",
@@ -119,7 +123,19 @@ def ensure_vae(spec, dry: bool) -> str | None:
     try:
         sys.path.insert(0, str(REPO / "training"))
         from download_models import _download
+        dest.parent.mkdir(parents=True, exist_ok=True)
         _download(url, dest)
+        # diffusers-format VAE folders also need config.json beside the weights so
+        # AutoencoderKL*.from_pretrained(local_dir) can build the model (LTX-2.3).
+        if fname == "diffusion_pytorch_model.safetensors":
+            cfg_url = url.rsplit("/", 1)[0] + "/config.json"
+            cfg_dest = dest.parent / "config.json"
+            if not cfg_dest.exists():
+                print(f"    [vae] downloading companion config.json -> {cfg_dest}")
+                try:
+                    _download(cfg_url, cfg_dest)
+                except Exception as ce:
+                    print(f"    [vae] config.json fetch failed (comfy path still works): {ce}")
         return str(dest) if dest.exists() else None
     except Exception as e:
         print(f"    [vae] download failed: {e}")
@@ -182,7 +198,10 @@ def train_and_deploy(spec, size: str, args) -> bool:
     lr = args.lr_full if size == "full" else args.lr_turbo
     cmd = [sys.executable, str(TRAIN), "--pair_dir", str(pair_dir), "--output_dir", str(out_dir),
            "--model_type", spec["type"], "--model_size", size, "--steps", str(steps),
-           "--lr", str(lr), "--knee", str(args.knee), "--batch_size", str(args.batch_size)]
+           "--lr", str(lr), "--knee", str(args.knee), "--batch_size", str(args.batch_size),
+           # AUDIT_2026-07-15 P0-5: without these the trainer "validates" on a
+           # training batch and deploys a noise-selected "best" checkpoint.
+           "--val_split", str(args.val_split), "--patience", str(args.patience)]
     print(f"    [{size}] " + " ".join(cmd))
     if args.dry_run:
         print(f"    [{size}] would deploy -> {deployed}"); return True
@@ -206,6 +225,10 @@ def main():
     ap.add_argument("--lr-full", type=float, default=1e-4)      # gentler LR — full oscillates at 3e-4
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--knee", type=float, default=0.6)
+    ap.add_argument("--val-split", dest="val_split", type=float, default=0.05,
+                    help="Held-out fraction for best-checkpoint selection / early stopping.")
+    ap.add_argument("--patience", type=int, default=8,
+                    help="Evals without PSNR improvement before early stop (0 = off).")
     ap.add_argument("--skip-existing", action="store_true")
     ap.add_argument("--list", action="store_true", help="Show readiness and exit.")
     ap.add_argument("--dry-run", action="store_true")

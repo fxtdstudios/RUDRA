@@ -49,6 +49,83 @@ def test_cross_attention_injection_freezes_backbone():
     assert trainable > 0, "lambda parameter should be trainable"
 
 
+# ── §3.5 injector must inject on BOTH diffusers (encoder_hidden_states) and ──
+#        ComfyUI (context) cross-attention APIs. SDXL via comfy.sd uses `context`;
+#        the old code silently skipped injection AND raised on the wrong kwarg.
+def test_injector_supports_comfy_context_api():
+    from rudra.cross_attention import RUDRACrossAttentionInjector
+
+    seen = {}
+
+    class ComfyAttn(nn.Module):  # comfy.ldm CrossAttention-style signature
+        def forward(self, x, context=None, value=None, mask=None):
+            seen["context_len"] = None if context is None else context.shape[1]
+            return x
+
+    inj = RUDRACrossAttentionInjector(ComfyAttn(), text_embed_dim=64,
+                                      lambda_init=1.0, learnable_lambda=False)
+    assert inj._cond_kw == "context", "should detect the comfy `context` kwarg"
+
+    x = torch.randn(1, 16, 64)
+    ctx = torch.randn(1, 77, 64)          # text tokens
+    inj.current_dr_tokens = torch.randn(1, 8, 64)  # 8 radiometric tokens
+    out = inj(x, context=ctx)             # comfy calls with context=
+    assert out.shape == x.shape
+    assert seen["context_len"] == 77 + 8, "dr tokens must be concatenated into context"
+
+
+# ── SDXL is class-conditional: the U-Net needs a pooled `y` added-cond vector;
+#    Flux/Wan/LTX do not. _maybe_null_y must build the right width or return None.
+def test_maybe_null_y_for_class_conditional_unet():
+    train = pytest.importorskip("training.train_rudra")
+
+    class SDXLish(nn.Module):              # class-conditional (num_classes set)
+        def __init__(self):
+            super().__init__()
+            self.num_classes = "sequential"
+            self.label_emb = nn.Sequential(nn.Sequential(nn.Linear(2816, 320)))
+
+    y = train._maybe_null_y(SDXLish(), 2, torch.device("cpu"), torch.float32)
+    assert y is not None and tuple(y.shape) == (2, 2816)
+    assert torch.count_nonzero(y) == 0, "null y must be all zeros"
+
+    class Fluxish(nn.Module):              # not class-conditional
+        num_classes = None
+
+    assert train._maybe_null_y(Fluxish(), 2, torch.device("cpu"), torch.float32) is None
+
+
+# ── LTX-2.3 VAE is 32x spatial → the decoder must build log2(32)=5 upsample
+#    stages. A regression to 8x (3 stages) silently breaks real-LTX decode.
+def test_ltx_vae_spatial_factor_drives_five_upsample_stages():
+    import math
+    from config.model_map import resolve_model_vae_config
+    c = resolve_model_vae_config("ltx-video")
+    assert c["vae_spatial_factor"] == 32, "LTX VAE is 32x spatial (AutoencoderKLLTX2Video)"
+    assert c["latent_channels"] == 128
+    n_upsample = max(1, round(math.log2(c["vae_spatial_factor"])))
+    assert n_upsample == 5, "LTX decoder must build 5 upsample stages, not 3"
+
+    from rudra.pipeline import RUDRAPipeline
+    pipe = RUDRAPipeline.from_model_type("ltx-video", decoder_size="turbo").eval()
+    assert pipe.config.vae_spatial_factor == 32
+    assert len(pipe.decoder.upsample) == 5
+    latent = torch.randn(1, 128, 2, 2)
+    cond = torch.zeros(1, pipe.config.dr_proj_dim)
+    assert pipe.decoder(latent, cond).shape == (1, 3, 64, 64)
+
+
+def test_standalone_production_decoders_follow_spatial_factor():
+    from rudra.fast_vae import RadianceTurboDecoder, RadianceFullDecoder
+
+    x = torch.randn(1, 4, 2, 3)
+    turbo = RadianceTurboDecoder(latent_channels=4, n_upsample=4).eval()
+    full = RadianceFullDecoder(latent_channels=4, n_upsample=4).eval()
+    with torch.no_grad():
+        assert turbo(x).shape == (1, 3, 32, 48)
+        assert full(x).shape == (1, 3, 32, 48)
+
+
 # ── §3.2 decoder output is scene-linear and keeps HDR highlights ─────────────
 def test_decoder_output_is_scene_linear_hdr():
     from rudra.decoder import RUDRADecoder

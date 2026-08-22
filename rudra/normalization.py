@@ -19,12 +19,24 @@ def _srgb_to_linear(x: torch.Tensor) -> torch.Tensor:
     return torch.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055).pow(2.4))
 
 
-def _pq_eotf(x: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
-    """Inverse SMPTE ST.2084 PQ, returning approximate relative scene-linear RGB.
+# BT.2408 graphics/diffuse ("reference") white for PQ: 203 cd/m².
+# All other formats handled here (sdr, camera log curves, linear) decode to
+# diffuse-white-relative scene linear (white ≈ 1.0, 18% grey ≈ 0.18), so PQ
+# and HLG must land on the same radiometric anchor or the EV/highlight
+# descriptors read the same physical scene stops apart depending on the
+# container format (AUDIT_2026-08-10 NEW-4: a PQ-tagged scene read ~5.6
+# stops darker than S-Log3 and produced identically-zero highlight features).
+_PQ_REF_WHITE_NITS = 203.0
 
-    Note: y_max is accepted for API consistency but is not used in the computation.
-    The PQ EOTF formula inherently produces L/L_max ∈ [0, 1] when the input signal
-    is in [0, 1], which is already normalized relative scene-linear radiance.
+
+def _pq_eotf(x: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
+    """Inverse SMPTE ST.2084 PQ → diffuse-white-relative scene linear.
+
+    The raw PQ EOTF produces L as a fraction of an ABSOLUTE 10,000 cd/m²
+    (ST 2084); returning that fraction directly put PQ input on a completely
+    different scale than every other format's decode. We convert to the
+    project-wide diffuse-white convention by anchoring BT.2408 reference
+    white (203 nits) at 1.0: linear = (L * 10000) / 203.
     """
     x = x.clamp(0.0, 1.0)
     m1 = 2610.0 / 16384.0
@@ -35,16 +47,26 @@ def _pq_eotf(x: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
     xp = x.pow(1.0 / m2)
     num = (xp - c1).clamp(min=0.0)
     den = (c2 - c3 * xp).clamp(min=_EPS)
-    return (num / den).pow(1.0 / m1).clamp(min=0.0)
+    frac = (num / den).pow(1.0 / m1).clamp(min=0.0)   # L / 10000 nits
+    return frac * (y_max / _PQ_REF_WHITE_NITS)
 
 
 def _hlg_inverse_oetf(x: torch.Tensor) -> torch.Tensor:
-    """Approximate inverse ARIB STD-B67 HLG OETF."""
+    """Approximate inverse ARIB STD-B67 HLG OETF → diffuse-white-relative.
+
+    Rescaled so HLG reference/diffuse white (75% signal, BT.2408) maps to
+    1.0, matching the anchor used by every other format decode here
+    (AUDIT_2026-08-10 NEW-4: unscaled, HLG diffuse white landed ~1.9 stops
+    below the other formats).
+    """
     x = x.clamp(min=0.0)
     a = 0.17883277
     b = 0.28466892
     c = 0.55991073
-    return torch.where(x <= 0.5, (x * x) / 3.0, (torch.exp((x - c) / a) + b) / 12.0).clamp(min=0.0)
+    lin = torch.where(x <= 0.5, (x * x) / 3.0, (torch.exp((x - c) / a) + b) / 12.0).clamp(min=0.0)
+    # Inverse OETF of the 0.75 reference-white signal ≈ 0.26496.
+    _ref = (torch.exp(torch.tensor((0.75 - c) / a, dtype=x.dtype, device=x.device)) + b) / 12.0
+    return lin / _ref
 
 
 def _generic_log_decode(x: torch.Tensor, gamma: float = 2.2, stops: float = 14.0) -> torch.Tensor:
@@ -142,11 +164,47 @@ def encode_scene_linear_to_format(
         x = image_linear[mask].clamp(min=0.0)
         if name == "sdr":
             out[mask] = _linear_to_srgb(x)
+        elif name == "pq":
+            out[mask] = _pq_inverse_eotf(x)
+        elif name == "hlg":
+            out[mask] = _hlg_oetf(x)
         elif name in LINEAR_TO_LOG:
             out[mask] = LINEAR_TO_LOG[name](x)
-        else:  # linear / pq / hlg fall through unchanged (descriptor handles them)
+        else:  # linear falls through unchanged
             out[mask] = x
     return torch.nan_to_num(out, nan=0.0, posinf=1e4, neginf=0.0)
+
+
+def _pq_inverse_eotf(lin: torch.Tensor, y_max: float = 10000.0) -> torch.Tensor:
+    """Diffuse-white-relative scene linear → PQ code (true inverse of _pq_eotf).
+
+    Previously pq/hlg "encode" was a passthrough while decode applied the
+    EOTF, so an encode→decode round trip corrupted the data
+    (AUDIT_2026-08-10 P2-12).
+    """
+    frac = (lin.clamp(min=0.0) * (_PQ_REF_WHITE_NITS / y_max)).clamp(0.0, 1.0)
+    m1 = 2610.0 / 16384.0
+    m2 = 2523.0 / 32.0
+    c1 = 3424.0 / 4096.0
+    c2 = 2413.0 / 128.0
+    c3 = 2392.0 / 128.0
+    yp = frac.pow(m1)
+    return ((c1 + c2 * yp) / (1.0 + c3 * yp)).pow(m2)
+
+
+def _hlg_oetf(lin: torch.Tensor) -> torch.Tensor:
+    """Diffuse-white-relative scene linear → HLG signal (inverse of
+    _hlg_inverse_oetf, including the 75%-signal reference-white rescale)."""
+    a = 0.17883277
+    b = 0.28466892
+    c = 0.55991073
+    _ref = (torch.exp(torch.tensor((0.75 - c) / a, dtype=lin.dtype, device=lin.device)) + b) / 12.0
+    e = (lin.clamp(min=0.0) * _ref).clamp(min=0.0)   # undo reference-white rescale
+    return torch.where(
+        e <= 1.0 / 12.0,
+        torch.sqrt(3.0 * e),
+        a * torch.log((12.0 * e - b).clamp(min=_EPS)) + c,
+    ).clamp(min=0.0)
 
 
 def _linear_to_srgb(x: torch.Tensor) -> torch.Tensor:

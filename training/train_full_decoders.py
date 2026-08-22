@@ -62,6 +62,10 @@ def main():
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--knee", type=float, default=0.6, help="Highlight knee in log-code space (data tops ~0.79).")
+    ap.add_argument("--val-split", dest="val_split", type=float, default=0.05,
+                    help="Held-out fraction for best-checkpoint selection / early stopping.")
+    ap.add_argument("--patience", type=int, default=8,
+                    help="Evals without PSNR improvement before early stop (0 = off).")
     ap.add_argument("--skip-existing", action="store_true", help="Skip a backbone whose deployed file already exists.")
     ap.add_argument("--no-deploy", action="store_true", help="Train only; don't copy into ComfyUI models.")
     ap.add_argument("--dry-run", action="store_true")
@@ -99,7 +103,10 @@ def main():
                "--steps", str(args.steps),
                "--batch_size", str(args.batch_size),
                "--lr", str(args.lr),
-               "--knee", str(args.knee)]
+               "--knee", str(args.knee),
+               # AUDIT_2026-07-15 P0-5: real validation for best-ckpt selection.
+               "--val_split", str(args.val_split),
+               "--patience", str(args.patience)]
         print("  " + " ".join(cmd))
         if args.dry_run:
             print(f"  would deploy -> {deployed}\n"); continue

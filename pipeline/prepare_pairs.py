@@ -1,0 +1,231 @@
+"""Ingest HDR sources into SDR/HDR training pairs -- with correct target storage.
+
+This deliberately does NOT fork ``training/prepare_training_data.py``. It imports
+that module's readers, EOTFs and tone-mapper (all of which got the August 2026
+fixes) and replaces exactly one thing: how the HDR target is written.
+
+    old:  clip(scene_linear * 203/10000, 0, 1) * 65535   -> uint16 PNG
+          78% of stills lost their highlights; shadows kept ~8 bits.
+    new:  pipeline.hdr_io.encode_hdr_u16(...)            -> uint16 PNG
+          nothing clips under log2_extended; ~29x the shadow codes.
+
+It also writes what the old ingest did not record: the true source peak in nits,
+the clipped fraction, and a ``_ingest_config.json`` sentinel so a directory can
+never silently mix two conventions.
+
+    python pipeline/prepare_pairs.py --src Z:\\08_Research --dst hdrdata/pairs_v3 \\
+        --inventory hdrdata/source_inventory.jsonl --mode log2_extended --crops 3
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from dataclasses import asdict
+from pathlib import Path
+
+import numpy as np
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from pipeline.hdr_io import (  # noqa: E402
+    HDR_IO_VERSION, HDRStorage, encode_hdr_u16, selftest,
+)
+
+# Readers, EOTFs and the tone-map curve come from the existing (fixed) module.
+from training.prepare_training_data import (  # noqa: E402
+    TARGET_H, TARGET_W, make_sdr, read_exr, read_tif, resize_frame,
+    save_png_8bit, save_png_16bit, to_scene_linear,
+)
+
+
+def sentinel_payload(storage: HDRStorage, args: argparse.Namespace) -> dict:
+    return {
+        "hdr_io_version": HDR_IO_VERSION,
+        "storage": storage.as_dict(),
+        "target_size": [TARGET_W, TARGET_H],
+        "crops_per_source": args.crops,
+        "crop_size": args.crop_size,
+        "tonemap": "aces_approx_narkowicz2015",
+        "sdr_encoding": "srgb",
+        "seed": args.seed,
+        "note": ("Targets are stored via pipeline/hdr_io.py. Decode with "
+                 "decode_hdr_u16() using the storage block above -- never assume "
+                 "the old linear/10000 convention."),
+    }
+
+
+def check_sentinel(dst: Path, payload: dict) -> None:
+    """Refuse to write into a directory prepared with different settings."""
+    path = dst / "_ingest_config.json"
+    if not path.exists():
+        dst.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return
+    existing = json.loads(path.read_text(encoding="utf-8"))
+    keys = ("hdr_io_version", "storage", "target_size", "tonemap", "sdr_encoding")
+    for key in keys:
+        if existing.get(key) != payload.get(key):
+            raise SystemExit(
+                f"error: {dst} was prepared with a different ingest config.\n"
+                f"       {key}: on disk {existing.get(key)!r} vs requested {payload.get(key)!r}\n"
+                f"       Use a fresh --dst. Mixing conventions is how the August corpus "
+                f"ended up unreadable."
+            )
+
+
+def crops_for(image: np.ndarray, count: int, size: int, rng: np.random.Generator
+              ) -> list[tuple[np.ndarray, tuple[int, int]]]:
+    """Multi-crop. The old ingest emitted one frame per source, which is why
+    SDXL / Qwen / Klein were stuck on 963 pairs while Flux and Wan had 12-13k."""
+    h, w = image.shape[:2]
+    if count <= 1 or size <= 0 or h < size or w < size:
+        return [(image, (0, 0))]
+    out = []
+    for _ in range(count):
+        y = int(rng.integers(0, h - size + 1))
+        x = int(rng.integers(0, w - size + 1))
+        out.append((image[y:y + size, x:x + size], (y, x)))
+    return out
+
+
+def load_scene_linear(path: Path, encoding: str) -> np.ndarray | None:
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".exr":
+            data = read_exr(path)
+        elif suffix in (".tif", ".tiff"):
+            data, _ = read_tif(path)
+        else:
+            return None
+    except Exception as exc:
+        print(f"  skip {path.name}: {exc}", file=sys.stderr)
+        return None
+    if data is None:
+        return None
+    return np.asarray(to_scene_linear(data, encoding), dtype=np.float32)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--inventory", type=Path, required=True,
+                        help="source_inventory.jsonl from scan_sources.py")
+    parser.add_argument("--dst", type=Path, required=True)
+    parser.add_argument("--mode", choices=("log2_extended", "pq_10000"), default="log2_extended",
+                        help="log2_extended keeps the full scene range (recommended); "
+                             "pq_10000 is display-referred and clips at 10,000 nits")
+    parser.add_argument("--ceiling-nits", type=float, default=1_000_000.0)
+    parser.add_argument("--crops", type=int, default=1, help="Random crops per source image")
+    parser.add_argument("--crop-size", type=int, default=512)
+    parser.add_argument("--include-unknown-encoding", action="store_true",
+                        help="Ingest sources whose EOTF scan_sources could not identify")
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=20260822)
+    args = parser.parse_args()
+
+    storage = HDRStorage(mode=args.mode, ceiling_nits=args.ceiling_nits)  # type: ignore[arg-type]
+    print(f"storage: {storage.describe()}")
+    print(f"round-trip selftest: {selftest(storage)}")
+
+    payload = sentinel_payload(storage, args)
+    check_sentinel(args.dst, payload)
+
+    sdr_dir, hdr_dir, meta_dir = args.dst / "sdr", args.dst / "hdr", args.dst / "meta"
+    for directory in (sdr_dir, hdr_dir, meta_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    sources = [json.loads(line) for line in args.inventory.open(encoding="utf-8") if line.strip()]
+    sources = [s for s in sources if s.get("kind") == "image" and "error" not in s]
+    if not args.include_unknown_encoding:
+        dropped = [s for s in sources if s.get("encoding_guess") == "UNKNOWN"]
+        if dropped:
+            print(f"  dropping {len(dropped):,} sources with UNKNOWN encoding "
+                  f"(pass --include-unknown-encoding to ingest anyway, at your risk)")
+        sources = [s for s in sources if s.get("encoding_guess") != "UNKNOWN"]
+    if args.limit:
+        sources = sources[: args.limit]
+
+    rng = np.random.default_rng(args.seed)
+    index_path = args.dst / "pairs_index.jsonl"
+    written, skipped, clipped_records = 0, 0, 0
+
+    with index_path.open("w", encoding="utf-8") as index:
+        for position, source in enumerate(sources):
+            path = Path(source["path"])
+            linear = load_scene_linear(path, source["encoding_guess"])
+            if linear is None:
+                skipped += 1
+                continue
+
+            for crop_idx, (crop, origin) in enumerate(
+                    crops_for(linear, args.crops, args.crop_size, rng)):
+                frame = resize_frame(crop)
+                sdr = make_sdr(frame)
+                hdr, stats = encode_hdr_u16(frame, storage)
+
+                stem = f"{position:07d}_{path.stem}"
+                if args.crops > 1:
+                    stem = f"{stem}_c{crop_idx}"
+                save_png_8bit(sdr, sdr_dir / f"{stem}.png")
+                save_png_16bit(hdr, hdr_dir / f"{stem}.png")
+
+                meta = {
+                    "stem": stem,
+                    "source_path": str(path),
+                    "source_encoding": source["encoding_guess"],
+                    "encoding_reason": source.get("encoding_reason"),
+                    "crop_origin": list(origin),
+                    "storage": storage.as_dict(),
+                    **stats,
+                }
+                (meta_dir / f"{stem}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+                if stats["clipped_fraction"] > 0.0001:
+                    clipped_records += 1
+
+                index.write(json.dumps({
+                    "asset_id": stem,
+                    "scene_id": source["scene_id"],
+                    "is_video": bool(source.get("is_sequence_member")),
+                    "frame_index": _frame_index(path) if source.get("is_sequence_member") else None,
+                    "sdr_path": str((sdr_dir / f"{stem}.png").resolve()),
+                    "hdr_path": str((hdr_dir / f"{stem}.png").resolve()),
+                    "metadata_path": str((meta_dir / f"{stem}.json").resolve()),
+                    "sdr_encoding": "srgb",
+                    "hdr_encoding": storage.mode,
+                    "peak_nits": stats["peak_nits"],
+                    "clipped_fraction": stats["clipped_fraction"],
+                }) + "\n")
+                written += 1
+
+            if (position + 1) % 200 == 0:
+                print(f"  {position + 1:,}/{len(sources):,} sources -> {written:,} pairs", flush=True)
+
+    digest = hashlib.sha256(index_path.read_bytes()).hexdigest()
+    payload["pairs_index_sha256"] = digest
+    payload["pairs_written"] = written
+    (args.dst / "_ingest_config.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    print(f"\n  pairs written        {written:,}")
+    print(f"  sources skipped      {skipped:,}")
+    print(f"  records that clip    {clipped_records:,} ({clipped_records / max(written, 1):.2%})"
+          f"   <- August corpus was 77.8%")
+    print(f"  index sha256         {digest[:16]}...")
+    print(f"\nwrote {index_path}\nnext: pipeline/build_manifests.py --pairs-dir {args.dst}")
+    return 0
+
+
+def _frame_index(path: Path) -> int | None:
+    import re
+
+    match = re.search(r"(\d{3,8})$", path.stem)
+    return int(match.group(1)) if match else None
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -2,20 +2,17 @@ name: rudra_full_train
 version: 0.3
 mode: rudra_full_dre
 model_type: sdxl
-precision: bf16
 batch_size: 2
 grad_accum: 8
 learning_rate: 5.0e-5
 max_steps: 160000
 validate_every: 1000
 checkpoint_every: 5000
-loss_schedule: staged_v0_3
 spatial_descriptor:
   channels: 5
   patch_size: 8
   dre_depth: 12
   dre_dim: 512
-sampler: highlight_balanced
 outputs:
   color_space: ACEScg
   output_domain: scene_linear
