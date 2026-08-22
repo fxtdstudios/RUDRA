@@ -15,7 +15,7 @@ exposure, highlight structure and wide-gamut color.
 
 ## What's here
 
-The repo has **three cooperating systems**:
+The repo has **four cooperating systems**:
 
 1. **Production HDR decoders** (`fast_vae.py` in the ComfyUI `radiance` node) — fast,
    distilled `latent → log image → scene-linear` decoders. Trained by
@@ -29,6 +29,11 @@ The repo has **three cooperating systems**:
    accepting ordinary 8-bit sRGB pixels, plus an optional lightweight real-clip temporal
    refiner. Trained by `training/train_sdr2hdr.py`. Unlike systems 1–2, this path does not
    require diffusion/VAE latents as input.
+4. **The delivery layer** (`rudra/delivery/`, **torch-free**) — everything after radiance
+   exists: Dolby Vision L1 / HDR10+ dynamic-metadata analysis, ACES 2065-1 container EXR
+   export + OCIO config, artist grade controls (EV, per-region EV, luminance qualifiers,
+   hue-preserving knee/peak), a paired PU21-PSNR/CVVDP benchmark harness, and the headless
+   `rudra` CLI. Runs on numpy alone — no CUDA/torch needed on render or delivery machines.
 
 ## Trained decoders (production)
 
@@ -101,6 +106,28 @@ python training/evaluate_sdr2hdr.py --manifest hdrdata/sdr_hdr_manifest.jsonl \
 `best.pt` is protected by a held-out baseline gate: training starts with the analytic
 inverse-tone-map checkpoint and only replaces it when validation log-radiance error improves.
 
+### Master, measure, and export (delivery layer — no GPU required)
+
+```bash
+pip install -e .          # installs the torch-free `rudra` console script
+
+# per-shot Dolby Vision L1 + HDR10+ + analysis sidecar from linear frames
+rudra metadata outputs/clip/ --nits-scale 203 --output outputs/clip/master --peak-nits 1000
+dovi_tool generate --json outputs/clip/master_dovi_generate.json --rpu-out clip.rpu
+
+# ACES 2065-1 container EXR master + OCIO v2 config for Resolve/Nuke
+rudra aces outputs/clip/ --output delivery/aces --ocio
+
+# graded HDR10: +1 EV on the 400–2000-nit band, mastered to 1000 nits
+rudra grade in.exr --output graded/ --region 400:2000:1.0:0.5 --peak-nits 1000
+
+# paired benchmark (root/ref/**, root/test/**) → PU21-PSNR, +CVVDP JOD when torch present
+rudra bench bench_root/ --output results/stuttgart.json
+```
+
+HDR10 video export (`training/export_hdr10.py`) computes MaxCLL/MaxFALL on max(R,G,B)
+per CTA-861.3 and gains `--dynamic-metadata` to emit all three sidecars alongside the mux.
+
 ### The research program (RUDRA-Full, on SDXL — the paper's intended backbone)
 ```bash
 python training/research_sdxl.py --phase stage3     # DRE + cross-attention (core thesis)
@@ -121,6 +148,10 @@ python training/benchmark_hdr.py --gt gt --a rudra_preds --b iclora_preds \
 ```
 rudra/            Research package: descriptor, DRE transformer, cross-attention,
                   FiLM decoder, DR-gated LoRA, losses, ColorVideoVDP metric, pipeline
+rudra/delivery/   Torch-free delivery layer: DoVi L1/HDR10+ metadata, ACES/EXR/OCIO,
+                  grade controls, PU21/CVVDP bench, the `rudra` CLI
+pipeline/         Corrected data pipeline v3: hdr_io storage modes, source scanner,
+                  scene-safe manifests, verify_dataset gate (run before every training run)
 training/         Trainers + orchestration:
                     train_turbo_decoder.py   production decoder (node)
                     train_rudra.py           Stages 1–3 (decoder / LoRA / DRE)
@@ -145,6 +176,8 @@ code falls back to a clearly-labeled proxy.
 
 ## Documentation
 
+- **[DELIVERY_2026-08-22.md](DELIVERY_2026-08-22.md)** — delivery layer: usage, conventions, verification.
+- **[MOAT_REVIEW_2026-08-22.md](MOAT_REVIEW_2026-08-22.md)** — system-design review vs Runway Ruby / Topaz Hyperion / Beeble.
 - **[RUDRA_TECHNICAL_REVIEW.md](RUDRA_TECHNICAL_REVIEW.md)** — full code review + every fix applied.
 - **[RUDRA_RETRAIN_RUNBOOK.md](RUDRA_RETRAIN_RUNBOOK.md)** — step-by-step (re)training guide.
 - **[DECODER_CHEATSHEET.md](DECODER_CHEATSHEET.md)** — decoder selection + lessons learned.
