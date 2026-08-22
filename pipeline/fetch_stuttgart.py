@@ -112,16 +112,27 @@ def resolve_root(ftp: FTP, set_name: str) -> str:
         f"Rerun with --root <one of the above>.")
 
 
+_JUNK = (".ds_store", "thumbs.db", "desktop.ini")
+
+
+def _is_junk(name: str) -> bool:
+    low = name.lower()
+    return low in _JUNK or name.startswith("._")
+
+
 def walk(ftp: FTP, root: str):
-    """Yield (remote_path, size) for every file under root, recursively."""
+    """Yield (remote_path, size) for every file under root, recursively.
+    macOS/Windows metadata junk on the server is skipped."""
     pending = [root]
     while pending:
         cur = pending.pop()
         subdirs, files = list_dir(ftp, cur)
         for name in subdirs:
-            pending.append(f"{cur}/{name}")
+            if not _is_junk(name):
+                pending.append(f"{cur}/{name}")
         for name, size in files:
-            yield f"{cur}/{name}", size
+            if not _is_junk(name):
+                yield f"{cur}/{name}", size
 
 
 def human(n: float) -> str:
@@ -183,10 +194,20 @@ def main() -> int:
     parser.add_argument("--only", nargs="*", default=None,
                         help="substring filters on sequence/folder names")
     parser.add_argument("--list", action="store_true", help="inventory only, no download")
+    parser.add_argument("--list-root", action="store_true",
+                        help="print the server's top-level folders and exit")
     args = parser.parse_args()
 
     print(f"Connecting to ftp://{HOST} ...")
     ftp = connect()
+    if args.list_root:
+        root_dirs, root_files = list_dir(ftp, "")
+        print("Server root:")
+        for d in sorted(root_dirs):
+            print(f"  [dir]  {d}")
+        for name, size in sorted(root_files):
+            print(f"  [file] {name}  ({human(size)})")
+        return 0
     remote_root = args.root or resolve_root(ftp, args.set)
     print(f"Scanning {remote_root} ...")
     files = sorted(walk(ftp, remote_root))
