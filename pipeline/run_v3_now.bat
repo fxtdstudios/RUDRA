@@ -7,21 +7,29 @@ REM
 REM  BEFORE RUNNING, two decisions already made for you:
 REM    - storage mode log2_extended (nothing clips, 27x shadow precision)
 REM    - loss ceiling 40000 nits (matches SDR2HDRNet max_hdr=4.0)
-REM  ONE thing still on you: temporal needs >= 6 independent video scenes.
-REM  The share currently holds 2 (Chimera). Drop the Stuttgart HDR set's
-REM  26 videos into %SRC% first, or temporal stays gated (image trains fine).
+REM  Sources scanned: the NAS share AND E:\source_hdr (Stuttgart downloads
+REM  land there). Temporal needs >= 6 independent SCENES total, or it stays
+REM  gated while the image model trains fine.
 REM ===================================================================
 setlocal
 
-set SRC=\\192.168.100.200\Data\08_Research
+set SRC_NAS=\\192.168.100.200\Data\08_Research
+set SRC_LOCAL=E:\source_hdr
 set WORK=E:\RUDRA_v3_20260822
 set PAIRS=%WORK%\pairs
 set MODE=log2_extended
 set CROPS=3
 
 echo.
-echo [0/5] inventory the sources  (NAS share -- may take a while)
-python pipeline\scan_sources.py "%SRC%" --out "%WORK%\source_inventory.jsonl" || exit /b 1
+echo [0/5] inventory the sources  (NAS share + E:\source_hdr)
+if not exist "%WORK%" mkdir "%WORK%"
+python pipeline\scan_sources.py "%SRC_LOCAL%" --out "%WORK%\inv_local.jsonl" || exit /b 1
+python pipeline\scan_sources.py "%SRC_NAS%" --out "%WORK%\inv_nas.jsonl" || (
+    echo WARNING: NAS scan failed -- continuing with E:\source_hdr only.
+)
+copy /y NUL "%WORK%\source_inventory.jsonl" >NUL
+if exist "%WORK%\inv_nas.jsonl" type "%WORK%\inv_nas.jsonl" >> "%WORK%\source_inventory.jsonl"
+type "%WORK%\inv_local.jsonl" >> "%WORK%\source_inventory.jsonl"
 
 echo.
 echo [1/5] prepare pairs  (correct HDR target storage: %MODE%, %CROPS% crops)
