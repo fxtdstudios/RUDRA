@@ -6,9 +6,13 @@ import json
 import tempfile
 from pathlib import Path
 
-import cv2
 import numpy as np
-import torch
+import pytest
+
+# Keep collection alive on torch-free delivery machines (matches the other
+# suites, which importorskip torch): rudra.delivery tests must still run there.
+torch = pytest.importorskip("torch")
+cv2 = pytest.importorskip("cv2")
 
 from rudra.sdr2hdr import SDR2HDRNet, TemporalHDRRefiner, canonicalize_sdr, sdr2hdr_loss
 from training.build_sdr_hdr_manifest import build_manifest, scene_identity
