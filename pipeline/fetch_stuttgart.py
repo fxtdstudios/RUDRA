@@ -49,38 +49,79 @@ def connect() -> FTP:
     ftp = FTP(HOST, timeout=60)
     ftp.login(USER, PASSWORD)
     ftp.set_pasv(True)
+    # binary mode up front: some servers refuse SIZE in ASCII mode, which
+    # would make the NLST fallback misclassify files as directories
+    ftp.voidcmd("TYPE I")
     return ftp
+
+
+def list_dir(ftp: FTP, path: str) -> tuple[list[str], list[tuple[str, int]]]:
+    """Return (subdir names, [(file name, size)]) for one directory."""
+    dirs: list[str] = []
+    files: list[tuple[str, int]] = []
+    try:
+        for name, facts in ftp.mlsd(path or "/"):
+            if name in (".", ".."):
+                continue
+            if facts.get("type") == "dir":
+                dirs.append(name)
+            elif facts.get("type") == "file":
+                files.append((name, int(facts.get("size", 0))))
+        return dirs, files
+    except error_perm:
+        pass  # server without MLSD support -> NLST + SIZE probing
+    for entry in ftp.nlst(path or ""):
+        name = entry.rsplit("/", 1)[-1]
+        full = f"{path}/{name}" if path else name
+        try:
+            size = ftp.size(full)
+        except (error_perm, error_temp):
+            size = None
+        if size is None:
+            dirs.append(name)
+        else:
+            files.append((name, size))
+    return dirs, files
+
+
+# keyword fallbacks used when the published folder names don't match the server
+_SET_KEYWORDS = {
+    "graded_tiff": ("grad", "color", "tiff", "rec2020"),
+    "camera_exr": ("camera", "footage", "exr", "raw"),
+    "dcp": ("dcp", "gamut", "comparison"),
+}
+
+
+def resolve_root(ftp: FTP, set_name: str) -> str:
+    """Find the real top-level folder for a set; the published names have
+    drifted from the server at least once (550 on HDR_Color_Graded)."""
+    root_dirs, _ = list_dir(ftp, "")
+    wanted = SETS[set_name]
+    for d in root_dirs:
+        if d.lower() == wanted.lower():
+            return d
+    for d in root_dirs:
+        if any(k in d.lower() for k in _SET_KEYWORDS[set_name]):
+            print(f'note: using server folder "{d}" for set {set_name!r} '
+                  f'(published name "{wanted}" not found)')
+            return d
+    listing = "\n  ".join(root_dirs) or "(empty)"
+    raise SystemExit(
+        f'No folder matching set {set_name!r} on the server.\n'
+        f"Server root contains:\n  {listing}\n"
+        f"Rerun with --root <one of the above>.")
 
 
 def walk(ftp: FTP, root: str):
     """Yield (remote_path, size) for every file under root, recursively."""
-    dirs = [root]
-    while dirs:
-        cur = dirs.pop()
-        entries: list[tuple[str, dict]] = []
-        try:
-            entries = list(ftp.mlsd(cur))
-        except (error_perm, AttributeError):
-            # server without MLSD: fall back to NLST + SIZE probing
-            for name in ftp.nlst(cur):
-                path = name if name.startswith(cur) else f"{cur}/{name}"
-                try:
-                    size = ftp.size(path)
-                except error_perm:
-                    size = None
-                if size is None:
-                    dirs.append(path)
-                else:
-                    yield path, size
-            continue
-        for name, facts in entries:
-            if name in (".", ".."):
-                continue
-            path = f"{cur}/{name}"
-            if facts.get("type") == "dir":
-                dirs.append(path)
-            elif facts.get("type") == "file":
-                yield path, int(facts.get("size", 0))
+    pending = [root]
+    while pending:
+        cur = pending.pop()
+        subdirs, files = list_dir(ftp, cur)
+        for name in subdirs:
+            pending.append(f"{cur}/{name}")
+        for name, size in files:
+            yield f"{cur}/{name}", size
 
 
 def human(n: float) -> str:
@@ -136,15 +177,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--set", choices=sorted(SETS), default="graded_tiff")
+    parser.add_argument("--root", default=None,
+                        help="exact server folder (overrides --set name resolution)")
     parser.add_argument("--dest", default=DEFAULT_DEST)
     parser.add_argument("--only", nargs="*", default=None,
                         help="substring filters on sequence/folder names")
     parser.add_argument("--list", action="store_true", help="inventory only, no download")
     args = parser.parse_args()
 
-    remote_root = SETS[args.set]
-    print(f"Connecting to ftp://{HOST}/{remote_root} ...")
+    print(f"Connecting to ftp://{HOST} ...")
     ftp = connect()
+    remote_root = args.root or resolve_root(ftp, args.set)
+    print(f"Scanning {remote_root} ...")
     files = sorted(walk(ftp, remote_root))
     try:
         ftp.quit()
