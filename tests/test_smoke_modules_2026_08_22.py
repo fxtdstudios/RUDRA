@@ -92,3 +92,33 @@ def test_save_exr_writes_readable_file(tmp_path):
     assert attrs["rudra:source"] == "smoke"
     import numpy as np
     assert np.allclose(img, t.permute(1, 2, 0).numpy(), rtol=1e-3, atol=5e-2)
+
+
+# ── trainer_utils (run-integrity helpers, added same audit) ─────────────────
+
+def test_seed_everything_reproduces():
+    from rudra.trainer_utils import seed_everything
+    seed_everything(123)
+    a = torch.rand(4)
+    seed_everything(123)
+    b = torch.rand(4)
+    assert torch.equal(a, b)
+
+
+def test_atomic_torch_save_round_trip(tmp_path):
+    from rudra.trainer_utils import atomic_torch_save
+    payload = {"step": 7, "w": torch.rand(3)}
+    path = atomic_torch_save(payload, tmp_path / "ckpt.pth")
+    assert path.exists() and not path.with_suffix(".pth.tmp").exists()
+    back = torch.load(path, weights_only=True)
+    assert back["step"] == 7 and torch.equal(back["w"], payload["w"])
+
+
+def test_atomic_safetensors_save_round_trip(tmp_path):
+    st = pytest.importorskip("safetensors.torch")
+    from rudra.trainer_utils import atomic_safetensors_save
+    state = {"layer.weight": torch.rand(2, 2)}
+    path = atomic_safetensors_save(state, tmp_path / "w.safetensors", metadata={"v": "1"})
+    assert path.exists() and not path.with_suffix(".safetensors.tmp").exists()
+    back = st.load_file(str(path))
+    assert torch.equal(back["layer.weight"], state["layer.weight"])

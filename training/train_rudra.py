@@ -85,6 +85,7 @@ MODEL_VAE_CONFIG = _mm.MODEL_VAE_CONFIG
 resolve_model_vae_config = _mm.resolve_model_vae_config
 
 from rudra.config import RUDRAConfig, RUDRA_MODEL_CONFIGS, FORMAT_TO_ID, FORMAT_DIM, make_rudra_config
+from rudra.trainer_utils import atomic_safetensors_save, atomic_torch_save, seed_everything
 from rudra.normalization import normalize_to_scene_linear, encode_scene_linear_to_format
 from rudra.descriptor import RUDRADescriptor, format_onehot
 from rudra.spatial_descriptor import RUDRASpatialDescriptor
@@ -630,7 +631,7 @@ def train_decoder_stage(
                         ema_weights = {k: v.cpu().contiguous() for k, v in ema.shadow.items()}
                         proj_weights = {f"projection.{k}": v.cpu().contiguous()
                                        for k, v in ema_proj.shadow.items()}
-                        safetensors.torch.save_file({**ema_weights, **proj_weights}, best_ema_path)
+                        atomic_safetensors_save({**ema_weights, **proj_weights}, best_ema_path)
                         logger.info(f"  ★ New best PSNR: {best_psnr:.2f} dB (step {step})")
                         stall_count = 0
                     else:
@@ -667,7 +668,7 @@ def train_decoder_stage(
         # ── Checkpoint saving ───────────────────────────────────────────────
         if step % save_every == 0 or step == steps:
             ckpt_path = os.path.join(output_dir, f"rudra_{model_size}_decoder_step{step:06d}.pth")
-            torch.save({
+            atomic_torch_save({
                 "step": step,
                 "best_step": best_step,
                 # Persist best tracking so resume can't clobber a better
@@ -694,7 +695,7 @@ def train_decoder_stage(
         ema_weights = {k: v.cpu().contiguous() for k, v in ema.shadow.items()}
         proj_weights = {f"projection.{k}": v.cpu().contiguous()
                         for k, v in ema_proj.shadow.items()}
-        safetensors.torch.save_file({**ema_weights, **proj_weights}, final_ema_path)
+        atomic_safetensors_save({**ema_weights, **proj_weights}, final_ema_path)
         logger.info(f"Final EMA safetensors saved: {final_ema_path}")
     return final_ema_path
 
@@ -1027,7 +1028,7 @@ def train_lora_stage(
 
         if step % save_every == 0 or step == steps:
             ckpt_path = os.path.join(output_dir, f"rudra_stage2_step{step:06d}.pth")
-            torch.save({
+            atomic_torch_save({
                 "step": step,
                 "projection": pipeline.projection.state_dict(),
                 "ema_projection": {k: v.cpu() for k, v in ema_proj.shadow.items()},
@@ -1314,7 +1315,7 @@ def train_dre_stage(
         if step % save_every == 0 or step == steps:
             ckpt_path = os.path.join(output_dir, f"rudra_stage3_step{step:06d}.pth")
             lambda_weights = {f"injector.{name}.lambda": inj.lambda_param.data.cpu() for name, inj in injectors}
-            torch.save({
+            atomic_torch_save({
                 "step": step,
                 "dre": pipeline.dre.state_dict(),
                 "cross_attn_proj": pipeline.cross_attn_proj.state_dict(),
@@ -1405,7 +1406,10 @@ if __name__ == "__main__":
         parser.set_defaults(**_ov)
         logger.info(f"Loaded YAML config {_pre.config}: {_ov}")
 
+    parser.add_argument("--seed", type=int, default=20260822,
+                        help="Global seed (python/numpy/torch/cuda) for run reproducibility")
     args = parser.parse_args()
+    seed_everything(args.seed)
 
     # Ensure output directory exists
     os.makedirs(args.output_dir, exist_ok=True)

@@ -64,6 +64,8 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 import safetensors.torch
 
+from rudra.trainer_utils import atomic_safetensors_save, atomic_torch_save, seed_everything
+
 logger = logging.getLogger("radiance.train_turbo")
 logging.basicConfig(
     level=logging.INFO,
@@ -311,12 +313,15 @@ def train(
     val_loader = None
     if val_split > 0.0:
         n_val = max(1, int(n_total * val_split))
-        n_train = n_total - n_val
-        from torch.utils.data import random_split, DataLoader as _DL
-        train_ds, val_ds = random_split(
-            full_dataset, [n_train, n_val],
-            generator=torch.Generator().manual_seed(42),
-        )
+        from torch.utils.data import Subset, DataLoader as _DL
+        # Split INDICES, not the dataset object: the old random_split gave the
+        # val subset the augmenting dataset, so validation ran on flipped/
+        # jittered pairs and the number couldn't be compared across evals
+        # (AUDIT_2026-08-10 open item, closed 2026-08-22). Same seed keeps the
+        # membership deterministic; val reads from an augment=False instance.
+        perm = torch.randperm(n_total, generator=torch.Generator().manual_seed(42)).tolist()
+        train_ds = Subset(full_dataset, perm[n_val:])
+        val_ds = Subset(HDRPairDataset(pair_dir=pair_dir, augment=False), perm[:n_val])
         train_loader = _DL(
             train_ds, batch_size=batch_size, shuffle=True,
             num_workers=num_workers, drop_last=True,
@@ -530,7 +535,7 @@ def train(
                             output_dir, f"{model_size}_decoder_ema_best.safetensors"
                         )
                         ema_weights = {k: v.cpu().contiguous() for k, v in ema.shadow.items()}
-                        safetensors.torch.save_file(ema_weights, best_ema_path)
+                        atomic_safetensors_save(ema_weights, best_ema_path)
                         logger.info(f"  ★ New best PSNR: {best_psnr:.2f} dB (step {step})")
                         stall_count = 0
                     else:
@@ -557,7 +562,7 @@ def train(
         # ── Checkpoint ────────────────────────────────────────────────────────
         if step % save_every == 0 or step == steps:
             ckpt_path = os.path.join(output_dir, f"{model_size}_decoder_step{step:06d}.pth")
-            torch.save(
+            atomic_torch_save(
                 {
                     "step":       step,
                     "model":      model.state_dict(),
@@ -577,7 +582,7 @@ def train(
             # Also save EMA-only weights for inference (smaller file, faster load)
             ema_path = os.path.join(output_dir, f"{model_size}_decoder_ema_step{step:06d}.safetensors")
             ema_weights = {k: v.cpu().contiguous() for k, v in ema.shadow.items()}
-            safetensors.torch.save_file(ema_weights, ema_path)
+            atomic_safetensors_save(ema_weights, ema_path)
 
             logger.info(f"  Checkpoint saved: {ckpt_path}")
             logger.info(f"  EMA weights saved: {ema_path}")
@@ -709,7 +714,10 @@ if __name__ == "__main__":
     parser.add_argument("--patience",    default=0,           type=int,
                         help="Early stop after N evals without PSNR improvement (0 = disabled)")
 
+    parser.add_argument("--seed", type=int, default=20260822,
+                        help="Global seed (python/numpy/torch/cuda) for run reproducibility")
     args = parser.parse_args()
+    seed_everything(args.seed)
 
     train(
         pair_dir=args.pair_dir,

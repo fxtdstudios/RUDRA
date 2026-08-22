@@ -95,6 +95,11 @@ from copy import deepcopy
 from typing import Dict, List, Optional, Tuple, Any
 
 import torch
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+from rudra.trainer_utils import atomic_safetensors_save, seed_everything
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
@@ -389,7 +394,7 @@ def export_lora_safetensors(
     if metadata:
         meta.update({k: str(v) for k, v in metadata.items()})
 
-    save_file(state, output_path, metadata=meta)
+    atomic_safetensors_save(state, output_path, metadata=meta)
     size_mb = os.path.getsize(output_path) / 1e6
     logger.info("[LoRA] Saved %d layers → %s  (%.1f MB)", len(lora_layers), output_path, size_mb)
     return output_path
@@ -1338,7 +1343,10 @@ if __name__ == "__main__":
     parser.add_argument("--quantize_base", default=None, choices=["nf4", "int8"],
                         help="Quantize frozen base model weights. 'nf4' required for Flux on 16GB.")
 
+    parser.add_argument("--seed", type=int, default=20260822,
+                        help="Global seed (python/numpy/torch/cuda) for run reproducibility")
     args = parser.parse_args()
+    seed_everything(args.seed)
 
     train(
         cache_dir         = args.cache_dir,
