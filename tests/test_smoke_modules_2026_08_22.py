@@ -26,8 +26,8 @@ from rudra.train_modes import LossWeights, RUDRATrainMode, scheduled_loss_weight
 
 # ── sampler ─────────────────────────────────────────────────────────────────
 
-def _stats(peak, highlight_fraction):
-    return SampleHDRStats(index=0, peak=peak, p95=peak * 0.5, mean=peak * 0.1,
+def _stats(peak, highlight_fraction, index=0):
+    return SampleHDRStats(index=index, peak=peak, p95=peak * 0.5, mean=peak * 0.1,
                           highlight_fraction=highlight_fraction)
 
 
@@ -38,9 +38,8 @@ def test_bucket_ordering():
 
 
 def test_highlight_balanced_sampler_covers_dataset():
-    stats = [_stats(0.5, 0.0), _stats(2.0, 0.05), _stats(50.0, 0.4), _stats(8.0, 0.2)]
-    for i, s in enumerate(stats):
-        s.index = i
+    specs = [(0.5, 0.0), (2.0, 0.05), (50.0, 0.4), (8.0, 0.2)]
+    stats = [_stats(p, hf, index=i) for i, (p, hf) in enumerate(specs)]
     sampler = HighlightBalancedSampler(stats)
     idx = list(iter(sampler))
     assert len(idx) == len(sampler) > 0
@@ -63,14 +62,16 @@ def test_spatial_descriptor_shapes_and_finiteness():
 # ── train modes ─────────────────────────────────────────────────────────────
 
 def test_scheduled_loss_weights_progression():
-    for mode in RUDRATrainMode:
-        w0 = scheduled_loss_weights(mode, step=0, total_steps=1000)
-        w1 = scheduled_loss_weights(mode, step=999, total_steps=1000)
-        assert isinstance(w0, LossWeights) and isinstance(w1, LossWeights)
-        for w in (w0, w1):
-            for f in w.__dataclass_fields__:
-                v = getattr(w, f)
-                assert v >= 0.0 and v == v, f"{mode} {f} invalid: {v}"
+    # Signature is scheduled_loss_weights(step); stages land at 0/10k/40k+.
+    weights = {s: scheduled_loss_weights(s) for s in (0, 5_000, 15_000, 45_000, 80_000)}
+    for s, w in weights.items():
+        assert isinstance(w, LossWeights)
+        for f in w.__dataclass_fields__:
+            v = getattr(w, f)
+            assert v >= 0.0 and v == v, f"step {s} {f} invalid: {v}"
+    # highlight term must switch on as the schedule progresses
+    assert weights[45_000].highlight >= weights[0].highlight
+    assert list(RUDRATrainMode)  # modes enumerable"
 
 
 # ── exr_io ──────────────────────────────────────────────────────────────────

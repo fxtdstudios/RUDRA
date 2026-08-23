@@ -84,12 +84,21 @@ def _cvvdp_fn():
         if not colorvideovdp_available():
             return None
 
-        def jod(test: np.ndarray, ref: np.ndarray) -> float:
-            import torch as _t
-            to = lambda a: _t.from_numpy(np.ascontiguousarray(a, dtype=np.float32)).permute(2, 0, 1)[None]
-            value, backend = hdr_vdp3_jod(to(test), to(ref), color_space="rec2020",
-                                          diffuse_white_nits=1.0)  # inputs already absolute nits
-            return value if backend == "colorvideovdp" else None
+        def jod(test: np.ndarray, ref: np.ndarray):
+            # CVVDP's multi-scale pyramid needs a minimum image size, and its
+            # internals (or the proxy fallback) can raise on degenerate
+            # frames. A quality metric failing must never kill a benchmark
+            # sweep: record None for that pair instead.
+            if min(test.shape[0], test.shape[1]) < 64:
+                return None
+            try:
+                import torch as _t
+                to = lambda a: _t.from_numpy(np.ascontiguousarray(a, dtype=np.float32)).permute(2, 0, 1)[None]
+                value, backend = hdr_vdp3_jod(to(test), to(ref), color_space="rec2020",
+                                              diffuse_white_nits=1.0)  # already absolute nits
+                return value if backend == "colorvideovdp" else None
+            except Exception:
+                return None
         return jod
     except Exception:
         return None

@@ -104,8 +104,10 @@ def test_pq_torch_vs_numpy():
     codes = _grid()
     rel = _pq_eotf(codes)                                # diffuse-white-relative
     nits = pq_eotf(codes.numpy()[0, 0, 0])               # absolute nits
+    # hdr10 computes in float32, normalization in float64 — same-curve check
+    # at float32 precision; a wrong constant differs at the percent level.
     assert np.allclose(rel.numpy()[0, 0, 0] * radiometry.PQ_REF_WHITE_NITS,
-                       nits, rtol=1e-5, atol=1e-3)
+                       nits, rtol=2e-3, atol=1e-2)
 
 
 @needs_torch
