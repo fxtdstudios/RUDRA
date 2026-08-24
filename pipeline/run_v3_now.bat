@@ -19,6 +19,9 @@ set WORK=E:\RUDRA_v3_20260822
 set PAIRS=%WORK%\pairs
 set MODE=log2_extended
 set CROPS=3
+REM every Nth frame of 192fps sequences (24fps-equivalent motion; 8x fewer
+REM near-duplicate pairs; consecutive strided frames still form temporal clips)
+set VSTRIDE=8
 
 echo.
 echo [0/5] inventory the sources  (NAS share + E:\source_hdr)
@@ -34,7 +37,7 @@ type "%WORK%\inv_local.jsonl" >> "%WORK%\source_inventory.jsonl"
 echo.
 echo [1/5] prepare pairs  (correct HDR target storage: %MODE%, %CROPS% crops)
 python pipeline\prepare_pairs.py --inventory "%WORK%\source_inventory.jsonl" ^
-    --dst "%PAIRS%" --mode %MODE% --crops %CROPS% || exit /b 1
+    --dst "%PAIRS%" --mode %MODE% --crops %CROPS% --video-stride %VSTRIDE% || exit /b 1
 
 echo.
 echo [2/5] build manifests  (scene-safe, video forced into every split)

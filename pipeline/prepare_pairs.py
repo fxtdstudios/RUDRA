@@ -125,6 +125,14 @@ def main() -> int:
     parser.add_argument("--include-unknown-encoding", action="store_true",
                         help="Ingest sources whose EOTF scan_sources could not identify")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--video-stride", type=int, default=1,
+                        help="Ingest every Nth frame of image sequences. High-frame-rate "
+                             "footage (192fps HFR-2017) yields near-duplicate pairs at "
+                             "stride 1 and drowns the stills; 8 gives 24fps-equivalent "
+                             "motion, which is also better temporal supervision.")
+    parser.add_argument("--append", action="store_true",
+                        help="Add to an existing pairs dir: index is appended, sources "
+                             "whose outputs already exist are skipped. Sentinel must match.")
     parser.add_argument("--seed", type=int, default=20260822)
     args = parser.parse_args()
 
@@ -147,23 +155,58 @@ def main() -> int:
             print(f"  dropping {len(dropped):,} sources with UNKNOWN encoding "
                   f"(pass --include-unknown-encoding to ingest anyway, at your risk)")
         sources = [s for s in sources if s.get("encoding_guess") != "UNKNOWN"]
+    if args.video_stride > 1:
+        before = len(sources)
+        sources = [s for s in sources
+                   if not s.get("is_sequence_member")
+                   or ((_frame_index(Path(s["path"])) or 0) % args.video_stride == 0)]
+        print(f"  video stride {args.video_stride}: {before:,} -> {len(sources):,} sources")
     if args.limit:
         sources = sources[: args.limit]
 
     rng = np.random.default_rng(args.seed)
+    # Sequence members get crop origins seeded by SCENE, not the global stream:
+    # per-frame random crops made consecutive frames spatially unaligned, which
+    # is useless for temporal training (found 23 Aug 2026).
+    scene_rngs: dict[str, np.random.Generator] = {}
+    scene_origins: dict[tuple, list] = {}
     index_path = args.dst / "pairs_index.jsonl"
-    written, skipped, clipped_records = 0, 0, 0
+    written, skipped, clipped_records, unsupported = 0, 0, 0, 0
 
-    with index_path.open("w", encoding="utf-8") as index:
+    with index_path.open("a" if args.append else "w", encoding="utf-8") as index:
         for position, source in enumerate(sources):
             path = Path(source["path"])
+            if path.suffix.lower() not in (".exr", ".tif", ".tiff"):
+                unsupported += 1
+                continue
+            if args.append and (meta_dir / f"{position:07d}_{path.stem}.json").exists():
+                skipped += 1
+                continue
             linear = load_scene_linear(path, source["encoding_guess"])
             if linear is None:
                 skipped += 1
                 continue
 
-            for crop_idx, (crop, origin) in enumerate(
-                    crops_for(linear, args.crops, args.crop_size, rng)):
+            if source.get("is_sequence_member"):
+                scene = source["scene_id"]
+                key = (scene, linear.shape[0], linear.shape[1])
+                if key not in scene_origins:
+                    srng = scene_rngs.setdefault(scene, np.random.default_rng(
+                        (args.seed * 1_000_003) ^ (hash(scene) & 0x7FFFFFFF)))
+                    scene_origins[key] = [o for _, o in crops_for(
+                        linear, args.crops, args.crop_size, srng)]
+                h, w = linear.shape[:2]
+                size = args.crop_size
+                fixed = []
+                for (y, x) in scene_origins[key]:
+                    fixed.append((linear[y:y + size, x:x + size]
+                                  if args.crops > 1 and size > 0 and h >= size and w >= size
+                                  else linear, (y, x)))
+                crop_iter = fixed
+            else:
+                crop_iter = crops_for(linear, args.crops, args.crop_size, rng)
+
+            for crop_idx, (crop, origin) in enumerate(crop_iter):
                 frame = resize_frame(crop)
                 sdr = make_sdr(frame)
                 hdr, stats = encode_hdr_u16(frame, storage)
@@ -191,6 +234,7 @@ def main() -> int:
                 index.write(json.dumps({
                     "asset_id": stem,
                     "scene_id": source["scene_id"],
+                    "source_take": path.parent.name if source.get("is_sequence_member") else None,
                     "is_video": bool(source.get("is_sequence_member")),
                     "frame_index": _frame_index(path) if source.get("is_sequence_member") else None,
                     "sdr_path": str((sdr_dir / f"{stem}.png").resolve()),
@@ -212,7 +256,8 @@ def main() -> int:
     (args.dst / "_ingest_config.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     print(f"\n  pairs written        {written:,}")
-    print(f"  sources skipped      {skipped:,}")
+    print(f"  sources skipped      {skipped:,} (load failures / already present)")
+    print(f"  unsupported suffix   {unsupported:,} (only .exr/.tif ingest; .png sources are not HDR)")
     print(f"  records that clip    {clipped_records:,} ({clipped_records / max(written, 1):.2%})"
           f"   <- August corpus was 77.8%")
     print(f"  index sha256         {digest[:16]}...")

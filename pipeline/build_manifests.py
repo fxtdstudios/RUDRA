@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -36,12 +37,39 @@ if str(REPO) not in sys.path:
 MIN_TEMPORAL_TRAIN_SCENES = 6
 MIN_TEMPORAL_HELDOUT_SCENES = 2
 
+# Production footage arrives as scene/shot/camera-take hierarchies. Splitting
+# by take treats nine shots of the same bar as nine "scenes" -- the same set,
+# lighting and actors then sit on both sides of the split boundary (leakage,
+# found 23 Aug 2026: HdM-HFR-2017 produced 13 "scenes" from 3 physical ones).
+_TAKE_SEG = re.compile(r"^[A-Z]\d{3}C\d{3}_\d{6}(_\w+)?$")   # A004C006_170212_R3W4
+_SHOT_SUFFIX = re.compile(r"[_-]Shot[_-]?\d+$", re.IGNORECASE)
+
+
+def normalize_scene_id(scene_id: str) -> str:
+    """Collapse shot/take structure so a scene id names a PHYSICAL scene."""
+    path_part, _, stem = scene_id.partition("::")
+    segments = [s for s in path_part.split("/") if not _TAKE_SEG.match(s)]
+    if segments:
+        segments[-1] = _SHOT_SUFFIX.sub("", segments[-1])
+    if stem and not _TAKE_SEG.match(stem):
+        stem = _SHOT_SUFFIX.sub("", stem)
+        return "/".join(segments) + "::" + stem
+    return "/".join(segments)
+
 
 def load_records(pairs_dir: Path) -> list[dict]:
     index = pairs_dir / "pairs_index.jsonl"
     if not index.exists():
         raise SystemExit(f"error: {index} not found -- run prepare_pairs.py first")
-    return [json.loads(line) for line in index.open(encoding="utf-8") if line.strip()]
+    records = [json.loads(line) for line in index.open(encoding="utf-8") if line.strip()]
+    raw = {r["scene_id"] for r in records}
+    for record in records:
+        record["scene_id"] = normalize_scene_id(record["scene_id"])
+    merged = {r["scene_id"] for r in records}
+    if len(merged) != len(raw):
+        print(f"  scene normalization: {len(raw)} raw scene ids -> "
+              f"{len(merged)} physical scenes (shot/take structure collapsed)")
+    return records
 
 
 def split_scenes(scenes: list[str], val_frac: float, test_frac: float,
@@ -128,18 +156,34 @@ def build_video_manifest(image_rows: list[dict], clip_length: int, stride: int,
 
     clips = []
     for scene, rows in sorted(by_scene.items()):
-        rows.sort(key=lambda r: r["frame_index"])
+        # Multi-crop ingest emits several records per frame (…_c0/_c1/_c2) with
+        # the same frame_index; keeping them all made every window non-
+        # consecutive and produced 0 clips (23 Aug 2026). One record per frame:
+        # prefer the _c0 crop so a clip is spatially consistent when the ingest
+        # used scene-seeded crop origins.
+        per_frame: dict[tuple, dict] = {}
+        for r in rows:
+            key = (r.get("source_take") or "", r["frame_index"])
+            best = per_frame.get(key)
+            if best is None or (str(r["asset_id"]).endswith("_c0")
+                                and not str(best["asset_id"]).endswith("_c0")):
+                per_frame[key] = r
+        rows = sorted(per_frame.values(), key=lambda r: (r.get("source_take") or "", r["frame_index"]))
         for start in range(0, len(rows) - clip_length + 1, stride):
             window = rows[start:start + clip_length]
+            if len({w.get("source_take") or "" for w in window}) > 1:
+                continue  # never span a cut between camera takes
             frames = [w["frame_index"] for w in window]
-            if frames != list(range(frames[0], frames[0] + clip_length)):
-                continue  # a gap in the sequence -- skip rather than fabricate
+            steps = {b - a for a, b in zip(frames, frames[1:])}
+            if len(steps) != 1 or next(iter(steps)) <= 0:
+                continue  # a gap or irregular stride -- skip rather than fabricate
+            step = next(iter(steps))
             clips.append({
                 "clip_id": f"{scene}:{frames[0]}-{frames[-1]}",
                 "scene_id": scene,
                 "split": window[0]["split"],
                 "frame_numbers": frames,
-                "frame_step": 1,
+                "frame_step": step,
                 "sdr_frames": [w["sdr_path"] for w in window],
                 "hdr_frames": [w["hdr_path"] for w in window],
                 "metadata_paths": [w.get("metadata_path") for w in window],
