@@ -12,6 +12,9 @@ REM  land there). Temporal needs >= 6 independent SCENES total, or it stays
 REM  gated while the image model trains fine.
 REM ===================================================================
 setlocal
+REM cv2 ships with EXR decode disabled; scan_sources uses cv2 for radiometry
+REM probing, so without this every EXR scans blind (ingest read_exr is fine).
+set OPENCV_IO_ENABLE_OPENEXR=1
 
 set SRC_NAS=\\192.168.100.200\Data\08_Research
 set SRC_LOCAL=E:\source_hdr

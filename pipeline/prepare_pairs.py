@@ -93,18 +93,31 @@ def crops_for(image: np.ndarray, count: int, size: int, rng: np.random.Generator
     return out
 
 
-def load_scene_linear(path: Path, encoding: str) -> np.ndarray | None:
+def load_scene_linear(path: Path, encoding: str, retries: int = 3) -> np.ndarray | None:
+    """Read + decode one source. Retries with backoff: a transient SMB drop on
+    the NAS made EVERY read fail for the rest of a run (23 Aug 2026 — 3,677
+    sources skipped that probed fine minutes later)."""
+    import time
+
     suffix = path.suffix.lower()
-    try:
-        if suffix == ".exr":
-            data = read_exr(path)
-        elif suffix in (".tif", ".tiff"):
-            data, _ = read_tif(path)
-        else:
-            return None
-    except Exception as exc:
-        print(f"  skip {path.name}: {exc}", file=sys.stderr)
-        return None
+    data = None
+    for attempt in range(retries):
+        try:
+            if suffix == ".exr":
+                data = read_exr(path)
+            elif suffix in (".tif", ".tiff"):
+                data, _ = read_tif(path)
+            else:
+                return None
+            break
+        except Exception as exc:
+            if attempt + 1 < retries:
+                print(f"  retry {attempt + 1}/{retries - 1} {path.name}: {exc}",
+                      file=sys.stderr)
+                time.sleep(2.0 * (attempt + 1))
+            else:
+                print(f"  skip {path.name}: {exc}", file=sys.stderr)
+                return None
     if data is None:
         return None
     return np.asarray(to_scene_linear(data, encoding), dtype=np.float32)
