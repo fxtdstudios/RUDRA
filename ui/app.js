@@ -138,7 +138,9 @@
   function layoutWipe() {
     var plate = $("plate");
     if (plate.hidden) { return; }
-    var w = plate.clientWidth, h = plate.clientHeight;
+    var top = $("imgHdr");
+    var w = top.clientWidth, h = top.clientHeight;
+    if (!w || !h) { return; }
     var img = $("imgBase");
     img.style.width = w + "px";
     img.style.height = h + "px";
@@ -204,6 +206,7 @@
       state.last = d;
       $("empty").hidden = true;
       $("plate").hidden = false;
+      $("imgHdr").onload = layoutWipe;
       $("imgHdr").src = d.hdr_png;
       $("imgBase").src = d.baseline_png;
       $("peakBadge").textContent = "Display peak " + Math.round(d.metrics.display_nits) + " nits";

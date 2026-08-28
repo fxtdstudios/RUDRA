@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <div class="app">
@@ -89,7 +89,7 @@
       <div class="scopes">
         <div class="scope wave">
           <div class="plabel"><span>Waveform</span><span class="note">nits, log</span></div>
-          <div class="plot"><svg id="wave" width="100%" height="146" viewBox="0 0 500 146" preserveAspectRatio="none"></svg></div>
+          <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="xMidYMid meet"></svg></div>
         </div>
         <div class="scope hist">
           <div class="plabel"><span>Histogram</span><span class="note">log2 stops</span></div>
@@ -173,6 +173,6 @@
 </div>
 
 <input type="file" id="file" accept="image/*" hidden>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
