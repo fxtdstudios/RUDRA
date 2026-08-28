@@ -1,0 +1,36 @@
+<!doctype html><meta charset="utf-8"><canvas id="c" width="8" height="8"></canvas>
+<script src="../../ui/compositor.js"></script>
+<script>
+window.READY = false;
+(async function () {
+  var payload = await (await fetch("payload.json")).json();
+  var ctx = window.RudraGL.create(document.getElementById("c"));
+  if (!ctx) { window.FAIL = "no webgl2"; return; }
+  ctx.setFrame({
+    width: payload.width, height: payload.height,
+    sdr: new Uint8Array(payload.sdr),
+    fields: new Uint16Array(payload.fields),
+    shadow: new Uint16Array(payload.shadow)
+  });
+  window.runCase = function (p) {
+    ctx.setParams({strength: p.strength, mode: p.mode, preserve: p.preserve,
+                   displayNits: p.displayNits, show: "model"});
+    ctx.present();
+    var comp = Array.from(ctx.readComposite("model"));
+    var gl = ctx.gl, s = ctx.size();
+    var px = new Uint8Array(s.width * s.height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, s.width, s.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    var disp = new Array(px.length);
+    for (var i = 0; i < px.length; i++) { disp[i] = px[i] / 255; }
+    return {composite: comp, display: disp, peak: ctx.peakNits(), mean: ctx.meanNits()};
+  };
+  window.sampleCase = function () {
+    var s = ctx.sample();
+    return {width: s.width, height: s.height,
+            model: Array.from(s.model), baseline: Array.from(s.baseline),
+            index: Array.from(s.index)};
+  };
+  window.READY = true;
+}());
+</script>

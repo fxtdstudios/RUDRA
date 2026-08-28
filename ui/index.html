@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <div class="app">
@@ -54,15 +54,10 @@
           PNG, JPEG or TIFF — anywhere in this window
         </div>
         <div class="plate" id="plate" hidden>
-          <img id="imgHdr" alt="RUDRA reconstruction">
-          <div class="under" id="under"><img id="imgBase" alt="Inverse-ACES baseline"></div>
-          <div class="wipe" id="wipe"></div>
-          <div class="grip" id="grip">
-            <svg width="9" height="7" viewBox="0 0 9 7" fill="none" aria-hidden="true">
-              <path d="M3 1L1 3.5L3 6M6 1L8 3.5L6 6" stroke="#d8d8d8" stroke-width="1"/></svg>
-          </div>
-          <span class="badge" style="left:8px;bottom:8px">Inverse-ACES baseline</span>
-          <span class="badge right" style="right:8px;bottom:8px">RUDRA reconstruction</span>
+          <canvas id="gl" title="Hold to see the baseline"></canvas>
+          <span class="badge right" id="plateLabel"
+                style="left:8px;bottom:8px">RUDRA reconstruction</span>
+          <span class="badge" style="right:8px;bottom:8px">Hold B, or the image, to flip</span>
           <span class="badge num" style="right:8px;top:8px" id="peakBadge">Display peak 203 nits</span>
         </div>
       </div>
@@ -80,9 +75,8 @@
         <div class="scrub"><div class="track"></div><div class="head" style="left:0"></div></div>
         <span class="num" style="font-size:10px;color:#6e6e6e" id="srcInfo">—</span>
         <div class="seg" id="viewMode">
-          <button type="button" data-view="ab" class="on">A/B</button>
-          <button type="button" data-view="model">Model</button>
-          <button type="button" data-view="base">Baseline</button>
+          <button type="button" data-view="model" class="on">RUDRA</button>
+          <button type="button" data-view="baseline">Baseline</button>
         </div>
       </div>
 
@@ -173,6 +167,7 @@
 </div>
 
 <input type="file" id="file" accept="image/*" hidden>
-<script src="app.js?v=3"></script>
+<script src="compositor.js?v=1"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

@@ -113,21 +113,17 @@ html, body {
    which pushes the transport down and leaves a dead band under the image --
    exactly what the 28 Aug capture showed with a 1024x1024 frame. */
 .plate { position: relative; line-height: 0; max-width: 100%; max-height: 100%; }
-.plate img { display: block; max-width: 100%; max-height: 100%;
-             width: auto; height: auto; }
-.plate .under { position: absolute; inset: 0; overflow: hidden; }
-.plate .under img { position: absolute; left: 0; top: 0; }
-.wipe { position: absolute; top: 0; width: 1px; height: 100%; background: #e8e8e8; opacity: .85; }
-.grip {
-  position: absolute; width: 15px; height: 17px; background: var(--bg);
-  border: 1px solid #d8d8d8; display: flex; align-items: center; justify-content: center;
-  transform: translate(-7px, -8px); cursor: ew-resize;
-}
+/* One canvas, not two images and a divider. The compare is a flip: the frame
+   never moves, so the eye compares the same pixels instead of chasing a seam. */
+.plate canvas { display: block; max-width: 100%; max-height: 100%;
+                width: auto; height: auto; cursor: pointer; }
 .badge {
   position: absolute; padding: 3px 7px; background: rgba(13,13,13,.86);
   font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-2);
 }
 .badge.right { color: #e0e0e0; }
+.badge#plateLabel { transition: none; }
+.badge#plateLabel.base { color: var(--fg-2); }
 .empty { color: var(--fg-3); font-size: 11px; text-align: center; letter-spacing: .02em; }
 .empty b { display: block; color: var(--fg-2); font-weight: 500; margin-bottom: 5px; }
 

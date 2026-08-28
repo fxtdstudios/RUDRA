@@ -8,6 +8,8 @@ header hard-coded "Backbone: Flux 1 Dev". Nothing you clicked touched a model.
 Now it serves two endpoints beside the static files:
 
   GET  /api/model                what checkpoint is actually loaded
+  POST /api/frame                one forward pass -> raw fields, for the GPU
+                                 compositor in ui/compositor.js
   POST /api/infer                run SDR2HDRNet on an uploaded image
 
 What the numbers mean, precisely, because the mock's did not:
@@ -332,6 +334,99 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     }
 
 
+MAX_FIELD_MAGNITUDE = 64.0
+
+
+def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, bytes]:
+    """One forward pass. The client composes; this only ships the fields.
+
+    /api/infer composes server-side and returns two PNGs, which means every
+    move of the strength or display-peak slider costs an upload, a forward
+    pass and a re-encode. The fields the head produces -- log residual and the
+    two masks -- do not depend on recovery_mode, residual_strength or
+    preserve_outside, so sending them once lets the page rebuild every
+    combination on its own GPU. That is the difference between a control that
+    responds in a second and one that responds in a frame.
+
+    Body layout, little-endian, offsets in the header:
+        fields   H*W*4 float16   log residual RGB, highlight mask in alpha
+        shadow   H*W   float16   shadow mask
+        sdr      H*W*3 uint8     exactly the pixels the network was given
+    The SDR travels back because the page must compute the analytic baseline
+    from the same pixels the network saw, not from its own resize of the file.
+    """
+    import numpy as np
+    import torch
+    from PIL import Image
+
+    from training.infer_sdr2hdr import predict_fields
+
+    started = time.time()
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    source = f"{image.width}x{image.height}"
+    max_side = int(params.get("max_side", 1600))
+    if max(image.size) > max_side:
+        ratio = max_side / max(image.size)
+        image = image.resize((max(1, int(image.width * ratio)),
+                              max(1, int(image.height * ratio))), Image.LANCZOS)
+
+    sdr_u8 = np.asarray(image, dtype=np.uint8)
+    sdr = sdr_u8.astype(np.float32) / 255.0
+    tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
+
+    tile_size = int(params.get("tile_size", 0))
+    overlap = int(params.get("tile_overlap", 64))
+    try:
+        fields = predict_fields(model, tensor, tile_size=tile_size, overlap=overlap)
+    except Exception as exc:                       # noqa: BLE001 - re-raised below
+        if "out of memory" not in str(exc).lower():
+            raise
+        # An untiled pass is preferred because it makes the viewer and the
+        # master agree exactly; falling back beats failing.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        fields = predict_fields(model, tensor, tile_size=512, overlap=overlap)
+
+    residual = fields["residual"][0].permute(1, 2, 0).cpu().numpy()
+    highlight = fields["highlight"][0].permute(1, 2, 0).cpu().numpy()
+    shadow = fields["shadow"][0, 0].cpu().numpy()
+
+    def _half(a):
+        # log residual is added in the log domain and then clamped to
+        # log1p(max_hdr * log_scale) = 4.17, so anything past a few units is
+        # already saturating; +/-64 keeps every value that can matter inside
+        # half float with room to spare.
+        return np.clip(np.nan_to_num(a, nan=0.0, posinf=MAX_FIELD_MAGNITUDE,
+                                     neginf=-MAX_FIELD_MAGNITUDE),
+                       -MAX_FIELD_MAGNITUDE, MAX_FIELD_MAGNITUDE).astype(np.float16)
+
+    packed = _half(np.concatenate([residual, highlight], axis=-1))
+    shadow16 = _half(shadow)
+    body = packed.tobytes() + shadow16.tobytes() + sdr_u8.tobytes()
+
+    height, width = sdr_u8.shape[:2]
+    header = {
+        "ok": True,
+        "width": width,
+        "height": height,
+        "tiled": bool(fields["tiled"]),
+        "log_scale": float(getattr(model, "log_scale", 16.0)),
+        "max_hdr": float(getattr(model, "max_hdr", 4.0)),
+        "peak_nits": NETWORK_PEAK_NITS,
+        "diffuse_white_nits": DIFFUSE_WHITE_NITS,
+        "source_resolution": source,
+        "resolution": f"{width}x{height}",
+        "elapsed_s": round(time.time() - started, 3),
+        "offsets": {
+            "fields": 0,
+            "shadow": width * height * 4 * 2,
+            "sdr": width * height * 4 * 2 + width * height * 2,
+            "total": len(body),
+        },
+    }
+    return header, body
+
+
 # ---------------------------------------------------------------------------
 # mastering
 # ---------------------------------------------------------------------------
@@ -445,6 +540,20 @@ def make_handler(args):
             if "/api/" in (self.path or ""):
                 super().log_message(fmt, *a)
 
+        def _binary(self, header: dict, body: bytes) -> None:
+            """JSON in a header, floats in the body.
+
+            Base64 in JSON would inflate a 14 MB frame to 19 MB and cost a
+            decode on both ends, for data the GPU wants as raw bytes anyway.
+            """
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("X-Rudra-Frame", json.dumps(header))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
         def _json(self, payload: dict, status: int = 200) -> None:
             body = json.dumps(payload).encode("utf-8")
             self.send_response(status)
@@ -484,7 +593,7 @@ def make_handler(args):
             self.wfile.write(payload)
 
         def do_POST(self):
-            if not self.path.startswith(("/api/infer", "/api/master")):
+            if not self.path.startswith(("/api/infer", "/api/master", "/api/frame")):
                 return self.send_error(404, "no such endpoint")
             model, info = ensure_model(args)
             if model is None:
@@ -508,6 +617,13 @@ def make_handler(args):
                                           status=400)
                     model, info_used = model_for(requested, args)
                 params.setdefault("checkpoint_name", info_used.get("name"))
+                if self.path.startswith("/api/frame"):
+                    header, body = run_frame(model, raw, params, args)
+                    header["checkpoint"] = (info_used.get("name")
+                                            or info_used.get("checkpoint"))
+                    header["step"] = info_used.get("step")
+                    header["gpu"] = info_used.get("gpu")
+                    return self._binary(header, body)
                 if self.path.startswith("/api/master"):
                     payload = run_master(model, raw, params, args)
                 else:

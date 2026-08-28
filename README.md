@@ -19,15 +19,32 @@ ordinary 8-bit frame and it reconstructs the highlights the tone map threw away.
 
 ![RUDRA Studio](docs/rudra_studio.png)
 
-Drop a frame in. The wipe compares the reconstruction against the analytic
-inverse tone map, so you see what the network added rather than what the tone
-map already gave you. Waveform and histogram are measured from the prediction.
-**Master EXR** writes a full-resolution ACES 2065-1 container with AP0
-primaries, ST 2065-4 chromaticities and a JSON sidecar of delivery metadata.
+Drop a frame in. The network runs once, on the GPU, and hands the page its raw
+fields — everything after that (residual strength, recovery mode, preserve,
+display peak) is composed on your own GPU, so the controls move at frame rate
+rather than at one round trip each.
+
+Compare by flipping: hold **B**, or press and hold the image, and it swaps to
+the analytic inverse tone map with the frame staying exactly where it is. That
+is a much easier thing for the eye to read than a seam travelling across the
+picture, because you are comparing the same pixels rather than tracking a
+moving edge. Waveform, histogram and every measured number follow the composite
+you are actually looking at; MaxCLL and MaxFALL come from an exact GPU
+reduction, not from a downsample. **Master EXR** writes a full-resolution ACES
+2065-1 container with AP0 primaries, ST 2065-4 chromaticities and a JSON
+sidecar of delivery metadata.
+
+Needs a browser with WebGL2 and float render targets — any current Chrome,
+Edge, Firefox or Safari.
 
 ```bash
-python ui/server.py --checkpoint work/checkpoints/image/best.pt --preload
+python ui/server.py --preload
 ```
+
+It loads the newest `shipped_*.pt` it can find under the checkpoint roots — at
+present v5 step 81 000. Pin a different one with `--checkpoint <path>`, or
+compare two without restarting: the page can score any checkpoint against the
+same frame in place.
 
 ---
 
@@ -139,36 +156,63 @@ Three things that will make a training log make sense:
 
 ## Results
 
-Measured on the held-out split of the corpus below, and on a controlled frame
-(mid-grey field, one small specular, 0.36% of pixels clipped) that isolates
-highlight reconstruction.
+Every figure below comes from the same held-out split and the same fixed
+evaluation set. `clean_baseline_psnr_log` is 52.757246777 and
+`hard_baseline_psnr_log` is 30.238924973 in all three runs, identical to nine
+decimal places, so the runs are directly comparable and the differences are not
+sampling noise.
 
-**Direct SDR → HDR, image model** — gain in log-radiance PSNR over the analytic
-inverse-ACES baseline the network sits on top of. `hard` is the deployment
-condition: unknown tone curve, 4:2:0 chroma, banding, JPEG.
+`hard` is the deployment condition — unknown tone curve, 4:2:0 chroma, banding,
+JPEG. `clean` is well-graded input that the analytic inverse-ACES baseline
+already handles. Both columns are gains in log-radiance PSNR over that baseline.
 
-| Checkpoint | hard | clean | Headroom in highlight mask |
+**Direct SDR → HDR, image model**
+
+| Checkpoint | hard | clean | composite |
 |---|---|---|---|
-| v3b, step 44 000 | +1.71 dB | −0.90 dB | **+2.18 st** |
-| v4, step 78 000 (6× data) | **+1.74 dB** | −0.18 dB | +0.95 st |
+| v3b, step 44 000 | +1.71 dB | −0.90 dB | — |
+| v3b, step 48 000 | +1.81 dB | −4.22 dB | — |
+| v4, step 58 000 (6× data) | +1.83 dB | −2.45 dB | −0.62 |
+| v4, step 78 000 | +1.74 dB | −0.18 dB | +1.56 |
+| **v5, step 81 000 — shipped** | **+1.80 dB** | **+0.02 dB** | **+1.80** |
 
-v4 saw six times the footage and gained 0.03 dB, while reconstructing 1.23 stops
-*less* highlight. That is the corpus-ceiling problem, not a training problem:
-78% of public HDR footage is delivery-graded, and L1 against pixels sitting on
-that ceiling teaches the model to cap. The censored-highlight loss is the fix;
-it is in the trainer and its effect is not yet measured here.
+Peak highlight recovery has not moved in three runs. Around +1.8 dB is where
+this architecture sits on this corpus, and more data did not change that: v4 saw
+six times the footage for 0.03 dB.
 
-**Inference mode**, step 44 000, val split, 128 batches. `preserve_outside`
-blends back to the baseline where the learned masks are cold:
+What moved is the price. v3b and v4 bought their highlight recovery by damaging
+well-graded input, by as much as 4.2 dB. v5 gets the same recovery for nothing.
+That is the censored-highlight loss working: 78% of public HDR footage is
+delivery-graded, and plain L1 against pixels sitting on a grading ceiling teaches
+the model to cap. Treating those pixels as *at least* the ceiling rather than
+*exactly* the ceiling removes the pressure.
+
+**Both long runs peak near 80 000 steps and decay after.**
+
+| | step 78–81 k | step 100 000 |
+|---|---|---|
+| v4, clean | −0.18 dB | −3.44 dB |
+| v5, clean | +0.02 dB | −3.96 dB |
+
+Every one of v5's last fifteen evaluations is negative on clean input, and
+`clean_log_l1` climbs from 0.00496 — better than the 0.00513 baseline — to
+0.00722, while hard-condition highlight error barely moves. v4 does the same
+thing without the censored loss, so this is the cosine schedule annealing the
+model onto the delivery-graded majority, not an artefact of the new term. Treat
+80 000 steps as the useful budget for this recipe; best-checkpoint selection is
+what rescues a longer run.
+
+**preserve_outside**, v5 step 81 000. Blending back to the baseline where the
+learned masks are cold:
 
 | Mode | clean PSNR_log | gain | hard PSNR_log | gain |
 |---|---|---|---|---|
 | inverse-ACES baseline | 52.76 | — | 30.24 | — |
-| plain | 51.86 | −0.90 | 31.95 | +1.71 |
-| **preserve_outside** | **52.77** | **+0.01** | 31.79 | +1.55 |
+| plain | 52.78 | +0.02 | 32.04 | +1.80 |
+| **preserve_outside** | **53.42** | **+0.67** | 31.91 | +1.67 |
 
-Preserving outside the masks costs 0.16 dB on degraded input and removes the
-regression on clean input entirely, so it is the shipped default.
+It costs 0.13 dB on degraded input and adds 0.65 dB on clean input, so it stays
+the shipped default.
 
 **Corpus.** 28 542 pairs across 976 physical scenes — 963 Poly Haven stills and
 13 video scenes. Whole scenes are held out; no scene straddles a split.
@@ -177,8 +221,9 @@ Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifes
 <manifest>`.
 
 > These are gains over RUDRA's own analytic baseline, not a comparison against
-> published inverse tone mapping work, and CVVDP JOD numbers are not in yet.
-> Read them as internal progress, not as a benchmark result.
+> published inverse tone mapping work. CVVDP JOD numbers are not in yet, and
+> highlight-mask headroom has not been re-measured on v5. Read them as internal
+> progress, not as a benchmark result.
 
 ---
 
@@ -192,10 +237,23 @@ rudra/delivery/   Torch-free: DoVi L1 / HDR10+, ACES / EXR / OCIO, grade
 pipeline/         Corpus construction and its gates: scanner, pair preparation,
                   HDR storage (hdr_io), manifests, verify_dataset
 training/         Trainers, evaluation, inference, benchmarks
-ui/               RUDRA Studio: the page and its inference server
+ui/               RUDRA Studio: the page, its GPU compositor and the
+                  inference server behind them
 config/, configs/ VAE registry and training recipes
 tests/            Curve round-trips, corpus guards, delivery, target decode
 ```
+
+The composite lives in three languages — torch in `rudra/sdr2hdr.py`, GLSL in
+`ui/compositor.js`, numpy in `tests/compose_reference.py` — and the last one is
+the reference the other two are checked against, so the picture on screen and
+the EXR that Master writes cannot drift apart:
+
+```bash
+pytest tests/test_frame_fields_2026_08_28.py   # torch  vs the reference
+python tests/webgl_parity/parity.py            # shader vs the reference
+```
+
+The shader check runs headless on software GL, so it needs no GPU and no torch.
 
 Every script has `--help` and a docstring saying what it does and why.
 `pipeline/verify_dataset.py` lists the nine corpus invariants;

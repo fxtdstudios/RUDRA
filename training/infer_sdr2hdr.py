@@ -119,6 +119,63 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
 
 
 @torch.inference_mode()
+def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
+                   overlap: int) -> dict[str, torch.Tensor]:
+    """The raw head fields, stitched: log residual, highlight mask, shadow mask.
+
+    ``recovery_mode``, ``residual_strength`` and ``preserve_outside`` never
+    touch these three -- they only enter the composition that happens after.
+    So a client that holds the fields can rebuild any combination of them
+    without another forward pass, which is what lets RUDRA Studio's controls
+    run at frame rate instead of at one HTTP round trip each.
+
+    Feathering is applied to the fields rather than to the composed
+    prediction, so inside an overlap band a tiled frame differs from
+    ``predict_image`` by the difference between blending before and after
+    ``expm1``. It is small, and it disappears entirely when the frame fits in
+    one tile -- which is why the viewer asks for an untiled pass when it can.
+    """
+    if sdr.shape[0] != 1:
+        raise ValueError("predict_fields expects one image at a time")
+    _, _, height, width = sdr.shape
+
+    def _run(tile: torch.Tensor):
+        amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda \
+            else contextlib.nullcontext()
+        with amp:
+            out = model(tile, preserve_outside=False, recovery_mode="all",
+                        residual_strength=1.0)
+        return (out.log_residual.float(), out.highlight_mask.float(),
+                out.shadow_mask.float())
+
+    if tile_size <= 0 or (height <= tile_size and width <= tile_size):
+        residual, highlight, shadow = _run(sdr)
+        return {"residual": residual, "highlight": highlight,
+                "shadow": shadow, "tiled": False}
+
+    if overlap < 0 or overlap >= tile_size:
+        raise ValueError("tile overlap must be >= 0 and smaller than tile size")
+    device = sdr.device
+    residual = torch.zeros((1, 3, height, width), device=device, dtype=torch.float32)
+    highlight = torch.zeros((1, 1, height, width), device=device, dtype=torch.float32)
+    shadow = torch.zeros((1, 1, height, width), device=device, dtype=torch.float32)
+    weights = torch.zeros((1, 1, height, width), device=device, dtype=torch.float32)
+    for y in _tile_starts(height, tile_size, overlap):
+        for x in _tile_starts(width, tile_size, overlap):
+            tile = sdr[..., y:min(y + tile_size, height), x:min(x + tile_size, width)]
+            r, h, s = _run(tile)
+            th, tw = tile.shape[-2], tile.shape[-1]
+            weight = _tile_weight(th, tw, overlap, y, x, height, width, device)
+            residual[..., y:y + th, x:x + tw] += r * weight
+            highlight[..., y:y + th, x:x + tw] += h * weight
+            shadow[..., y:y + th, x:x + tw] += s * weight
+            weights[..., y:y + th, x:x + tw] += weight
+    weights = weights.clamp_min(1e-6)
+    return {"residual": residual / weights, "highlight": highlight / weights,
+            "shadow": shadow / weights, "tiled": True}
+
+
+@torch.inference_mode()
 def predict_temporal(model: TemporalHDRRefiner, sdr: torch.Tensor, initial: torch.Tensor,
                      tile_size: int, overlap: int) -> torch.Tensor:
     """Memory-bounded spatial tiling for a complete temporal clip."""
