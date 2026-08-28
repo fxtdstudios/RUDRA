@@ -29,8 +29,17 @@ from ..hdr10 import REC2020_LUMA
 
 __all__ = [
     "RegionEV", "GradeControls", "qualifier_mask", "apply_grade",
+    "apply_region_ev", "region_ev_gain", "DEFAULT_REGION_BANDS",
     "itm_strength_map",
 ]
+
+# The three bands RUDRA Studio's Region EV panel opens with. Neutral by
+# default: a tool must not grade a frame nobody asked it to grade.
+DEFAULT_REGION_BANDS = (
+    {"label": "highlights", "low_nits": 400.0, "high_nits": 2000.0, "ev": 0.0},
+    {"label": "speculars", "low_nits": 2000.0, "high_nits": 8000.0, "ev": 0.0},
+    {"label": "shadows", "low_nits": 0.05, "high_nits": 12.0, "ev": 0.0},
+)
 
 
 @dataclass
@@ -87,6 +96,35 @@ def qualifier_mask(
     mask = np.minimum(rise, fall)
     # smoothstep for C1-continuous feather edges
     return (mask * mask * (3.0 - 2.0 * mask)).astype(np.float32)
+
+
+def region_ev_gain(rgb_nits: np.ndarray, bands, softness_stops: float = 1.0) -> np.ndarray:
+    """Per-pixel linear gain (H, W, 1) from a set of luminance-qualified EV bands.
+
+    Step 2 of ``apply_grade`` on its own, split out because two other things
+    need exactly this number and nothing else in the grade: RUDRA Studio's
+    shader, which applies it on the viewer's GPU so the Region EV panel
+    responds at frame rate, and the EXR writer, which has to reproduce it
+    bit-for-bit or the master would not be the picture that was approved.
+
+    The offsets add in stops, so overlapping bands compose the way a colourist
+    expects rather than the way the loop happens to be ordered.
+    """
+    rgb = np.maximum(np.asarray(rgb_nits, dtype=np.float64), 0.0)
+    total = np.zeros(rgb.shape[:-1], dtype=np.float64)
+    for band in bands or ():
+        ev = float(band.get("ev", 0.0))
+        if ev == 0.0:
+            continue
+        total = total + ev * qualifier_mask(rgb, float(band["low_nits"]),
+                                            float(band["high_nits"]), softness_stops)
+    return np.exp2(total)[..., None]
+
+
+def apply_region_ev(rgb_nits: np.ndarray, bands, softness_stops: float = 1.0) -> np.ndarray:
+    """Apply ``region_ev_gain`` to a frame in absolute nits."""
+    return np.asarray(rgb_nits, dtype=np.float64) * region_ev_gain(
+        rgb_nits, bands, softness_stops)
 
 
 def _shoulder_to_peak(rgb_nits: np.ndarray, peak_nits: float, knee_nits: float | None) -> np.ndarray:

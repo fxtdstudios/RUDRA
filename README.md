@@ -19,20 +19,30 @@ ordinary 8-bit frame and it reconstructs the highlights the tone map threw away.
 
 ![RUDRA Studio](docs/rudra_studio.png)
 
-Drop a frame in. The network runs once, on the GPU, and hands the page its raw
-fields — everything after that (residual strength, recovery mode, preserve,
-display peak) is composed on your own GPU, so the controls move at frame rate
-rather than at one round trip each.
+Drop a frame in — or a whole sequence. The network runs once per frame on the
+GPU and hands the page its raw fields; everything after that is composed on
+your own GPU, so the controls move at frame rate instead of at one round trip
+each.
 
-Compare by flipping: hold **B**, or press and hold the image, and it swaps to
-the analytic inverse tone map with the frame staying exactly where it is. That
-is a much easier thing for the eye to read than a seam travelling across the
-picture, because you are comparing the same pixels rather than tracking a
-moving edge. Waveform, histogram and every measured number follow the composite
-you are actually looking at; MaxCLL and MaxFALL come from an exact GPU
-reduction, not from a downsample. **Master EXR** writes a full-resolution ACES
-2065-1 container with AP0 primaries, ST 2065-4 chromaticities and a JSON
-sidecar of delivery metadata.
+**Compare by flipping.** Hold **B**, or press and hold the image, and it swaps
+to the analytic inverse tone map without the frame moving. You are comparing
+the same pixels rather than tracking a seam.
+
+**Region EV is a grade, not a preview.** Drag a value to scrub it, double-click
+to zero it. The bands are soft luminance qualifiers from
+`rudra/delivery/controls.py`, and **Master EXR** applies the identical
+qualifier and gain to the file — full-resolution ACES 2065-1, AP0 primaries,
+ST 2065-4 chromaticities, and a sidecar recording exactly how it was graded.
+
+Waveform, histogram and every measured number follow the composite on screen;
+MaxCLL and MaxFALL come from an exact GPU reduction rather than a downsample.
+The frames rail, the transport and the menus all do what they say — press `?`
+for the keyboard, and see `tests/ui_smoke/press_everything.py`, which presses
+every control and fails if one turns out to be decoration.
+
+`?frame=<url>` loads a frame straight from the server instead of dropping one,
+and `?demo=1` loads the bundled sample — which is how the screenshot above is
+taken, so it can be regenerated rather than staged.
 
 Needs a browser with WebGL2 and float render targets — any current Chrome,
 Edge, Firefox or Safari.
@@ -41,10 +51,14 @@ Edge, Firefox or Safari.
 python ui/server.py --preload
 ```
 
-It loads the newest `shipped_*.pt` it can find under the checkpoint roots — at
-present v5 step 81 000. Pin a different one with `--checkpoint <path>`, or
-compare two without restarting: the page can score any checkpoint against the
-same frame in place.
+It serves on `localhost:8422` and loads the newest `shipped_*.pt` it can find
+under the checkpoint roots — at present v5 step 81 000. Pin a different one
+with `--checkpoint <path>`, or compare two without restarting: the page can
+score any checkpoint against the same frame in place.
+
+Asset URLs are stamped with each file's mtime and size, and the port is
+deliberately not 8080 — both so a stale entry another project left in your
+browser cache can never answer for RUDRA's.
 
 ---
 
@@ -150,7 +164,10 @@ Three things that will make a training log make sense:
   on top of, so "better than doing nothing" is a number, not a guess.
 - Graded sources are treated as censored. A pixel at exactly 4,000 nits in a
   4,000-nit grade means *at least* 4,000, so the loss goes one-sided there —
-  otherwise the model learns to cap.
+  otherwise the model learns to cap. Both trainers do this. The temporal
+  refiner did not until 28 Aug 2026, on a video corpus where 84% of clips
+  carry a hard ceiling, which would have had it undo the image model's
+  highlights frame by frame.
 
 ---
 
@@ -214,6 +231,20 @@ learned masks are cold:
 It costs 0.13 dB on degraded input and adds 0.65 dB on clean input, so it stays
 the shipped default.
 
+**The model.** 1 196 197 parameters, 4.6 MiB of float32 — small because it
+never synthesises an image. It predicts a residual on top of the analytic
+inverse-ACES baseline, gated to learned highlight and shadow masks, so its head
+is five channels: three of residual and two of mask logits. Half the weights
+sit in the middle block at quarter resolution. A checkpoint fits in a browser
+download and runs a 1600×900 frame in one untiled pass.
+
+Every run so far — v3, v3b, v4, v5 — used `--base-channels 32`. **Capacity has
+never been ablated.** The plateau above is read as a corpus ceiling, and v4 is
+real evidence for that (six times the footage, +0.03 dB), but "more data did not
+help" and "more capacity would not help" are different claims and only the first
+has been tested. `--base-channels 64` is 4.77 M parameters and one overnight
+run; until it exists the ceiling is an inference, not a measurement.
+
 **Corpus.** 28 542 pairs across 976 physical scenes — 963 Poly Haven stills and
 13 video scenes. Whole scenes are held out; no scene straddles a split.
 
@@ -221,9 +252,53 @@ Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifes
 <manifest>`.
 
 > These are gains over RUDRA's own analytic baseline, not a comparison against
-> published inverse tone mapping work. CVVDP JOD numbers are not in yet, and
-> highlight-mask headroom has not been re-measured on v5. Read them as internal
-> progress, not as a benchmark result.
+> published inverse tone mapping work. CVVDP JOD numbers are not in yet,
+> highlight-mask headroom has not been re-measured on v5, and no model wider
+> than 32 base channels has been trained. Read them as internal progress, not
+> as a benchmark result.
+
+**Getting numbers that are comparable to published work.** `rudra bench`
+scores paired directories in PU21-PSNR and CVVDP JOD — the only public
+measuring sticks in this field — but nothing produced its input, so between a
+trained checkpoint and a JOD there was no step at all. There is now:
+
+```bash
+python training/export_bench_pairs.py --checkpoint <ckpt> \
+    --manifest <manifest> --split test --condition clean --out <dir>
+python -m rudra.delivery.cli bench <dir> --nits-scale 203
+python -m rudra.delivery.cli bench <dir> --nits-scale 203 --test-dir baseline
+```
+
+That writes `ref/`, `test/` and `baseline/` trees of scene-linear EXRs over the
+429 held-out frames, and scores the model and the analytic baseline against one
+reference. `--condition hard` reuses the eval's seeded degradation, so the
+exported frames are the ones behind the `hard_*` numbers rather than a fresh
+draw. The reference is decoded without the network's `max_hdr` clamp: clamping
+it would score the model against a ground truth cropped to the model's own
+ceiling.
+
+CVVDP needs `pip install cvvdp`. It had never run once before 28 Aug 2026 — the
+metric was handed a device string where pycvvdp wanted a `torch.device`, three
+layers of `except Exception` turned the resulting error into "install torch +
+pycvvdp", and that advice was given to a machine which had them installed. The
+summary now reports the real reason whenever the backend is missing.
+
+**The reconstruction is assembled in three languages** — torch in the model,
+GLSL in the viewer, numpy as the reference both are checked against — so the
+picture on screen and the EXR that Master writes cannot drift apart:
+
+| Check | Result |
+|---|---|
+| Shader vs reference, 8 control combinations | 8.4 × 10⁻⁶ relative |
+| Torch vs reference, untiled | 3 × 10⁻⁶ relative |
+| Torch vs reference, tiled (overlap bands only) | up to a few % |
+| MaxCLL, page vs the EXR it writes | 0.023% apart |
+| Every control on the page, pressed | 52 checks, 0 failed |
+
+Tiling is the one place the two compositions genuinely disagree, because
+feathering fields and feathering composed predictions are not the same
+operation either side of `expm1`. The viewer and Master both ask for an
+untiled pass and fall back to tiles only on OOM, and say which they used.
 
 ---
 
@@ -236,11 +311,14 @@ rudra/delivery/   Torch-free: DoVi L1 / HDR10+, ACES / EXR / OCIO, grade
                   controls, benchmarks, the `rudra` CLI
 pipeline/         Corpus construction and its gates: scanner, pair preparation,
                   HDR storage (hdr_io), manifests, verify_dataset
-training/         Trainers, evaluation, inference, benchmarks
+training/         Trainers, evaluation, inference, and the exporter that
+                  turns a checkpoint into benchmark pairs
 ui/               RUDRA Studio: the page, its GPU compositor and the
                   inference server behind them
 config/, configs/ VAE registry and training recipes
-tests/            Curve round-trips, corpus guards, delivery, target decode
+tests/            Curve round-trips, corpus guards, delivery, target decode,
+                  censored highlights, GPU/torch composite parity, and a
+                  smoke test that presses every control on the page
 ```
 
 The composite lives in three languages — torch in `rudra/sdr2hdr.py`, GLSL in
@@ -254,6 +332,26 @@ python tests/webgl_parity/parity.py            # shader vs the reference
 ```
 
 The shader check runs headless on software GL, so it needs no GPU and no torch.
+The page itself gets pressed rather than read, because a menu item that runs
+nothing looks exactly like one that works:
+
+```bash
+python ui/server.py --port 8100 --no-browser --preload --device cpu
+python tests/ui_smoke/press_everything.py --url http://127.0.0.1:8100/
+```
+
+The screenshot at the top of this file is generated the same way, against a
+running Studio, and refuses to overwrite itself with anything under 200 KB —
+the size of an error page:
+
+```bash
+python ui/capture_shot.py
+```
+
+Measurements on the page come from fields that crossed the wire as float16, so
+they land within about 0.03% of the master written from float32 — close enough
+that MaxCLL agrees to a handful of nits out of twenty-five thousand, and near
+enough documented that nobody has to wonder.
 
 Every script has `--help` and a docstring saying what it does and why.
 `pipeline/verify_dataset.py` lists the nine corpus invariants;

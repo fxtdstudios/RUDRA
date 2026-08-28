@@ -34,7 +34,7 @@ torch = pytest.importorskip("torch")
 
 from compose_reference import baseline_of, compose            # noqa: E402
 from rudra.sdr2hdr import SDR2HDRNet                          # noqa: E402
-from training.infer_sdr2hdr import predict_fields             # noqa: E402
+from training.infer_sdr2hdr import predict_fields, predict_image  # noqa: E402
 
 CASES = [
     (1.0, "all", True),
@@ -94,7 +94,12 @@ def test_analytic_baseline_matches_the_model():
     with torch.inference_mode():
         out = net(tensor)
     got = out.baseline[0].permute(1, 2, 0).numpy().astype(np.float64)
-    assert np.abs(baseline_of(sdr.astype(np.float64)) - got).max() < 1e-6
+    reference = baseline_of(sdr.astype(np.float64))
+    # The model solves the inverse-ACES quadratic in float32 and this
+    # reference does it in float64. The subtraction in (-b +/- sqrt(disc))
+    # cancels, so a few float32 epsilons is the floor here, not a bug.
+    relative = np.abs(reference - got).max() / max(float(np.abs(reference).max()), 1e-9)
+    assert relative < 2e-5, f"analytic baseline drifts by {relative:.2e} relative"
 
 
 def test_fields_do_not_depend_on_the_composition_controls():
@@ -123,17 +128,71 @@ def test_half_float_transport_costs_less_than_a_thousandth():
     assert relative < 1e-3, f"half float costs {relative:.2e} relative"
 
 
-def test_tiling_agrees_with_a_single_pass_away_from_the_seams():
+def test_untiled_fields_reproduce_predict_image():
+    """The guarantee the viewer rests on.
+
+    Master composes in torch through predict_image; the Studio composes from
+    the fields on the viewer's GPU. Untiled -- which is what the page asks for
+    -- those two have to be the same image, not merely a similar one.
+    """
     net, sdr = _net(), _sdr(96, 96)
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None]
-    whole = predict_fields(net, tensor, tile_size=0, overlap=0)
-    tiled = predict_fields(net, tensor, tile_size=64, overlap=16)
-    assert whole["tiled"] is False and tiled["tiled"] is True
-    # Convolutions see different context at a tile edge, so compare the
-    # interior, which is what feathering is supposed to protect.
-    a = whole["residual"][..., 24:72, 24:72]
-    b = tiled["residual"][..., 24:72, 24:72]
-    assert torch.allclose(a, b, atol=5e-3), "tiled fields drift in the interior"
+    residual, highlight, shadow, fields = _fields_np(net, tensor)
+    assert fields["tiled"] is False
+    composed = compose(sdr.astype(np.float64), residual, highlight, shadow)
+    direct = predict_image(net, tensor, preserve_outside=True, tile_size=0,
+                           overlap=0, recovery_mode="all",
+                           recovery_strength=1.0)[0].permute(1, 2, 0).numpy()
+    relative = (np.abs(direct.astype(np.float64) - composed).max()
+                / max(float(np.abs(direct).max()), 1e-9))
+    assert relative < 1e-5, f"untiled composition drifts by {relative:.2e} relative"
+
+
+def test_maxcll_from_the_wire_matches_the_master():
+    """The one number people compare between the page and the file.
+
+    The Studio measures MaxCLL from fields that crossed the wire as float16;
+    Master measures it from float32 torch. They will not be identical, and
+    pretending otherwise would be worse than saying how close they are: this
+    pins the gap at a hundredth of a percent, against an integer-nit figure.
+    """
+    net, sdr = _net(), _sdr(96, 96)
+    tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None]
+    residual, highlight, shadow, _ = _fields_np(net, tensor)
+    exact = compose(sdr.astype(np.float64), residual, highlight, shadow)
+    wire = compose(sdr.astype(np.float64),
+                   residual.astype(np.float16).astype(np.float64),
+                   highlight.astype(np.float16).astype(np.float64),
+                   shadow.astype(np.float16).astype(np.float64))
+    exact_cll = float(exact.max(-1).max())
+    wire_cll = float(wire.max(-1).max())
+    relative = abs(wire_cll - exact_cll) / max(exact_cll, 1e-9)
+    assert relative < 1e-3, f"MaxCLL moves {relative:.2e} across the wire format"
+
+
+def test_tiled_fields_stay_inside_the_documented_bound():
+    """Tiling is where the two compositions genuinely disagree.
+
+    predict_image feathers composed predictions; predict_fields feathers the
+    fields and composes afterwards, and expm1 is not linear, so inside an
+    overlap band the two differ. Measured on a randomly initialised head it
+    runs to a few percent -- small, real, and confined to the bands. The
+    viewer avoids the question by asking for an untiled pass; this pins the
+    size of it so a broken feather, which would be far worse, cannot pass.
+    """
+    net, sdr = _net(), _sdr(160, 160)
+    tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None]
+    residual, highlight, shadow, fields = _fields_np(net, tensor, tile_size=64,
+                                                     overlap=16)
+    assert fields["tiled"] is True
+    assert np.isfinite(residual).all() and np.isfinite(highlight).all()
+    composed = compose(sdr.astype(np.float64), residual, highlight, shadow)
+    direct = predict_image(net, tensor, preserve_outside=True, tile_size=64,
+                           overlap=16, recovery_mode="all",
+                           recovery_strength=1.0)[0].permute(1, 2, 0).numpy()
+    relative = (np.abs(direct.astype(np.float64) - composed).max()
+                / max(float(np.abs(direct).max()), 1e-9))
+    assert relative < 0.10, f"tiled composition drifts by {relative:.2e} relative"
 
 
 def test_frame_body_is_laid_out_the_way_the_header_says():
@@ -155,8 +214,9 @@ def test_frame_body_is_laid_out_the_way_the_header_says():
     n = width * height
     offsets = header["offsets"]
     assert (width, height) == (53, 40)
-    assert offsets == {"fields": 0, "shadow": n * 8, "sdr": n * 10, "total": n * 11}
-    assert len(body) == n * 11
+    # 4 halves of fields, 1 half of shadow, 3 bytes of SDR: 13 a pixel.
+    assert offsets == {"fields": 0, "shadow": n * 8, "sdr": n * 10, "total": n * 13}
+    assert len(body) == n * 13
 
     fields = np.frombuffer(body, dtype=np.float16, count=n * 4,
                            offset=offsets["fields"]).reshape(height, width, 4)

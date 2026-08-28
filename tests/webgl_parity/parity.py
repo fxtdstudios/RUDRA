@@ -13,8 +13,8 @@ REPO = HERE.parents[1]
 W, H = 1001, 37                     # odd, and wide enough to force the sample downscale
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from compose_reference import (baseline_of, compose,          # noqa: E402
-                               linear_to_srgb, LOG_SCALE, MAX_HDR)
+from compose_reference import (apply_regions, baseline_of,      # noqa: E402
+                               compose, linear_to_srgb, LOG_SCALE, MAX_HDR)
 
 
 def main():
@@ -36,6 +36,12 @@ def main():
     }
     (HERE / "payload.json").write_text(json.dumps(payload))
 
+    NEUTRAL = [{"low_nits": 400.0, "high_nits": 2000.0, "ev": 0.0},
+               {"low_nits": 2000.0, "high_nits": 8000.0, "ev": 0.0},
+               {"low_nits": 0.05, "high_nits": 12.0, "ev": 0.0}]
+    GRADED = [{"low_nits": 400.0, "high_nits": 2000.0, "ev": 1.0},
+              {"low_nits": 2000.0, "high_nits": 8000.0, "ev": -0.4},
+              {"low_nits": 0.05, "high_nits": 12.0, "ev": 0.75}]
     cases = [
         (1.0, "all", True, 203.0),
         (1.0, "all", False, 203.0),
@@ -43,6 +49,10 @@ def main():
         (2.0, "highlights", True, 1000.0),
         (1.35, "shadows", False, 4000.0),
         (1.0, "off", True, 203.0),
+    ]
+    cases = [c + (NEUTRAL,) for c in cases] + [
+        (1.0, "all", True, 203.0, GRADED),
+        (1.4, "highlights", False, 1000.0, GRADED),
     ]
 
     import functools, http.server, socketserver, threading
@@ -71,17 +81,18 @@ def main():
             print("page errors:", errors); return 1
 
         worst = 0.0
-        for strength, mode, preserve, nits in cases:
+        for strength, mode, preserve, nits, regions in cases:
             got = page.evaluate(
                 "a => window.runCase(a)",
                 {"strength": strength, "mode": mode, "preserve": preserve,
-                 "displayNits": nits})
+                 "displayNits": nits, "regions": regions})
             gl_rgb = np.array(got["composite"], dtype=np.float64).reshape(H, W, 4)[..., :3]
             gl_disp = np.array(got["display"], dtype=np.float64).reshape(H, W, 4)[..., :3]
 
             ref = compose(sdr_u8.astype(np.float64) / 255.0,
                             residual.astype(np.float64), highlight.astype(np.float64),
                             shadow.astype(np.float64), strength, mode, preserve)
+            ref = apply_regions(ref, regions)
             err = np.abs(gl_rgb - ref).max()
             rel = np.abs(gl_rgb - ref).max() / max(float(np.abs(ref).max()), 1e-9)
             worst = max(worst, rel)
@@ -93,7 +104,8 @@ def main():
             mx = float((ref.max(-1)).max()) * 10000.0
             mean = float((ref.max(-1)).mean()) * 10000.0
             print(f"  strength={strength:<5} mode={mode:<11} preserve={str(preserve):<5} "
-                  f"peak={nits:>6.0f}  abs {err:.3e}  rel {rel:.3e}  disp8 {disp_err:.1f} "
+                  f"peak={nits:>6.0f} {'graded' if regions is GRADED else '  flat'}"
+                  f"  abs {err:.3e}  rel {rel:.3e}  disp8 {disp_err:.1f} "
                   f"| peak {got['peak']:.4f} vs {mx:.4f}  mean {got['mean']:.4f} vs {mean:.4f}")
             # relative to the frame peak: half-float fields carry ~1e-3 relative
             # precision, and the composite must not amplify that.
@@ -102,8 +114,9 @@ def main():
             assert abs(got["peak"] - mx) / max(mx, 1e-6) < 1e-4, "peak reduction wrong"
             assert abs(got["mean"] - mean) / max(mean, 1e-6) < 1e-4, "mean reduction wrong"
         # the sampled readback the scopes and distribution numbers run on
-        page.evaluate("() => window.runCase({strength:1.0, mode:'all', "
-                      "preserve:true, displayNits:203})")
+        page.evaluate("a => window.runCase(a)",
+                      {"strength": 1.0, "mode": "all", "preserve": True,
+                       "displayNits": 203, "regions": NEUTRAL})
         s = page.evaluate("() => window.sampleCase()")
         sw, sh = s["width"], s["height"]
         idx = np.array(s["index"], dtype=np.int64)

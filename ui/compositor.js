@@ -70,6 +70,26 @@
     "}",
     "vec3 baselineOf(vec3 sdr){",
     "  return inverseAces(srgbToLinear(sdr)) * (2.0 * 203.0 / 10000.0);",
+    "}",
+    /* Region EV. A port of rudra/delivery/controls.py's qualifier_mask:
+       a soft window in log luminance, feathered symmetrically in stops so a
+       qualifier never puts a hard edge through a gradient, with the offsets
+       adding in stops. The identical numbers reach the EXR writer, so what
+       you grade here is what Master delivers. */
+    "uniform vec3 uRegionLo;",
+    "uniform vec3 uRegionHi;",
+    "uniform vec3 uRegionEv;",
+    "uniform float uRegionSoft;",
+    "vec3 applyRegions(vec3 pred){",
+    "  float logY = log2(max(dot(pred * 10000.0, vec3(0.2627, 0.6780, 0.0593)), 1e-6));",
+    "  float total = 0.0;",
+    "  for (int i = 0; i < 3; i++) {",
+    "    float rise = clamp((logY - (uRegionLo[i] - uRegionSoft)) / uRegionSoft, 0.0, 1.0);",
+    "    float fall = clamp(((uRegionHi[i] + uRegionSoft) - logY) / uRegionSoft, 0.0, 1.0);",
+    "    float m = min(rise, fall);",
+    "    total += uRegionEv[i] * m * m * (3.0 - 2.0 * m);",
+    "  }",
+    "  return clamp(pred * exp2(total), 0.0, MAX_HDR);",
     "}"
   ].join("\n");
 
@@ -98,7 +118,7 @@
     "                       0.0, log(1.0 + MAX_HDR * LOG_SCALE));",
     "  vec3 pred = expm13(predLog) / LOG_SCALE;",
     "  if (uPreserve) { pred = base + max(f.a, shadow) * (pred - base); }",
-    "  oCol = vec4(pred, 1.0);",
+    "  oCol = vec4(applyRegions(pred), 1.0);",
     "}"].join("\n");
 
   /* Exposure and clip, no tone curve — the same display_map() the server used
@@ -233,7 +253,11 @@
     var smallBase = null;      // and of the baseline, which never changes
     var baseSample = null;     // cached readback of smallBase
     var params = {strength: 1, mode: "all", preserve: true,
-                  displayNits: 203, show: "model"};
+                  displayNits: 203, show: "model",
+                  regions: [{label: "highlights", low_nits: 400, high_nits: 2000, ev: 0},
+                            {label: "speculars", low_nits: 2000, high_nits: 8000, ev: 0},
+                            {label: "shadows", low_nits: 0.05, high_nits: 12, ev: 0}],
+                  regionSoft: 1.0};
 
     function draw(prog, w, h, fb) {
       gl.useProgram(prog);
@@ -328,6 +352,17 @@
                    MODES[params.mode] === undefined ? 0 : MODES[params.mode]);
       gl.uniform1i(gl.getUniformLocation(progComposite, "uPreserve"), params.preserve ? 1 : 0);
       gl.uniform1i(gl.getUniformLocation(progComposite, "uBaselineOnly"), baselineOnly ? 1 : 0);
+      var lo = [], hi = [], ev = [];
+      for (var i = 0; i < 3; i++) {
+        var band = params.regions[i] || {low_nits: 1, high_nits: 1, ev: 0};
+        lo.push(Math.log2(Math.max(band.low_nits, 1e-6)));
+        hi.push(Math.log2(Math.max(band.high_nits, 1e-6)));
+        ev.push(band.ev || 0);
+      }
+      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionLo"), lo);
+      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionHi"), hi);
+      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionEv"), ev);
+      gl.uniform1f(gl.getUniformLocation(progComposite, "uRegionSoft"), params.regionSoft);
     }
 
     function compositeBaseline() {
@@ -421,6 +456,11 @@
         ["strength", "mode", "preserve"].forEach(function (k) {
           if (p[k] !== undefined && p[k] !== params[k]) { params[k] = p[k]; recompose = true; }
         });
+        if (p.regions !== undefined) {
+          if (JSON.stringify(p.regions) !== JSON.stringify(params.regions)) {
+            params.regions = p.regions; recompose = true;
+          }
+        }
         if (p.displayNits !== undefined) { params.displayNits = p.displayNits; }
         if (p.show !== undefined) { params.show = p.show; }
         if (recompose) { composite(); }

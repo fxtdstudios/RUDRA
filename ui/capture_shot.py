@@ -13,7 +13,7 @@ So this checks before and after:
   after   the PNG must be larger than MIN_BYTES; Chrome's error page is ~20 KB
           while the real UI is over a megabyte
 
-    python ui/capture_shot.py                        # localhost:8080 -> docs/
+    python ui/capture_shot.py                        # localhost:8422 -> docs/
     python ui/capture_shot.py --port 8081 --out docs/shot.png
 """
 
@@ -77,14 +77,14 @@ def check_server(port: int) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8422)
     parser.add_argument("--out", type=Path, default=REPO / "docs" / "rudra_studio.png")
     parser.add_argument("--chrome", default=None)
     # 16:9. The app is laid out for a landscape colour suite; a taller window
     # just stretches the viewer and squeezes the scopes.
     parser.add_argument("--width", type=int, default=1600)
     parser.add_argument("--height", type=int, default=900)
-    parser.add_argument("--wait-ms", type=int, default=20000,
+    parser.add_argument("--wait-ms", type=int, default=45000,
                         help="virtual time budget: the model has to finish inferring "
                              "before the frame is grabbed")
     args = parser.parse_args()
@@ -100,13 +100,25 @@ def main() -> int:
     # A temp target, so a failed capture cannot clobber a good committed one.
     staging = args.out.with_suffix(".new.png")
     staging.unlink(missing_ok=True)
-    subprocess.run([
-        chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars",
+    # --disable-gpu was fine when the page was two <img> tags. The viewer now
+    # composes in WebGL2 with float render targets, and without a GL backend it
+    # renders its own "no WebGL2" error -- a valid PNG of a broken page.
+    # SwiftShader gives headless Chrome a real GL2 implementation; the
+    # reconstruction itself still runs on the server's GPU.
+    command = [
+        chrome, "--headless=new", "--hide-scrollbars",
+        "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
         f"--window-size={args.width},{args.height}",
         f"--virtual-time-budget={args.wait_ms}",
         f"--screenshot={staging}",
         f"http://localhost:{args.port}/?demo=1",
-    ], check=True)
+    ]
+    # Chrome refuses to start as root without this, which is every container
+    # and most CI runners -- and regenerating the README screenshot is exactly
+    # the sort of thing that should be able to run there.
+    if os.name == "posix" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        command.insert(1, "--no-sandbox")
+    subprocess.run(command, check=True)
 
     if not staging.exists():
         raise SystemExit("error: Chrome wrote no file.")

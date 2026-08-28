@@ -107,7 +107,8 @@ def decode_hdr_target(image: np.ndarray, path: str | Path,
     return np.clip(decoded, 0.0, ceiling).astype(np.float32)
 
 
-def load_rgb(path: str | Path, hdr: bool) -> np.ndarray:
+def load_rgb(path: str | Path, hdr: bool,
+             ceiling: float = DEFAULT_TARGET_CEILING) -> np.ndarray:
     image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if image is None:
         raise RuntimeError(f"Failed to read image: {path}")
@@ -117,7 +118,9 @@ def load_rgb(path: str | Path, hdr: bool) -> np.ndarray:
         image = image[..., :3]
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     if hdr:
-        image = decode_hdr_target(image, path)
+        # Training clamps targets at the network's max_hdr; a benchmark must
+        # not, or the reference quietly inherits the model's own ceiling.
+        image = decode_hdr_target(image, path, ceiling=ceiling)
     elif np.issubdtype(image.dtype, np.integer):
         scale = float(np.iinfo(image.dtype).max)
         image = np.clip(image.astype(np.float32) / scale, 0.0, 1.0)

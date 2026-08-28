@@ -132,8 +132,12 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
     Feathering is applied to the fields rather than to the composed
     prediction, so inside an overlap band a tiled frame differs from
     ``predict_image`` by the difference between blending before and after
-    ``expm1``. It is small, and it disappears entirely when the frame fits in
-    one tile -- which is why the viewer asks for an untiled pass when it can.
+    ``expm1``. Measured on a 160x160 frame with 64/16 tiles that reaches a few
+    percent at the worst pixel of a band -- not a rounding error -- while an
+    untiled pass agrees with ``predict_image`` to about 3e-6. That is why the
+    viewer asks for an untiled pass and falls back to tiles only when it runs
+    out of memory, and why the header it gets back says which happened.
+    tests/test_frame_fields_2026_08_28.py pins both numbers.
     """
     if sdr.shape[0] != 1:
         raise ValueError("predict_fields expects one image at a time")

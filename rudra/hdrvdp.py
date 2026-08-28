@@ -76,7 +76,27 @@ def _to_rec2020_linear(rgb: torch.Tensor, color_space: str) -> torch.Tensor:
     return out.clamp(min=0.0)
 
 
-def _get_cvvdp(device: str, display_name: str):
+# Why the real backend was last refused, so a caller can say something more
+# useful than "install it" about a package that is already installed.
+_CVVDP_LAST_ERROR: str | None = None
+
+
+def cvvdp_last_error() -> str | None:
+    """The reason the ColorVideoVDP backend fell back, if it has."""
+    return _CVVDP_LAST_ERROR
+
+
+def _get_cvvdp(device, display_name: str):
+    """``device`` must be a torch.device.
+
+    pycvvdp keeps whatever it is handed and later reads ``self.device.type``,
+    so passing the string "cpu" raised AttributeError deep inside predict() --
+    caught by the fallback below, reported as "proxy", and reported one level
+    further up as "install torch + pycvvdp". CVVDP therefore never once ran,
+    on a machine where it was installed, and the benchmark it gates was never
+    produced. Hence the annotation, and cvvdp_last_error().
+    """
+    device = torch.device(device)
     key = f"{display_name}_{device}"
     if key not in _CVVDP_CACHE:
         import pycvvdp
@@ -106,12 +126,15 @@ def hdr_vdp3_jod(
         (jod, backend) where ``jod`` ∈ ~[0, 10] (10 = identical) and ``backend``
         is ``"colorvideovdp"`` or ``"proxy"``.
     """
+    global _CVVDP_LAST_ERROR
     if not colorvideovdp_available():
+        _CVVDP_LAST_ERROR = "pycvvdp is not installed (pip install cvvdp)"
         from .metrics import hdr_vdp_proxy
         return hdr_vdp_proxy(pred, target), "proxy"
 
     try:
-        device = "cuda" if (isinstance(pred, torch.Tensor) and pred.is_cuda) else "cpu"
+        device = torch.device(
+            "cuda" if (isinstance(pred, torch.Tensor) and pred.is_cuda) else "cpu")
         metric = _get_cvvdp(device, display_name)
 
         with torch.no_grad():
@@ -125,9 +148,11 @@ def hdr_vdp3_jod(
                 ref_hwc = t[i].permute(1, 2, 0).contiguous()
                 jod, _ = metric.predict(test_hwc, ref_hwc, dim_order="HWC")
                 jods.append(float(jod))
+        _CVVDP_LAST_ERROR = None
         return float(sum(jods) / max(len(jods), 1)), "colorvideovdp"
-    except Exception:
+    except Exception as exc:
         # Any API/version mismatch falls back to the labeled proxy rather than
-        # crashing a long training run.
+        # crashing a long training run -- but it no longer does so silently.
+        _CVVDP_LAST_ERROR = f"{type(exc).__name__}: {exc}"
         from .metrics import hdr_vdp_proxy
         return hdr_vdp_proxy(pred, target), "proxy"

@@ -14,7 +14,7 @@ window.READY = false;
   });
   window.runCase = function (p) {
     ctx.setParams({strength: p.strength, mode: p.mode, preserve: p.preserve,
-                   displayNits: p.displayNits, show: "model"});
+                   displayNits: p.displayNits, show: "model", regions: p.regions});
     ctx.present();
     var comp = Array.from(ctx.readComposite("model"));
     var gl = ctx.gl, s = ctx.size();

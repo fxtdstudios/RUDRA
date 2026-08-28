@@ -128,7 +128,8 @@ def _cmd_aces(args) -> int:
 
 def _cmd_bench(args) -> int:
     summary = bench_mod.run_benchmark(args.root, nits_scale=args.nits_scale,
-                                      output=args.output, limit=args.limit)
+                                      output=args.output, limit=args.limit,
+                                      test_dir=args.test_dir)
     printable = {k: v for k, v in summary.items() if k != "results"}
     print(json.dumps(printable, indent=2))
     return 0
@@ -182,6 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--nits-scale", type=float, default=1.0)
     p.add_argument("--output", type=Path, default=None)
     p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--test-dir", default="test",
+                   help="directory under root holding the method to score "
+                        "(default: test). Use it to score a second method, "
+                        "e.g. --test-dir baseline, against the same ref/.")
     p.set_defaults(fn=_cmd_bench)
 
     args = parser.parse_args(argv)

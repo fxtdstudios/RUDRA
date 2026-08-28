@@ -223,3 +223,85 @@ html, body {
 .log div { font-family: var(--mono); font-size: 9.5px; color: var(--fg-3);
            padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
 .log div.err { color: #c9c9c9; }
+
+/* ---- menus -------------------------------------------------------------
+   The menubar used to be eight words that did nothing. Every item in it now
+   runs something, and the ones that describe a state carry a tick. */
+.menubar { position: relative; z-index: 40; }
+.menu { position: relative; }
+.menu > .mtitle {
+  appearance: none; background: none; border: 0; color: inherit;
+  font: inherit; padding: 0 8px; height: 100%; cursor: default;
+}
+.menu.open > .mtitle, .menu > .mtitle:hover { background: #202020; color: #e8e8e8; }
+.menu > .drop {
+  display: none; position: absolute; top: 100%; left: 0; min-width: 214px;
+  background: #141414; border: 1px solid #2c2c2c; padding: 4px 0;
+  box-shadow: 0 8px 22px rgba(0,0,0,.55);
+}
+.menu.open > .drop { display: block; }
+.menu .drop button {
+  appearance: none; background: none; border: 0; width: 100%; cursor: default;
+  display: flex; align-items: center; gap: 10px; padding: 4px 12px 4px 22px;
+  font: inherit; font-size: 11px; color: var(--fg-2); text-align: left; position: relative;
+}
+.menu .drop button:hover { background: #2a2a2a; color: #f0f0f0; }
+.menu .drop button[disabled] { color: #4a4a4a; }
+.menu .drop button[disabled]:hover { background: none; }
+.menu .drop button.checked::before {
+  content: "›"; position: absolute; left: 9px; color: #e8e8e8;
+}
+.menu .drop button i {
+  margin-left: auto; font-style: normal; font-family: var(--mono);
+  font-size: 9.5px; color: #5c5c5c;
+}
+.menu .drop hr { border: 0; border-top: 1px solid #262626; margin: 4px 0; }
+
+/* ---- frames rail ------------------------------------------------------- */
+.empty-rail { padding: 10px 12px; font-size: 10px; color: var(--fg-3); line-height: 1.5; }
+.shot { cursor: default; }
+.shot.on { background: #232323; }
+.shot.on .name { color: #f0f0f0; }
+.shot.loading .name { color: #8a8a8a; font-style: italic; }
+
+/* ---- region EV --------------------------------------------------------- */
+.region .ev { cursor: ew-resize; user-select: none; }
+.region.sel { background: #202020; }
+.region .ev.live { color: #f0f0f0; }
+
+/* ---- transport --------------------------------------------------------- */
+.tbtn[disabled] { opacity: .35; }
+.scrub { cursor: pointer; }
+
+/* ---- window layout toggles --------------------------------------------- */
+.rail.hidden, .scopes.hidden { display: none; }
+/* Actual pixels: stop fitting the frame to the box and let it scroll, which
+   is the only way to judge grain and banding honestly. */
+.viewer.actual { align-items: flex-start; justify-content: flex-start; overflow: auto; }
+.viewer.actual .plate { max-width: none; max-height: none; }
+.viewer.actual .plate canvas { max-width: none; max-height: none; width: auto; height: auto; }
+
+/* ---- overlay sheet ----------------------------------------------------- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(6,6,6,.72); z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+}
+/* `display:flex` outranks the hidden attribute's UA rule, so without this the
+   closed overlay stays laid out over the whole page and silently eats every
+   click on the app behind it. */
+.overlay[hidden] { display: none; }
+.overlay .sheet {
+  background: #141414; border: 1px solid #2c2c2c; padding: 18px 22px;
+  min-width: 340px; max-width: 560px; max-height: 78vh; overflow: auto;
+  font-size: 11px; color: var(--fg-2); line-height: 1.6;
+}
+.overlay .sheet h3 {
+  margin: 0 0 10px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--fg-3); font-weight: 500;
+}
+.overlay .sheet .row { display: flex; gap: 14px; padding: 2px 0; }
+.overlay .sheet .row .k {
+  font-family: var(--mono); font-size: 10.5px; color: #e0e0e0;
+  min-width: 92px; flex: none;
+}
+.overlay .sheet .close { margin-top: 14px; font-size: 10px; color: var(--fg-3); }

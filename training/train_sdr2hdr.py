@@ -32,6 +32,7 @@ if str(REPO) not in sys.path:
 
 from rudra.sdr2hdr import (  # noqa: E402
     SDR2HDRNet, TemporalHDRRefiner, sdr2hdr_loss, temporal_consistency_loss,
+    temporal_spatial_loss,
 )
 from training.sdr2hdr_dataset import SDRHDRDataset, SDRHDRVideoDataset  # noqa: E402
 
@@ -152,13 +153,20 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
 def evaluate_temporal(image_model: SDR2HDRNet, temporal: TemporalHDRRefiner,
                       loader: DataLoader, device: torch.device, max_batches: int = 4) -> dict[str, float]:
     temporal.eval()
-    sums = {"log_l1": 0.0, "temporal": 0.0, "initial_log_l1": 0.0, "initial_temporal": 0.0}
+    sums = {"log_l1": 0.0, "temporal": 0.0, "initial_log_l1": 0.0, "initial_temporal": 0.0,
+            "censored_log_l1": 0.0, "censored_fraction": 0.0}
     count = 0
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
+        ceiling = batch["ceiling"].to(device) if "ceiling" in batch else None
         b, t, c, h, w = sdr.shape
         initial = image_model(sdr.reshape(b * t, c, h, w)).hdr.reshape(b, t, c, h, w)
         pred = temporal(sdr, initial)
+        # log_l1 stays plain so it is comparable with image mode and with the
+        # runs before this; censored_log_l1 is what the refiner is optimising.
+        censored, fraction = temporal_spatial_loss(pred, target, ceiling)
+        sums["censored_log_l1"] += float(censored)
+        sums["censored_fraction"] += float(fraction)
         sums["log_l1"] += float(F.l1_loss(torch.log1p(pred * 16.0), torch.log1p(target * 16.0)))
         sums["temporal"] += float(temporal_consistency_loss(pred, target))
         sums["initial_log_l1"] += float(F.l1_loss(torch.log1p(initial * 16.0), torch.log1p(target * 16.0)))
@@ -352,10 +360,18 @@ def train(args: argparse.Namespace) -> Path:
                 with torch.no_grad():
                     initial = image_model(sdr.reshape(b * t, c, h, w)).hdr.reshape(b, t, c, h, w)
                 pred = model(sdr, initial)
-                spatial = F.l1_loss(torch.log1p(pred * 16.0), torch.log1p(target * 16.0))
+                # Censored, like the image loss. Trained on plain L1 the refiner
+                # learns to pull the image model's reconstructed highlights back
+                # down to the grading cap -- and 84% of the video clips carry one.
+                spatial, censored_fraction = temporal_spatial_loss(
+                    pred, target,
+                    target_ceiling=(batch["ceiling"].to(device, non_blocking=True)
+                                    if "ceiling" in batch else None),
+                )
                 temporal = temporal_consistency_loss(pred, target)
                 loss = spatial + args.temporal_weight * temporal
-                losses = {"total": loss, "log_l1": spatial, "temporal": temporal}
+                losses = {"total": loss, "log_l1": spatial, "temporal": temporal,
+                          "censored_fraction": censored_fraction}
             scaled_loss = loss / args.grad_accum
         scaled_loss.backward()
         did_optimizer_step = step % args.grad_accum == 0 or step == args.steps

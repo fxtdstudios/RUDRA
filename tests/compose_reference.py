@@ -22,6 +22,13 @@ PEAK_NITS = 10_000.0
 DIFFUSE_WHITE_NITS = 203.0
 ACES = (2.51, 0.03, 2.43, 0.59, 0.14)
 LUMA_REC709 = (0.2126, 0.7152, 0.0722)
+LUMA_REC2020 = (0.2627, 0.6780, 0.0593)
+REGION_SOFT_STOPS = 1.0
+DEFAULT_REGIONS = (
+    {"label": "highlights", "low_nits": 400.0, "high_nits": 2000.0, "ev": 0.0},
+    {"label": "speculars", "low_nits": 2000.0, "high_nits": 8000.0, "ev": 0.0},
+    {"label": "shadows", "low_nits": 0.05, "high_nits": 12.0, "ev": 0.0},
+)
 
 
 def srgb_to_linear(x):
@@ -80,3 +87,44 @@ def compose(sdr, residual, highlight, shadow, strength=1.0, mode="all",
 def display_map(pred, display_nits):
     """The viewer's exposure and clip. No tone curve, deliberately."""
     return linear_to_srgb(np.clip(pred * (PEAK_NITS / max(display_nits, 1e-3)), 0.0, 1.0))
+
+
+def qualifier_mask(rgb_nits, low_nits, high_nits, softness_stops=REGION_SOFT_STOPS):
+    """A copy of rudra.delivery.controls.qualifier_mask, kept deliberately.
+
+    The WebGL harness has to run with numpy and nothing else, so it cannot
+    import the product package. test_frame_fields_2026_08_28.py asserts the
+    two agree, which is the only thing that makes the duplication safe.
+    """
+    y = np.maximum((np.asarray(rgb_nits, dtype=np.float64)
+                    * np.asarray(LUMA_REC2020)).sum(-1), 1e-6)
+    log_y = np.log2(y)
+    soft = max(float(softness_stops), 1e-3)
+    rise = np.clip((log_y - (np.log2(low_nits) - soft)) / soft, 0.0, 1.0)
+    fall = np.clip(((np.log2(high_nits) + soft) - log_y) / soft, 0.0, 1.0)
+    mask = np.minimum(rise, fall)
+    return mask * mask * (3.0 - 2.0 * mask)
+
+
+def region_gain(pred, regions, softness_stops=REGION_SOFT_STOPS):
+    """Per-pixel linear gain from the Region EV bands, shape (..., 1).
+
+    `pred` is in network units (nits / 10 000); the qualifier works in nits.
+    Offsets add in stops so overlapping bands compose predictably.
+    """
+    nits = np.asarray(pred) * PEAK_NITS
+    total = np.zeros(nits.shape[:-1], dtype=np.float64)
+    for band in regions or ():
+        ev = float(band.get("ev", 0.0))
+        if ev == 0.0:
+            continue
+        total = total + ev * qualifier_mask(nits, float(band["low_nits"]),
+                                            float(band["high_nits"]), softness_stops)
+    return np.exp2(total)[..., None]
+
+
+def apply_regions(pred, regions, softness_stops=REGION_SOFT_STOPS):
+    """Grade, then hold the network's own ceiling so one limit governs."""
+    if not regions or all(float(b.get("ev", 0.0)) == 0.0 for b in regions):
+        return pred
+    return np.clip(pred * region_gain(pred, regions, softness_stops), 0.0, MAX_HDR)

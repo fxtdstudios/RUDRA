@@ -252,6 +252,70 @@ def _gradient_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 CENSORED_HEADROOM_STOPS = 3.0
 
 
+
+def censored_log_error(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    target_ceiling: torch.Tensor | None = None,
+    log_scale: float = 16.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Per-pixel |log-radiance error|, one-sided wherever the target is censored.
+
+    ``target_ceiling`` (B,) -- or anything broadcastable, including the (B,) of
+    a 5-D temporal batch -- is the delivery ceiling the source was graded to:
+    4,000 nits for HdM-HDR-2014, ~1,000 for Rec2100-PQ-1K, 10,000 for Chimera.
+    A pixel sitting on it is CENSORED: the grade says ">= ceiling", not
+    "= ceiling", and plain L1 against those pixels teaches the model to cap.
+
+    Split out of ``sdr2hdr_loss`` so the temporal refiner can use the identical
+    treatment. It could not, before: ``--mode temporal`` trained on a plain
+    log-L1 that never saw a ceiling, on a video corpus where 84% of clips are
+    graded to one -- worse than the 78% of the image corpus. A refiner trained
+    that way learns to pull the image model's reconstructed highlights back
+    down to the cap, which is exactly the failure v5 was built to fix.
+
+    Returns ``(error, pred_log, target_log, censored_fraction)``.
+    """
+    pred_log = torch.log1p(pred.clamp_min(0.0) * log_scale)
+    target_log = torch.log1p(target.clamp_min(0.0) * log_scale)
+    error = (pred_log - target_log).abs()
+    censored_fraction = torch.zeros((), device=pred_log.device, dtype=pred_log.dtype)
+    if target_ceiling is not None:
+        ceiling = target_ceiling.to(device=target.device, dtype=target.dtype)
+        while ceiling.ndim < target.ndim:
+            ceiling = ceiling.unsqueeze(-1)
+        # 1e-3 relative slack: the target went through a uint16 log2 round trip,
+        # so a pixel graded at exactly 4,000 nits comes back a hair off it.
+        censored = (target >= ceiling * (1.0 - 1e-3)) & torch.isfinite(ceiling)
+        under = (target_log - pred_log).clamp_min(0.0)
+        # A purely one-sided loss has no upper anchor, so the cheapest thing a
+        # censored pixel can do is run to the network's max_hdr clamp. The grade
+        # says ">= ceiling", not ">= ceiling and arbitrarily far above it":
+        # allow CENSORED_HEADROOM_STOPS of free reconstruction, then charge for
+        # the excess so highlights stay physical.
+        allowance = torch.log1p(
+            (ceiling * (2.0 ** CENSORED_HEADROOM_STOPS)).clamp_max(1e6) * log_scale)
+        over = (pred_log - allowance).clamp_min(0.0)
+        error = torch.where(censored, under + over, error)
+        censored_fraction = censored.float().mean()
+    return error, pred_log, target_log, censored_fraction
+
+
+def temporal_spatial_loss(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    target_ceiling: torch.Tensor | None = None,
+    log_scale: float = 16.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """The refiner's spatial term, censored the same way the image loss is.
+
+    ``pred`` and ``target`` are (B, T, C, H, W). Returns (loss, censored_fraction).
+    """
+    error, _, _, censored_fraction = censored_log_error(
+        pred, target, target_ceiling, log_scale)
+    return error.mean(), censored_fraction
+
+
 def sdr2hdr_loss(
     output: SDR2HDROutput,
     sdr: torch.Tensor,
@@ -275,30 +339,9 @@ def sdr2hdr_loss(
     reads the per-pixel error inherits it.
     """
     scale = 16.0
-    pred_log = torch.log1p(output.hdr.clamp_min(0.0) * scale)
-    target_log = torch.log1p(target.clamp_min(0.0) * scale)
     hi, sh = recovery_masks(sdr)
-
-    error = (pred_log - target_log).abs()
-    censored_fraction = torch.zeros((), device=pred_log.device, dtype=pred_log.dtype)
-    if target_ceiling is not None:
-        ceiling = target_ceiling.to(device=target.device, dtype=target.dtype)
-        while ceiling.ndim < target.ndim:
-            ceiling = ceiling.unsqueeze(-1)
-        # 1e-3 relative slack: the target went through a uint16 log2 round trip,
-        # so a pixel graded at exactly 4,000 nits comes back a hair off it.
-        censored = (target >= ceiling * (1.0 - 1e-3)) & torch.isfinite(ceiling)
-        under = (target_log - pred_log).clamp_min(0.0)
-        # A purely one-sided loss has no upper anchor, so the cheapest thing a
-        # censored pixel can do is run to the network's max_hdr clamp. The grade
-        # says ">= ceiling", not ">= ceiling and arbitrarily far above it":
-        # allow CENSORED_HEADROOM_STOPS of free reconstruction, then charge for
-        # the excess so highlights stay physical.
-        allowance = torch.log1p(
-            (ceiling * (2.0 ** CENSORED_HEADROOM_STOPS)).clamp_max(1e6) * scale)
-        over = (pred_log - allowance).clamp_min(0.0)
-        error = torch.where(censored, under + over, error)
-        censored_fraction = censored.float().mean()
+    error, pred_log, target_log, censored_fraction = censored_log_error(
+        output.hdr, target, target_ceiling, scale)
 
     base = error.mean()
     highlight = (error * hi).sum() / (hi.sum() * 3.0 + 1e-6)

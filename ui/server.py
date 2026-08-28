@@ -25,7 +25,7 @@ What the numbers mean, precisely, because the mock's did not:
     just dragged in. Use training/sweep_inference.py on the held-out split for
     reference-based numbers.
 
-Run it:  python ui/server.py [--checkpoint PATH] [--device cuda|cpu] [--port 8080]
+Run it:  python ui/server.py [--checkpoint PATH] [--device cuda|cpu] [--port 8422]
 Without --checkpoint it looks for the newest best.pt/shipped_*.pt under
 E:/RUDRA_v3_20260822/checkpoints, then falls back to demo mode -- the page still
 loads and says so, rather than lying.
@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import base64
 import http.server
+import hashlib
 import io
 import json
 import os
@@ -449,6 +450,7 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
 
     from rudra.delivery import metadata as dm
     from rudra.delivery.aces import write_aces_exr
+    from rudra.delivery.controls import DEFAULT_REGION_BANDS, apply_region_ev
     from rudra.delivery.exr import write_exr
     from training.infer_sdr2hdr import predict_image
 
@@ -463,14 +465,43 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
 
     sdr = np.asarray(image, dtype=np.float32) / 255.0
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
-    hdr = predict_image(model, tensor,
-                        preserve_outside=bool(params.get("preserve_outside", True)),
-                        tile_size=int(params.get("tile_size", 512)),
-                        overlap=int(params.get("tile_overlap", 64)),
-                        recovery_mode=params.get("recovery_mode", "all"),
-                        recovery_strength=float(params.get("strength", 1.0)))
+
+    def _predict(tile_size: int):
+        return predict_image(model, tensor,
+                             preserve_outside=bool(params.get("preserve_outside", True)),
+                             tile_size=tile_size,
+                             overlap=int(params.get("tile_overlap", 64)),
+                             recovery_mode=params.get("recovery_mode", "all"),
+                             recovery_strength=float(params.get("strength", 1.0)))
+
+    # Untiled by default, exactly like /api/frame. The viewer composes from an
+    # untiled pass, and tiling changes the answer inside the overlap bands --
+    # on 28 Aug 2026 that had the page reporting MaxCLL 30,254 for a master
+    # whose sidecar said 29,809, which is the kind of discrepancy nobody
+    # notices until a QC report does.
+    tile_size = int(params.get("tile_size", 0))
+    try:
+        hdr = _predict(tile_size)
+    except Exception as exc:                        # noqa: BLE001 - re-raised below
+        if "out of memory" not in str(exc).lower():
+            raise
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        tile_size = 512
+        hdr = _predict(tile_size)
+
     network = hdr[0].cpu().numpy()                      # nits / 10,000
     nits = np.transpose(network, (1, 2, 0)).astype(np.float64) * NETWORK_PEAK_NITS
+
+    # Region EV is a grade, not a preview: the picture that was approved in
+    # the viewer is the picture that has to land in the file.
+    regions = params.get("regions") or list(DEFAULT_REGION_BANDS)
+    softness = float(params.get("region_softness_stops", 1.0))
+    graded = any(float(b.get("ev", 0.0)) for b in regions)
+    if graded:
+        ceiling = float(getattr(model, "max_hdr", 4.0)) * NETWORK_PEAK_NITS
+        nits = np.clip(apply_region_ev(nits, regions, softness), 0.0, ceiling)
+
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
     stats = dm.analyze_frame(nits, index=0)
@@ -485,6 +516,8 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "rudra:maxFALL": f"{maxfall}",
         "rudra:recoveryMode": str(params.get("recovery_mode", "all")),
         "rudra:preserveOutside": str(bool(params.get("preserve_outside", True))),
+        "rudra:regionEV": json.dumps(regions) if graded else "neutral",
+        "rudra:tiled": str(bool(tile_size)),
     }
     if container == "aces":
         out = MASTER_DIR / f"{stem}_rudra_aces.exr"
@@ -503,6 +536,12 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "container": "ACES 2065-1 (AP0)" if container == "aces" else "scene-linear Rec.2020",
         "transfer": "linear", "diffuse_white_nits": DIFFUSE_WHITE_NITS,
         "checkpoint": params.get("checkpoint", ""),
+        "recovery_mode": params.get("recovery_mode", "all"),
+        "residual_strength": float(params.get("strength", 1.0)),
+        "preserve_outside": bool(params.get("preserve_outside", True)),
+        "region_ev": regions if graded else None,
+        "region_softness_stops": softness if graded else None,
+        "tiled": bool(tile_size),
     }, indent=2), encoding="utf-8")
 
     return {
@@ -516,6 +555,8 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "peak_nits": round(float(nits.max()), 1),
         "resolution": f"{image.width}x{image.height}",
         "container": "ACES 2065-1" if container == "aces" else "Linear Rec.2020",
+        "graded": graded,
+        "tiled": bool(tile_size),
         "elapsed_s": round(time.time() - started, 2),
     }
 
@@ -569,7 +610,42 @@ def make_handler(args):
                 return self._json(info)
             if self.path.startswith("/api/master/download"):
                 return self._send_master()
+            if self.path.split("?")[0] in ("/", "/index.html"):
+                return self._send_index()
             return super().do_GET()
+
+        def _send_index(self):
+            """index.html with its asset URLs stamped from the files on disk.
+
+            The page used to ask for `style.css?v=4`, a URL that says nothing
+            about the file behind it. On 28 Aug 2026 a stylesheet another
+            project had left in Chrome's cache for localhost:8080 answered
+            that request instead, and RUDRA Studio rendered with someone
+            else's CSS -- no error, no failed request, just a page wearing
+            the wrong clothes. Cache-Control cannot help there: the browser
+            never asks the server for a URL it believes it already has.
+
+            Stamping each asset with its own mtime and size means the URL
+            changes whenever the file does, so a stale entry can only ever be
+            answered for content that really is identical.
+            """
+            body = (UI_DIR / "index.html").read_bytes().decode("utf-8")
+            for name in ("style.css", "app.js", "compositor.js"):
+                stat = (UI_DIR / name).stat()
+                token = hashlib.sha1(
+                    f"{name}:{int(stat.st_mtime)}:{stat.st_size}".encode()
+                ).hexdigest()[:10]
+                # Stamp whether or not the markup already carries a query, so
+                # a hand-edited index.html cannot quietly opt out of this.
+                body = re.sub(rf"{re.escape(name)}(\?[^\"\']*)?",
+                              f"{name}?v={token}", body)
+            payload = body.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            # end_headers() adds Cache-Control for html paths; don't duplicate it.
+            self.end_headers()
+            self.wfile.write(payload)
 
         def _send_master(self):
             """Hand back one file from _masters, by name only."""
@@ -649,7 +725,7 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoint", default=os.environ.get("RUDRA_CHECKPOINT"))
     parser.add_argument("--device", default=os.environ.get("RUDRA_DEVICE", "cuda"))
-    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--port", type=int, default=8422)
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--preload", action="store_true",
                         help="Load the model at startup instead of on the first request")

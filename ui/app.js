@@ -2,45 +2,47 @@
 
    The network runs once per frame, on the server, and hands back its raw
    fields. Everything after that — residual strength, recovery mode, preserve,
-   display peak, and the A/B flip — is composed on this machine's GPU by
-   ui/compositor.js, which is why the controls move at frame rate instead of at
-   one HTTP round trip each.
+   region EV, display peak, and the A/B flip — is composed on this machine's
+   GPU by ui/compositor.js, which is why the controls move at frame rate
+   instead of at one HTTP round trip each.
 
-   Nothing here simulates. Every number on screen is measured from the
-   composite the viewer is actually showing. */
+   Nothing here is decoration. Every menu item runs something, every number is
+   measured from the composite actually on screen, and the Region EV panel is
+   a real grade that reaches the EXR — rudra/delivery/controls.py applies the
+   identical maths when Master writes the file. */
 (function () {
   "use strict";
 
   var $ = function (id) { return document.getElementById(id); };
 
-  var state = {
-    live: false, file: null, busy: false,
-    mode: "all", strength: 1, peakEv: 0, preserve: true,
-    show: "model", flipHeld: false,
-    header: null, master: null, metrics: null,
-    maskPct: {highlight: 0, shadow: 0}
-  };
-
-  var ctx = null;              // the GPU compositor
-  var fields = null;           // Float32Array, highlight mask at full res
-  var shadowField = null;      // Float32Array, shadow mask at full res
-  var statsTimer = null, statsPending = false;
-
-  var SHOTS = [
-    ["carousel_fireworks", "4181", "4000", 1.00],
-    ["smith_hammering", "702", "4000", 1.00],
-    ["fireplace", "1392", "4000", 1.00],
-    ["beerfest_lightshow", "2757", "4000", 1.00],
-    ["showgirl_01", "1164", "4000", 1.00],
-    ["bistro", "1455", "4000", 1.00],
-    ["poker_travelling", "2922", "4000", 1.00],
-    ["fishing_longshot", "1251", "4000", 1.00],
-    ["Chimera_DCI4k_2398p", "3126", "10000", 1.00],
-    ["Bar-Scene_PQ-1K", "6201", "991", 0.25]
-  ];
-
   var PEAK_NITS = 10000, DIFFUSE_WHITE = 203;
   var SCOPE_LO = 0.05, SCOPE_HI = 4000;
+  var CACHE_FRAMES = 4;          // decoded frames held in memory at once
+  var PLAY_INTERVAL_MS = 160;
+
+  function defaultRegions() {
+    return [
+      {label: "highlights", low_nits: 400, high_nits: 2000, ev: 0},
+      {label: "speculars", low_nits: 2000, high_nits: 8000, ev: 0},
+      {label: "shadows", low_nits: 0.05, high_nits: 12, ev: 0}
+    ];
+  }
+
+  var state = {
+    live: false, busy: false,
+    frames: [], index: -1, playing: false, playTimer: null,
+    mode: "all", strength: 1, peakEv: 0, preserve: true,
+    show: "model", flipHeld: false,
+    regions: defaultRegions(), container: "aces",
+    railLeft: true, railRight: true, scopesOpen: true, zoom: "fit",
+    header: null, metrics: null, scopeData: null, master: null,
+    maskPct: {highlight: 0, shadow: 0},
+    undo: [], redo: []
+  };
+
+  var ctx = null;
+  var hiMask = null, shMask = null;   // current frame's masks, full resolution
+  var statsTimer = null, statsPending = false;
 
   function log(line, kind) {
     var box = $("log");
@@ -48,13 +50,14 @@
     if (kind) { row.className = kind; }
     row.textContent = line;
     box.appendChild(row);
+    while (box.childNodes.length > 400) { box.removeChild(box.firstChild); }
     box.scrollTop = box.scrollHeight;
   }
 
   function displayNits() { return DIFFUSE_WHITE * Math.pow(2, state.peakEv); }
+  function current() { return state.frames[state.index] || null; }
 
-  /* ---- half float ------------------------------------------------------ */
-  /* A 64K lookup beats decoding 1.4 million values by hand every frame. */
+  /* A 64K lookup beats decoding a million halves by hand. */
   var HALF = (function () {
     var table = new Float32Array(65536);
     for (var h = 0; h < 65536; h++) {
@@ -66,7 +69,7 @@
     return table;
   }());
 
-  /* ---- readouts -------------------------------------------------------- */
+  /* ---- formatting ------------------------------------------------------ */
   function ro(k, v, u) {
     return '<div class="ro"><span class="k">' + k + '</span>' +
            '<span class="v">' + v + '</span><span class="u">' + (u || "") + "</span></div>";
@@ -98,19 +101,19 @@
       fmt(m.shadow_mask_pct, 2) + "% shadow";
     var head = state.header || {};
     $("statusTime").textContent =
-      head.source_resolution + " · net " + fmt(head.elapsed_s, 2) + " s · " +
-      "grade " + fmt(m.compose_ms, 1) + " ms";
-    $("srcInfo").textContent = head.resolution + (head.tiled ? " · tiled" : " · one pass");
+      (head.source_resolution || "—") + " · net " + fmt(head.elapsed_s, 2) +
+      " s · grade " + fmt(m.compose_ms, 1) + " ms";
+    $("srcInfo").textContent =
+      (head.resolution || "—") + (head.tiled ? " · tiled" : " · one pass");
   }
 
-  /* ---- measurement ------------------------------------------------------
-     Mirrors ui/server.py's measure(): MaxCLL and MaxFALL are CTA-861.3 on
-     max(R,G,B), and they come from an exact GPU reduction, not from the
-     sampled readback -- a downsample would miss the single specular pixel
-     MaxCLL is entirely about. Everything distributional is measured on the
-     sample, which is capped at 768 on the long side. */
+  /* ---- measurement -----------------------------------------------------
+     Mirrors ui/server.py's measure(). MaxCLL and MaxFALL are CTA-861.3 on
+     max(R,G,B) and come from an exact GPU reduction, never from the sampled
+     readback -- a downsample would miss the single specular pixel MaxCLL is
+     entirely about. Everything distributional runs on the capped sample. */
   function computeStats() {
-    if (!ctx || !state.header) { return; }
+    if (!ctx || !state.header || !hiMask) { return; }
     var t0 = performance.now();
     var s = ctx.sample();
     var w = s.width, h = s.height, n = w * h;
@@ -126,9 +129,8 @@
       luma[i] = Math.max(r, Math.max(g, b));
       baseLuma[i] = Math.max(s.baseline[o], Math.max(s.baseline[o + 1],
                                                      s.baseline[o + 2])) * PEAK_NITS;
-      var ch = [r, g, b];
       for (var c = 0; c < 3; c++) {
-        var v = ch[c];
+        var v = c === 0 ? r : (c === 1 ? g : b);
         if (v > DIFFUSE_WHITE * (1 + 1e-6)) { aboveDW++; }
         if (v > 1000) { above1k++; }
         var t = (Math.log2(Math.min(Math.max(v, SCOPE_LO), SCOPE_HI)) - loLog) / spanLog;
@@ -136,25 +138,20 @@
       }
     }
 
-    function pct(p) {                       // percentile from the channel histogram
+    function pct(p) {
       var want = channels * p / 100, acc = 0;
       for (var k = 0; k < CH_BINS; k++) {
         acc += chHist[k];
-        if (acc >= want) {
-          return Math.pow(2, loLog + ((k + 0.5) / CH_BINS) * spanLog);
-        }
+        if (acc >= want) { return Math.pow(2, loLog + ((k + 0.5) / CH_BINS) * spanLog); }
       }
       return SCOPE_HI;
     }
 
-    /* Where the model was ALLOWED to act. The residual is gated to the masks,
-       so this is the honest "is it doing anything". */
-    var hiSum = 0, hiBase = 0, hiCount = 0, shSum = 0, shBase = 0, shCount = 0;
-    var rms = 0;
+    var hiSum = 0, hiBase = 0, hiCount = 0, shSum = 0, shBase = 0, shCount = 0, rms = 0;
     for (var j = 0; j < n; j++) {
       var src = s.index[j];
-      if (fields[src * 4 + 3] > 0.5) { hiSum += luma[j]; hiBase += baseLuma[j]; hiCount++; }
-      if (shadowField[src] > 0.5) { shSum += luma[j]; shBase += baseLuma[j]; shCount++; }
+      if (hiMask[src] > 0.5) { hiSum += luma[j]; hiBase += baseLuma[j]; hiCount++; }
+      if (shMask[src] > 0.5) { shSum += luma[j]; shBase += baseLuma[j]; shCount++; }
       var lr = Math.log2((luma[j] + 1e-4) / (baseLuma[j] + 1e-4));
       rms += lr * lr;
     }
@@ -165,16 +162,13 @@
 
     var peak = ctx.peakNits(), basePeak = ctx.basePeakNits();
     var m = {
-      maxcll: Math.ceil(peak),
-      maxfall: Math.ceil(ctx.meanNits()),
-      peak_nits: peak,
-      baseline_peak_nits: basePeak,
+      maxcll: Math.ceil(peak), maxfall: Math.ceil(ctx.meanNits()),
+      peak_nits: peak, baseline_peak_nits: basePeak,
       headroom_stops: Math.log2(Math.max(peak, 1e-6) / Math.max(basePeak, 1e-6)),
       headroom_highlight_stops: stopsIn(hiSum, hiBase, hiCount),
       headroom_shadow_stops: stopsIn(shSum, shBase, shCount),
       departure_rms_stops: Math.sqrt(rms / n),
-      p99_nits: pct(99),
-      median_nits: pct(50),
+      p99_nits: pct(99), median_nits: pct(50),
       above_diffuse_white_pct: 100 * aboveDW / channels,
       above_1000_nits_pct: 100 * above1k / channels,
       highlight_mask_pct: state.maskPct.highlight,
@@ -182,16 +176,18 @@
     };
     m.compose_ms = performance.now() - t0;
     state.metrics = m;
+    var frame = current();
+    if (frame) { frame.peak = peak; frame.aboveDW = m.above_diffuse_white_pct; }
     showMetrics(m);
-    drawScopes(buildScopes(luma, w, h), m);
+    state.scopeData = buildScopes(luma, w, h);
+    drawScopes(state.scopeData, m);
+    drawFrames();
   }
 
   /* ---- scopes ---------------------------------------------------------- */
   var W = 460, H = 132, HW = 304, HH = 96;
   var COLUMNS = 230, HIST_BINS = 76, COL_BINS = 512;
 
-  /* Per-column percentiles from a log histogram: O(pixels), not O(n log n),
-     which is what lets the waveform keep up with a slider drag. */
   function buildScopes(luma, w, h) {
     var loLog10 = Math.log10(SCOPE_LO), span10 = Math.log10(SCOPE_HI / SCOPE_LO);
     var cols = new Float32Array(COLUMNS * COL_BINS);
@@ -206,8 +202,8 @@
         var col = Math.min(COLUMNS - 1, Math.floor(x / w * COLUMNS));
         cols[col * COL_BINS + Math.min(COL_BINS - 1, Math.floor(t * COL_BINS))]++;
         counts[col]++;
-        var t2 = (Math.log2(v) - loLog2) / span2;
-        hist[Math.min(HIST_BINS - 1, Math.floor(t2 * HIST_BINS))]++;
+        hist[Math.min(HIST_BINS - 1,
+                      Math.floor(((Math.log2(v) - loLog2) / span2) * HIST_BINS))]++;
       }
     }
 
@@ -220,8 +216,7 @@
       for (var k = 0; k < COL_BINS && next < 5; k++) {
         acc += cols[base + k];
         while (next < 5 && acc >= total * wanted[next] / 100) {
-          got[next] = (k + 0.5) / COL_BINS;
-          next++;
+          got[next] = (k + 0.5) / COL_BINS; next++;
         }
       }
       while (next < 5) { got[next] = 1; next++; }
@@ -234,7 +229,7 @@
   }
 
   function ladder() {
-    var lo = SCOPE_LO, hi = SCOPE_HI, span = Math.log10(hi / lo), out = "";
+    var lo = SCOPE_LO, span = Math.log10(SCOPE_HI / lo), out = "";
     [[4000, "4000"], [1000, "1000"], [203, "203"], [10, "10"], [1, "1"], [0.05, "0.05"]]
       .forEach(function (t) {
         var y = (H - (Math.log10(t[0] / lo) / span) * H).toFixed(1);
@@ -298,13 +293,18 @@
     return (state.show === "baseline") !== state.flipHeld ? "baseline" : "model";
   }
 
+  function graded() {
+    return state.regions.some(function (r) { return Math.abs(r.ev) > 1e-9; });
+  }
+
   function present() {
     if (!ctx || !state.header) { return; }
     ctx.setParams({displayNits: displayNits(), show: shown()});
     ctx.present();
     $("peakBadge").textContent = "Display peak " + Math.round(displayNits()) + " nits";
     var isBase = shown() === "baseline";
-    $("plateLabel").textContent = isBase ? "INVERSE-ACES BASELINE" : "RUDRA RECONSTRUCTION";
+    $("plateLabel").textContent = isBase ? "Inverse-ACES baseline"
+      : ("RUDRA reconstruction" + (graded() ? " + region EV" : ""));
     $("plateLabel").classList.toggle("base", isBase);
     [].forEach.call($("viewMode").children, function (b) {
       b.classList.toggle("on", b.dataset.view === shown());
@@ -314,7 +314,7 @@
   function recompose() {
     if (!ctx || !state.header) { return; }
     var changed = ctx.setParams({strength: state.strength, mode: state.mode,
-                                 preserve: state.preserve});
+                                 preserve: state.preserve, regions: state.regions});
     present();
     if (changed) { scheduleStats(); }
   }
@@ -329,19 +329,188 @@
       statsTimer = null;
       if (!statsPending) { return; }
       statsPending = false;
-      try { computeStats(); }
-      catch (e) { log("measure failed: " + e, "err"); }
+      try { computeStats(); } catch (e) { log("measure failed: " + e, "err"); }
       if (statsPending) { scheduleStats(); }
     }, 90);
   }
 
-  /* ---- requests -------------------------------------------------------- */
+  /* ---- undo ------------------------------------------------------------ */
+  function snapshot() {
+    return JSON.stringify({mode: state.mode, strength: state.strength,
+                           preserve: state.preserve, regions: state.regions});
+  }
+  function pushUndo() {
+    state.undo.push(snapshot());
+    while (state.undo.length > 60) { state.undo.shift(); }
+    state.redo.length = 0;
+  }
+  function restore(json) {
+    var s = JSON.parse(json);
+    state.mode = s.mode; state.strength = s.strength;
+    state.preserve = s.preserve; state.regions = s.regions;
+    syncControls();
+    recompose();
+  }
+  function undo() {
+    if (!state.undo.length) { log("nothing to undo"); return; }
+    state.redo.push(snapshot());
+    restore(state.undo.pop());
+    log("undo");
+  }
+  function redo() {
+    if (!state.redo.length) { log("nothing to redo"); return; }
+    state.undo.push(snapshot());
+    restore(state.redo.pop());
+    log("redo");
+  }
+
+  function syncControls() {
+    [].forEach.call($("mode").children, function (b) {
+      b.classList.toggle("on", b.dataset.mode === state.mode);
+    });
+    $("strength").value = String(state.strength);
+    $("strengthVal").textContent = state.strength.toFixed(2);
+    $("peak").value = String(state.peakEv);
+    $("peakVal").textContent = Math.round(displayNits()).toLocaleString("en-US");
+    $("preserve").classList.toggle("on", state.preserve);
+    $("preserveHint").textContent = state.preserve ? "do-no-harm" : "raw prediction";
+    drawRegions();
+  }
+
+  /* ---- region EV -------------------------------------------------------
+     Drag a value to scrub it, double-click to zero it. These are not a
+     preview: Master applies the identical qualifier and gain to the file. */
+  function nitsLabel(v) {
+    return v >= 1000 ? (v / 1000) + "k" : String(v);
+  }
+
+  function drawRegions() {
+    $("regions").innerHTML = state.regions.map(function (r, i) {
+      var live = Math.abs(r.ev) > 1e-9;
+      return '<div class="region' + (i === state.regionSel ? " sel" : "") +
+             '" data-i="' + i + '">' +
+             '<span class="sw"></span>' +
+             '<span class="q">' + nitsLabel(r.low_nits) + " – " + nitsLabel(r.high_nits) +
+             ' nits</span>' +
+             '<span class="ev' + (live ? " live" : "") + '" data-i="' + i + '">' +
+             signed(r.ev, 2) + "</span>" +
+             '<span class="u">EV</span></div>';
+    }).join("");
+    $("regionCount").textContent = String(state.regions.length);
+  }
+
+  function bindRegions() {
+    var dragging = null, startX = 0, startEv = 0, moved = false;
+    $("regions").addEventListener("pointerdown", function (e) {
+      var ev = e.target.closest(".ev");
+      var row = e.target.closest(".region");
+      if (row) { state.regionSel = Number(row.dataset.i); drawRegions(); }
+      if (!ev) { return; }
+      dragging = Number(ev.dataset.i);
+      startX = e.clientX; startEv = state.regions[dragging].ev; moved = false;
+      pushUndo();
+      try { $("regions").setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+      e.preventDefault();
+    });
+    $("regions").addEventListener("pointermove", function (e) {
+      if (dragging === null) { return; }
+      var step = e.shiftKey ? 0.002 : 0.01;
+      var value = Math.max(-4, Math.min(4, startEv + (e.clientX - startX) * step));
+      if (Math.abs(value - state.regions[dragging].ev) < 1e-6) { return; }
+      moved = true;
+      state.regions[dragging].ev = Math.round(value * 100) / 100;
+      drawRegions();
+      recompose();
+    });
+    window.addEventListener("pointerup", function () {
+      if (dragging !== null && !moved) { state.undo.pop(); }
+      dragging = null;
+    });
+    $("regions").addEventListener("dblclick", function (e) {
+      var ev = e.target.closest(".ev");
+      if (!ev) { return; }
+      pushUndo();
+      state.regions[Number(ev.dataset.i)].ev = 0;
+      drawRegions(); recompose();
+    });
+  }
+
+  /* ---- frames ----------------------------------------------------------- */
+  function drawFrames() {
+    var rows = state.frames.map(function (f, i) {
+      var size = f.header ? f.header.resolution : "—";
+      var peak = f.peak ? Math.round(f.peak).toLocaleString("en-US") : "—";
+      var bar = f.aboveDW ? Math.min(1, f.aboveDW / 20) : 0;
+      return '<div class="shot' + (i === state.index ? " on" : "") +
+             (f.loading ? " loading" : "") + '" data-i="' + i + '">' +
+             '<span class="mark"></span><span class="name">' + f.name + "</span>" +
+             '<span class="frames">' + size + "</span>" +
+             '<span class="peak">' + peak + "</span>" +
+             '<span class="bar"><i style="width:' + (bar * 100).toFixed(0) + '%"></i></span></div>';
+    }).join("");
+    $("shots").innerHTML = rows;
+    $("shotCount").textContent = String(state.frames.length);
+    $("framesEmpty").hidden = state.frames.length > 0;
+    $("tc").textContent = state.frames.length
+      ? String(state.index + 1).padStart(3, "0") + " / " +
+        String(state.frames.length).padStart(3, "0")
+      : "000 / 000";
+    var frac = state.frames.length > 1 ? state.index / (state.frames.length - 1) : 0;
+    $("scrubHead").style.left = (frac * 100) + "%";
+    var single = state.frames.length < 2;
+    $("btnPrev").disabled = single;
+    $("btnNext").disabled = single;
+    $("btnPlay").disabled = single;
+  }
+
+  function evictCache() {
+    var loaded = state.frames.filter(function (f) { return f.buf; });
+    loaded.sort(function (a, b) { return (a.touched || 0) - (b.touched || 0); });
+    while (loaded.length > CACHE_FRAMES) {
+      var drop = loaded.shift();
+      if (drop !== current()) { drop.buf = null; }
+    }
+  }
+
+  function adopt(frame) {
+    /* Put an already-fetched frame on the GPU. No network, no forward pass. */
+    var head = frame.header, off = head.offsets, n = head.width * head.height;
+    var fieldsU16 = new Uint16Array(frame.buf, off.fields, n * 4);
+    var shadowU16 = new Uint16Array(frame.buf, off.shadow, n);
+    var sdr = new Uint8Array(frame.buf, off.sdr, n * 3);
+
+    hiMask = new Float32Array(n);
+    shMask = new Float32Array(n);
+    var hiCount = 0, shCount = 0;
+    for (var i = 0; i < n; i++) {
+      hiMask[i] = HALF[fieldsU16[i * 4 + 3]];
+      shMask[i] = HALF[shadowU16[i]];
+      if (hiMask[i] > 0.5) { hiCount++; }
+      if (shMask[i] > 0.5) { shCount++; }
+    }
+    state.maskPct = {highlight: 100 * hiCount / n, shadow: 100 * shCount / n};
+    state.header = head;
+    frame.touched = performance.now();
+
+    ctx.setFrame({width: head.width, height: head.height,
+                  sdr: sdr, fields: fieldsU16, shadow: shadowU16});
+    ctx.setParams({strength: state.strength, mode: state.mode,
+                   preserve: state.preserve, regions: state.regions});
+    $("empty").hidden = true;
+    $("plate").hidden = false;
+    present();
+    computeStats();
+    evictCache();
+  }
+
   function params(extra) {
     var p = {
       strength: state.strength,
       display_nits: displayNits(),
       recovery_mode: state.mode,
       preserve_outside: state.preserve,
+      regions: state.regions,
+      region_softness_stops: 1.0,
       tile_size: 0, tile_overlap: 64, max_side: 1600
     };
     if (extra) { Object.keys(extra).forEach(function (k) { p[k] = extra[k]; }); }
@@ -350,91 +519,158 @@
 
   function busy(on, label) {
     state.busy = on;
-    $("btnMaster").disabled = on || !state.file || !state.live;
-    $("btnReprocess").disabled = on || !state.file || !state.live;
+    var ready = !on && state.frames.length > 0 && state.live;
+    $("btnMaster").disabled = !ready;
+    $("btnReprocess").disabled = !ready;
     $("btnMaster").textContent = label || "Master EXR";
   }
 
-  function loadFrame() {
-    if (!state.live || !state.file || state.busy) { return; }
-    if (!ctx) { log("no WebGL2 with float targets in this browser", "err"); return; }
+  function select(index, force) {
+    if (!state.frames.length) { return; }
+    index = Math.max(0, Math.min(state.frames.length - 1, index));
+    state.index = index;
+    var frame = state.frames[index];
+    drawFrames();
+    if (frame.buf && !force) { adopt(frame); return; }
+    fetchFrame(frame);
+  }
+
+  function fetchFrame(frame) {
+    if (!state.live) { log("no model loaded", "err"); return; }
+    if (!ctx) { log("no WebGL2 with float render targets in this browser", "err"); return; }
+    if (frame.loading) { return; }
+    frame.loading = true;
+    drawFrames();
     busy(true);
-    log("forward pass " + state.file.name);
     var started = performance.now();
+    log("forward pass " + frame.name);
     fetch("/api/frame", {
       method: "POST",
       headers: {"Content-Type": "application/octet-stream",
                 "X-Rudra-Params": JSON.stringify(params())},
-      body: state.file
+      body: frame.file
     }).then(function (r) {
       var head = r.headers.get("X-Rudra-Frame");
       if (!r.ok || !head) {
-        return r.json().then(function (d) {
-          throw new Error(d.error || ("HTTP " + r.status));
-        });
+        return r.json().then(function (d) { throw new Error(d.error || ("HTTP " + r.status)); });
       }
       return r.arrayBuffer().then(function (buf) {
         return {header: JSON.parse(head), buf: buf};
       });
     }).then(function (d) {
+      frame.loading = false;
+      frame.header = d.header;
+      frame.buf = d.buf;
       busy(false);
-      var head = d.header, off = head.offsets, n = head.width * head.height;
-      state.header = head;
-
-      var fieldsU16 = new Uint16Array(d.buf, off.fields, n * 4);
-      var shadowU16 = new Uint16Array(d.buf, off.shadow, n);
-      var sdr = new Uint8Array(d.buf, off.sdr, n * 3);
-
-      /* Decoded once, kept: the masks drive the headroom numbers on every
-         later measurement, and re-decoding 1.4 M halves per slider move
-         would be the new bottleneck. */
-      fields = new Float32Array(n * 4);
-      for (var i = 0; i < n * 4; i++) { fields[i] = HALF[fieldsU16[i]]; }
-      shadowField = new Float32Array(n);
-      var hiCount = 0, shCount = 0;
-      for (var j = 0; j < n; j++) {
-        shadowField[j] = HALF[shadowU16[j]];
-        if (fields[j * 4 + 3] > 0.5) { hiCount++; }
-        if (shadowField[j] > 0.5) { shCount++; }
-      }
-      state.maskPct = {highlight: 100 * hiCount / n, shadow: 100 * shCount / n};
-
-      ctx.setFrame({width: head.width, height: head.height,
-                    sdr: sdr, fields: fieldsU16, shadow: shadowU16});
-      ctx.setParams({strength: state.strength, mode: state.mode,
-                     preserve: state.preserve});
-      $("empty").hidden = true;
-      $("plate").hidden = false;
-      present();
-      computeStats();
-      log("  " + head.resolution + "  net " + head.elapsed_s + " s  transfer " +
-          ((d.buf.byteLength / 1048576).toFixed(1)) + " MB  total " +
+      if (state.frames[state.index] !== frame) { drawFrames(); return; }
+      adopt(frame);
+      log("  " + d.header.resolution + "  net " + d.header.elapsed_s + " s  transfer " +
+          (d.buf.byteLength / 1048576).toFixed(1) + " MB  total " +
           ((performance.now() - started) / 1000).toFixed(2) + " s");
-      log("  controls are local from here — no round trip per change");
     }).catch(function (e) {
-      busy(false);
+      frame.loading = false; busy(false); drawFrames();
       log("frame failed: " + e.message, "err");
     });
   }
 
+  function addFiles(files) {
+    var start = state.frames.length;
+    [].forEach.call(files, function (f) {
+      state.frames.push({file: f, name: f.name, header: null, buf: null,
+                         loading: false, peak: null, aboveDW: null});
+    });
+    log("added " + files.length + " frame" + (files.length === 1 ? "" : "s"));
+    drawFrames();
+    select(state.frames.length === files.length ? 0 : start);
+  }
+
+  function closeAll() {
+    stopPlay();
+    state.frames = []; state.index = -1; state.header = null;
+    hiMask = shMask = null;
+    $("plate").hidden = true; $("empty").hidden = false;
+    $("measA").innerHTML = ""; $("measB").innerHTML = "";
+    $("wave").innerHTML = ""; $("hist").innerHTML = "";
+    $("statusMask").textContent = "—"; $("statusTime").textContent = "—";
+    $("srcInfo").textContent = "—";
+    busy(false); drawFrames();
+    log("closed all frames");
+  }
+
+  /* ---- transport -------------------------------------------------------- */
+  function step(delta) {
+    if (state.frames.length < 2) { return; }
+    select((state.index + delta + state.frames.length) % state.frames.length);
+  }
+  function stopPlay() {
+    if (state.playTimer) { clearInterval(state.playTimer); state.playTimer = null; }
+    state.playing = false;
+    $("btnPlay").classList.remove("on");
+  }
+  function togglePlay() {
+    if (state.frames.length < 2) { return; }
+    if (state.playing) { stopPlay(); log("stop"); return; }
+    state.playing = true;
+    $("btnPlay").classList.add("on");
+    log("play " + state.frames.length + " frames");
+    state.playTimer = setInterval(function () {
+      /* Never queue up behind a fetch: if the next frame is not decoded yet,
+         hold this beat rather than stacking forward passes. */
+      if (state.busy) { return; }
+      step(1);
+    }, PLAY_INTERVAL_MS);
+  }
+
+  /* ---- delivery --------------------------------------------------------- */
+  function deliveryRecord() {
+    var head = state.header || {};
+    return {
+      checkpoint: head.checkpoint || null,
+      step: head.step === undefined ? null : head.step,
+      frame: current() ? current().name : null,
+      resolution: head.resolution || null,
+      container: state.container === "aces" ? "ACES 2065-1 (AP0)" : "linear Rec.2020",
+      transfer: "linear",
+      diffuse_white_nits: DIFFUSE_WHITE,
+      recovery_mode: state.mode,
+      residual_strength: state.strength,
+      preserve_outside: state.preserve,
+      region_ev: graded() ? state.regions : null,
+      measurements: state.metrics || null
+    };
+  }
+
+  function copy(label, value) {
+    var text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { log("copied " + label + " to the clipboard"); },
+        function () { sheet(label, "<pre>" + text.replace(/[<&]/g, "") + "</pre>"); });
+    } else {
+      sheet(label, "<pre>" + text.replace(/[<&]/g, "") + "</pre>");
+    }
+  }
+
   function master() {
-    if (!state.live || !state.file || state.busy) { return; }
+    if (!state.live || !current() || state.busy) { return; }
     busy(true, "Mastering…");
-    log("master " + state.file.name + " → ACES 2065-1 EXR, full resolution");
+    log("master " + current().name + " → " +
+        (state.container === "aces" ? "ACES 2065-1" : "linear Rec.2020") +
+        " EXR, full resolution" + (graded() ? ", with region EV" : ""));
     fetch("/api/master", {
       method: "POST",
       headers: {"Content-Type": "application/octet-stream",
-                "X-Rudra-Params": JSON.stringify(params({name: state.file.name,
-                                                         container: "aces",
-                                                         tile_size: 512,
+                "X-Rudra-Params": JSON.stringify(params({name: current().name,
+                                                         container: state.container,
                                                          master_max_side: 4096}))},
-      body: state.file
+      body: current().file
     }).then(function (r) { return r.json(); }).then(function (d) {
       busy(false);
       if (!d.ok) { log("master failed: " + (d.error || "unknown"), "err"); return; }
       state.master = d;
       log("  " + d.file + "  " + (d.bytes / 1048576).toFixed(2) + " MB  " +
-          d.resolution + "  " + d.container + "  " + d.elapsed_s + " s");
+          d.resolution + "  " + d.container + (d.tiled ? "  tiled" : "  one pass") +
+          "  " + d.elapsed_s + " s");
       log("  MaxCLL " + d.maxcll + "  MaxFALL " + d.maxfall + " nits  sidecar " + d.sidecar);
       var a = document.createElement("a");
       a.href = "/api/master/download?f=" + encodeURIComponent(d.file);
@@ -443,66 +679,229 @@
     }).catch(function (e) { busy(false); log("master failed: " + e, "err"); });
   }
 
-  /* ---- wiring ---------------------------------------------------------- */
-  function take(file) {
-    state.file = file;
-    $("tc").textContent = "00:00:00:01";
-    loadFrame();
+  /* ---- overlay sheet ---------------------------------------------------- */
+  function sheet(title, html) {
+    $("overlaySheet").innerHTML = "<h3>" + title + "</h3>" + html +
+      '<div class="close">Esc, or click anywhere, to close</div>';
+    $("overlay").hidden = false;
+  }
+  function closeSheet() { $("overlay").hidden = true; }
+
+  var SHORTCUTS = [
+    ["B (hold)", "Flip to the inverse-ACES baseline"],
+    ["O", "Open frames"],
+    ["M", "Master EXR"],
+    [", / .", "Previous / next frame"],
+    ["Home / End", "First / last frame"],
+    ["Space", "Play / pause"],
+    ["[ / ]", "Weaker / stronger residual"],
+    ["1 2 3 4", "Recovery: all, highlights, shadows, off"],
+    ["P", "Preserve outside masks"],
+    ["Z / Y", "Undo / redo"],
+    ["?", "This list"]
+  ];
+
+  /* ---- window ----------------------------------------------------------- */
+  function applyWindow() {
+    $("railLeft").classList.toggle("hidden", !state.railLeft);
+    $("railRight").classList.toggle("hidden", !state.railRight);
+    $("scopes").classList.toggle("hidden", !state.scopesOpen);
+    $("viewer").classList.toggle("actual", state.zoom === "actual");
   }
 
-  function bind() {
-    $("shots").innerHTML = SHOTS.map(function (s) {
-      return '<div class="shot"><span class="mark"></span>' +
-             '<span class="name">' + s[0] + '</span>' +
-             '<span class="frames">' + s[1] + '</span>' +
-             '<span class="peak">' + s[2] + '</span>' +
-             '<span class="bar"><i style="width:' + (s[3] * 100) + '%"></i></span></div>';
-    }).join("");
-    $("shotCount").textContent = String(SHOTS.length);
+  /* ---- menus ------------------------------------------------------------ */
+  function closeMenus() {
+    [].forEach.call(document.querySelectorAll(".menu.open"), function (m) {
+      m.classList.remove("open");
+    });
+  }
 
+  function checkState(key) {
+    if (key.indexOf("mode:") === 0) { return state.mode === key.slice(5); }
+    if (key.indexOf("container:") === 0) { return state.container === key.slice(10); }
+    if (key.indexOf("zoom:") === 0) { return state.zoom === key.slice(5); }
+    return !!state[key];
+  }
+
+  function refreshMenu(menu) {
+    [].forEach.call(menu.querySelectorAll("button[data-check]"), function (b) {
+      b.classList.toggle("checked", checkState(b.dataset.check));
+    });
+    var many = state.frames.length > 1, any = state.frames.length > 0;
+    var flags = {
+      "close": any, "master": any && state.live && !state.busy,
+      "undo": state.undo.length > 0, "redo": state.redo.length > 0,
+      "first": many, "prev": many, "next": many, "last": many, "play": many,
+      "copy-metrics": !!state.metrics, "copy-scopes": !!state.scopeData,
+      "copy-delivery": any, "remeasure": any
+    };
+    [].forEach.call(menu.querySelectorAll("button[data-act]"), function (b) {
+      var f = flags[b.dataset.act];
+      b.disabled = f === undefined ? false : !f;
+    });
+  }
+
+  var ACTIONS = {
+    "open": function () { $("file").click(); },
+    "close": closeAll,
+    "master": master,
+    "undo": undo,
+    "redo": redo,
+    "reset-recon": function () {
+      pushUndo();
+      state.mode = "all"; state.strength = 1; state.preserve = true;
+      syncControls(); recompose(); log("reconstruction reset");
+    },
+    "reset-regions": function () {
+      pushUndo(); state.regions = defaultRegions();
+      drawRegions(); recompose(); log("region EV reset");
+    },
+    "first": function () { select(0); },
+    "prev": function () { step(-1); },
+    "next": function () { step(1); },
+    "last": function () { select(state.frames.length - 1); },
+    "play": togglePlay,
+    "mode-all": function () { setMode("all"); },
+    "mode-highlights": function () { setMode("highlights"); },
+    "mode-shadows": function () { setMode("shadows"); },
+    "mode-off": function () { setMode("off"); },
+    "preserve": function () { $("preserve").click(); },
+    "strength-down": function () { nudgeStrength(-0.1); },
+    "strength-up": function () { nudgeStrength(0.1); },
+    "copy-metrics": function () { copy("measurements", state.metrics); },
+    "copy-scopes": function () { copy("scope data", state.scopeData); },
+    "copy-delivery": function () { copy("delivery metadata", deliveryRecord()); },
+    "remeasure": function () { computeStats(); log("re-measured"); },
+    "container-aces": function () { setContainer("aces"); },
+    "container-linear": function () { setContainer("linear"); },
+    "rail-left": function () { state.railLeft = !state.railLeft; applyWindow(); },
+    "rail-right": function () { state.railRight = !state.railRight; applyWindow(); },
+    "scopes": function () { state.scopesOpen = !state.scopesOpen; applyWindow(); },
+    "zoom-fit": function () { state.zoom = "fit"; applyWindow(); },
+    "zoom-actual": function () { state.zoom = "actual"; applyWindow(); },
+    "shortcuts": function () {
+      sheet("Keyboard", SHORTCUTS.map(function (s) {
+        return '<div class="row"><span class="k">' + s[0] + "</span><span>" + s[1] + "</span></div>";
+      }).join(""));
+    },
+    "about": function () {
+      var head = state.header || {};
+      sheet("RUDRA Studio", [
+        ["Checkpoint", head.checkpoint || "—"],
+        ["Step", head.step === undefined || head.step === null ? "—" : head.step],
+        ["Device", $("device").textContent],
+        ["Composite", "GPU, WebGL2 — ui/compositor.js"],
+        ["Storage", "log2_extended, 0.005–1 000 000 nits"],
+        ["Master", "ACES 2065-1 (AP0), ST 2065-4 chromaticities"],
+        ["Built by", "FXTD Studios / Radiance Research"]
+      ].map(function (r) {
+        return '<div class="row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
+      }).join(""));
+    }
+  };
+
+  function setContainer(kind) {
+    state.container = kind;
+    $("containerField").textContent = kind === "aces"
+      ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020";
+    $("primariesField").textContent = kind === "aces"
+      ? "AP0 (ST 2065-4)" : "Rec.2020";
+    log("container: " + $("containerField").textContent);
+  }
+
+  function nudgeStrength(delta) {
+    pushUndo();
+    state.strength = Math.max(0, Math.min(2, Math.round((state.strength + delta) * 100) / 100));
+    syncControls(); recompose();
+  }
+
+  function setMode(mode) {
+    if (state.mode === mode) { return; }
+    pushUndo(); state.mode = mode; syncControls(); recompose();
+  }
+
+  /* ---- wiring ----------------------------------------------------------- */
+  function bind() {
+    /* menus */
+    [].forEach.call(document.querySelectorAll(".menu"), function (menu) {
+      menu.querySelector(".mtitle").addEventListener("click", function (e) {
+        e.stopPropagation();
+        var open = menu.classList.contains("open");
+        closeMenus();
+        if (!open) { refreshMenu(menu); menu.classList.add("open"); }
+      });
+      menu.addEventListener("pointerenter", function () {
+        if (document.querySelector(".menu.open") && !menu.classList.contains("open")) {
+          closeMenus(); refreshMenu(menu); menu.classList.add("open");
+        }
+      });
+    });
+    $("menubar").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-act]");
+      if (!b || b.disabled) { return; }
+      closeMenus();
+      var fn = ACTIONS[b.dataset.act];
+      if (fn) { fn(); } else { log("no action for " + b.dataset.act, "err"); }
+    });
+    window.addEventListener("click", closeMenus);
+
+    /* files */
     $("file").addEventListener("change", function (e) {
-      if (e.target.files.length) { take(e.target.files[0]); }
+      if (e.target.files.length) { addFiles(e.target.files); }
+      e.target.value = "";
     });
     ["dragover", "drop"].forEach(function (t) {
       window.addEventListener(t, function (e) { e.preventDefault(); });
     });
     window.addEventListener("drop", function (e) {
-      if (e.dataTransfer && e.dataTransfer.files.length) { take(e.dataTransfer.files[0]); }
+      if (e.dataTransfer && e.dataTransfer.files.length) { addFiles(e.dataTransfer.files); }
     });
     $("viewer").addEventListener("dblclick", function () { $("file").click(); });
 
-    $("mode").addEventListener("click", function (e) {
-      var b = e.target.closest("button[data-mode]");
-      if (!b) { return; }
-      state.mode = b.dataset.mode;
-      [].forEach.call(this.children, function (c) { c.classList.toggle("on", c === b); });
-      recompose();
+    /* frames rail */
+    $("shots").addEventListener("click", function (e) {
+      var row = e.target.closest(".shot");
+      if (row) { stopPlay(); select(Number(row.dataset.i)); }
     });
 
-    /* The compare. Click either side to hold it, or hold B for a momentary
-       flip -- the eye is far better at spotting a change in one place than at
-       tracking a seam travelling across the frame. */
+    /* transport */
+    $("btnPrev").addEventListener("click", function () { stopPlay(); step(-1); });
+    $("btnNext").addEventListener("click", function () { stopPlay(); step(1); });
+    $("btnPlay").addEventListener("click", togglePlay);
+    (function () {
+      var scrubbing = false;
+      function seek(clientX) {
+        if (state.frames.length < 2) { return; }
+        var r = $("scrub").getBoundingClientRect();
+        var frac = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+        select(Math.round(frac * (state.frames.length - 1)));
+      }
+      $("scrub").addEventListener("pointerdown", function (e) {
+        scrubbing = true; stopPlay();
+        $("scrub").setPointerCapture(e.pointerId); seek(e.clientX);
+      });
+      $("scrub").addEventListener("pointermove", function (e) {
+        if (scrubbing) { seek(e.clientX); }
+      });
+      window.addEventListener("pointerup", function () { scrubbing = false; });
+    }());
+
+    /* reconstruction */
+    $("mode").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-mode]");
+      if (b) { setMode(b.dataset.mode); }
+    });
     $("viewMode").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-view]");
-      if (!b) { return; }
-      state.show = b.dataset.view;
-      present();
+      if (b) { state.show = b.dataset.view; present(); }
     });
     $("plate").addEventListener("pointerdown", function (e) {
-      if (e.button !== 0) { return; }
-      state.flipHeld = true; present();
+      if (e.button === 0) { state.flipHeld = true; present(); }
     });
     window.addEventListener("pointerup", function () {
       if (state.flipHeld) { state.flipHeld = false; present(); }
     });
-    window.addEventListener("keydown", function (e) {
-      if (e.repeat) { return; }
-      if (e.key === "b" || e.key === "B") { state.flipHeld = true; present(); }
-    });
-    window.addEventListener("keyup", function (e) {
-      if (e.key === "b" || e.key === "B") { state.flipHeld = false; present(); }
-    });
-
+    $("strength").addEventListener("pointerdown", pushUndo);
     $("strength").addEventListener("input", function () {
       state.strength = parseFloat(this.value);
       $("strengthVal").textContent = state.strength.toFixed(2);
@@ -514,19 +913,96 @@
       present();
     });
     $("preserve").addEventListener("click", function () {
+      pushUndo();
       state.preserve = !state.preserve;
       this.classList.toggle("on", state.preserve);
       $("preserveHint").textContent = state.preserve ? "do-no-harm" : "raw prediction";
       recompose();
     });
-    $("btnReprocess").addEventListener("click", loadFrame);
+    $("btnReprocess").addEventListener("click", function () {
+      if (current()) { select(state.index, true); }
+    });
     $("btnMaster").addEventListener("click", master);
+    bindRegions();
+
+    /* overlay */
+    $("overlay").addEventListener("click", closeSheet);
+
+    /* keyboard */
+    window.addEventListener("keydown", function (e) {
+      if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+      var k = e.key;
+      if (k === "b" || k === "B") {
+        if (!e.repeat) { state.flipHeld = true; present(); }
+        return;
+      }
+      if (k === "Escape") { closeSheet(); closeMenus(); return; }
+      var map = {
+        "o": "open", "O": "open", "m": "master", "M": "master",
+        "z": "undo", "Z": "undo", "y": "redo", "Y": "redo",
+        ",": "prev", ".": "next", "Home": "first", "End": "last",
+        "[": "strength-down", "]": "strength-up", "?": "shortcuts",
+        "p": "preserve", "P": "preserve"
+      };
+      if (k === " ") { e.preventDefault(); togglePlay(); return; }
+      if (k === "1" || k === "2" || k === "3" || k === "4") {
+        setMode(["all", "highlights", "shadows", "off"][Number(k) - 1]);
+        return;
+      }
+      var act = map[k];
+      if (act && ACTIONS[act]) { e.preventDefault(); ACTIONS[act](); }
+    });
+    window.addEventListener("keyup", function (e) {
+      if ((e.key === "b" || e.key === "B") && state.flipHeld) {
+        state.flipHeld = false; present();
+      }
+    });
+  }
+
+  function auditMenus() {
+    var orphans = [];
+    [].forEach.call(document.querySelectorAll(".menu .drop button[data-act]"), function (b) {
+      if (!ACTIONS[b.dataset.act] && orphans.indexOf(b.dataset.act) < 0) {
+        orphans.push(b.dataset.act);
+      }
+    });
+    if (orphans.length) {
+      log("menu items with no action: " + orphans.join(", "), "err");
+    }
+    return orphans;
+  }
+
+  /* The README screenshot is taken by a headless browser, which cannot drop a
+     file on the window. ?demo=1 loads the bundled frame instead, and
+     ?frame=<url> loads any other, so ui/capture_shot.py captures the app doing
+     its job rather than an empty "Drop an SDR frame" panel -- which is exactly
+     what it would have captured between the UI rebuild and 28 Aug 2026. */
+  var DEMO_FRAME = "assets/cinematic_hdr_sunset.png";
+
+  function autoload() {
+    var query = new URLSearchParams(location.search);
+    var url = query.get("frame") || (query.get("demo") ? DEMO_FRAME : null);
+    if (!url) { return; }
+    log("autoloading " + url);
+    fetch(url, {cache: "no-store"}).then(function (r) {
+      if (!r.ok) { throw new Error("HTTP " + r.status); }
+      return r.blob();
+    }).then(function (blob) {
+      var name = url.split("/").pop().split("?")[0] || "frame.png";
+      addFiles([new File([blob], name, {type: blob.type || "image/png"})]);
+    }).catch(function (e) {
+      log("autoload failed: " + e.message, "err");
+    });
   }
 
   function boot() {
-    var canvas = $("gl");
-    ctx = window.RudraGL ? window.RudraGL.create(canvas) : null;
+    ctx = window.RudraGL ? window.RudraGL.create($("gl")) : null;
     bind();
+    auditMenus();
+    syncControls();
+    applyWindow();
+    drawFrames();
+    setContainer("aces");
     if (!ctx) {
       log("this browser has no WebGL2 with float render targets — the viewer " +
           "needs both", "err");
@@ -540,14 +1016,13 @@
         if (info.loaded) {
           log("model " + info.name + (info.step ? "  step " + info.step : ""));
           log("device " + (info.gpu || info.device));
-          log("drop a frame — the network runs once, then the grade is local");
+          log("drop frames — the network runs once each, then the grade is local");
+          autoload();
         } else {
           log("no model loaded: " + (info.reason || "unknown"), "err");
         }
         busy(false);
-      }).catch(function (e) {
-        log("cannot reach the server: " + e, "err");
-      });
+      }).catch(function (e) { log("cannot reach the server: " + e, "err"); });
   }
 
   if (document.readyState === "loading") {

@@ -36,6 +36,9 @@ _PU21 = (0.353487901, 0.3734658629, 8.277049286e-05,
          0.9062562627, 0.09150303166, 0.9099517204, 596.3148142)
 _PU21_MIN, _PU21_MAX = 0.005, 10000.0
 
+# Why CVVDP is not in the summary, when it is not. Set by _cvvdp_fn.
+_BACKEND_NOTE: dict[str, str] = {}
+
 
 def pu21_encode(luminance_nits: np.ndarray) -> np.ndarray:
     """Perceptually uniform encoding of absolute luminance (banding+glare)."""
@@ -82,6 +85,7 @@ def _cvvdp_fn():
         import torch  # noqa: F401
         from ..hdrvdp import colorvideovdp_available, hdr_vdp3_jod
         if not colorvideovdp_available():
+            _BACKEND_NOTE["reason"] = "pycvvdp is not installed (pip install cvvdp)"
             return None
 
         def jod(test: np.ndarray, ref: np.ndarray):
@@ -96,11 +100,21 @@ def _cvvdp_fn():
                 to = lambda a: _t.from_numpy(np.ascontiguousarray(a, dtype=np.float32)).permute(2, 0, 1)[None]
                 value, backend = hdr_vdp3_jod(to(test), to(ref), color_space="rec2020",
                                               diffuse_white_nits=1.0)  # already absolute nits
-                return value if backend == "colorvideovdp" else None
-            except Exception:
+                if backend == "colorvideovdp":
+                    return value
+                # The proxy is never substituted for the real metric, but the
+                # reason it fell back has to travel: reporting "install
+                # pycvvdp" to somebody who has installed pycvvdp is how this
+                # benchmark went unrun from July to late August 2026.
+                from ..hdrvdp import cvvdp_last_error
+                _BACKEND_NOTE["reason"] = cvvdp_last_error() or "fell back to the proxy"
+                return None
+            except Exception as exc:
+                _BACKEND_NOTE["reason"] = f"{type(exc).__name__}: {exc}"
                 return None
         return jod
-    except Exception:
+    except Exception as exc:
+        _BACKEND_NOTE["reason"] = f"{type(exc).__name__}: {exc}"
         return None
 
 
@@ -109,14 +123,21 @@ def run_benchmark(
     nits_scale: float = 1.0,
     output: str | Path | None = None,
     limit: int | None = None,
+    test_dir: str = "test",
 ) -> dict:
-    """Score every ref/test pair under ``root``; write results JSON + CSV.
+    """Score every ref/<test_dir> pair under ``root``; write results JSON + CSV.
 
     ``nits_scale`` converts stored values to absolute nits (e.g. 203.0 for
     diffuse-white-relative frames where 1.0 = 203 cd/m²).
+
+    ``test_dir`` names the directory holding the method being scored, so one
+    exported reference can be reused across methods -- RUDRA against its own
+    analytic baseline, or against a competitor's output -- instead of writing
+    the ground truth out once per comparison. A paper needs several of those
+    rows and the reference frames are the expensive half.
     """
     root = Path(root)
-    ref_root, test_root = root / "ref", root / "test"
+    ref_root, test_root = root / "ref", root / test_dir
     if not ref_root.is_dir() or not test_root.is_dir():
         raise FileNotFoundError(f"expected {ref_root} and {test_root}")
 
@@ -135,6 +156,7 @@ def run_benchmark(
     if not pairs:
         raise FileNotFoundError(f"no ref/test pairs found under {root}")
 
+    _BACKEND_NOTE.pop("reason", None)
     cvvdp = _cvvdp_fn()
     results: list[PairResult] = []
     for clip, frame, ref_path, test_path in pairs:
@@ -155,10 +177,15 @@ def run_benchmark(
         per_clip.setdefault(r.clip, []).append(r.pu_psnr_db)
     summary = {
         "pairs": len(results),
+        # Which method these numbers describe. A results file that does not say
+        # is a trap the moment there is more than one row in the table.
+        "test_dir": test_dir,
         "pu_psnr_db_mean": float(np.mean(finite)) if finite else None,
         "pu_psnr_db_per_clip": {c: float(np.mean(v)) for c, v in per_clip.items()},
         "cvvdp_jod_mean": float(np.mean(jods)) if jods else None,
-        "cvvdp_backend": "colorvideovdp" if jods else "unavailable (install torch + pycvvdp)",
+        "cvvdp_backend": ("colorvideovdp" if jods else
+                          "unavailable: " + _BACKEND_NOTE.get(
+                              "reason", "no frame produced a JOD")),
         "nits_scale": nits_scale,
         "results": [r.__dict__ for r in results],
     }

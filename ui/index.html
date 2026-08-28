@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="app">
@@ -24,21 +24,94 @@
     <span class="lamp off" id="lamp"></span>
   </div>
 
-  <div class="menubar">
-    <span>File</span><span>Edit</span><span>Clip</span><span>Reconstruct</span>
-    <span>Measure</span><span>Deliver</span><span>Window</span><span>Help</span>
+  <div class="menubar" id="menubar">
+    <div class="menu"><button type="button" class="mtitle">File</button>
+      <div class="drop">
+        <button type="button" data-act="open">Open frames…<i>O</i></button>
+        <button type="button" data-act="close">Close all frames</button>
+        <hr>
+        <button type="button" data-act="master">Master EXR<i>M</i></button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Edit</button>
+      <div class="drop">
+        <button type="button" data-act="undo">Undo<i>Z</i></button>
+        <button type="button" data-act="redo">Redo<i>Y</i></button>
+        <hr>
+        <button type="button" data-act="reset-recon">Reset reconstruction</button>
+        <button type="button" data-act="reset-regions">Reset region EV</button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Clip</button>
+      <div class="drop">
+        <button type="button" data-act="first">First frame<i>Home</i></button>
+        <button type="button" data-act="prev">Previous frame<i>,</i></button>
+        <button type="button" data-act="next">Next frame<i>.</i></button>
+        <button type="button" data-act="last">Last frame<i>End</i></button>
+        <hr>
+        <button type="button" data-act="play">Play / pause<i>Space</i></button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Reconstruct</button>
+      <div class="drop">
+        <button type="button" data-act="mode-all" data-check="mode:all">All</button>
+        <button type="button" data-act="mode-highlights" data-check="mode:highlights">Highlights</button>
+        <button type="button" data-act="mode-shadows" data-check="mode:shadows">Shadows</button>
+        <button type="button" data-act="mode-off" data-check="mode:off">Off</button>
+        <hr>
+        <button type="button" data-act="preserve" data-check="preserve">Preserve outside masks</button>
+        <hr>
+        <button type="button" data-act="strength-down">Weaker residual<i>[</i></button>
+        <button type="button" data-act="strength-up">Stronger residual<i>]</i></button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Measure</button>
+      <div class="drop">
+        <button type="button" data-act="copy-metrics">Copy measurements as JSON</button>
+        <button type="button" data-act="copy-scopes">Copy scope data as JSON</button>
+        <hr>
+        <button type="button" data-act="remeasure">Re-measure this frame</button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Deliver</button>
+      <div class="drop">
+        <button type="button" data-act="master">Master EXR<i>M</i></button>
+        <hr>
+        <button type="button" data-act="container-aces" data-check="container:aces">Container: ACES 2065-1</button>
+        <button type="button" data-act="container-linear" data-check="container:linear">Container: linear Rec.2020</button>
+        <hr>
+        <button type="button" data-act="copy-delivery">Copy delivery metadata</button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Window</button>
+      <div class="drop">
+        <button type="button" data-act="rail-left" data-check="railLeft">Frames rail</button>
+        <button type="button" data-act="rail-right" data-check="railRight">Reconstruction rail</button>
+        <button type="button" data-act="scopes" data-check="scopesOpen">Scopes</button>
+        <hr>
+        <button type="button" data-act="zoom-fit" data-check="zoom:fit">Fit to window</button>
+        <button type="button" data-act="zoom-actual" data-check="zoom:actual">Actual pixels</button>
+      </div>
+    </div>
+    <div class="menu"><button type="button" class="mtitle">Help</button>
+      <div class="drop">
+        <button type="button" data-act="shortcuts">Keyboard shortcuts<i>?</i></button>
+        <button type="button" data-act="about">About RUDRA Studio</button>
+      </div>
+    </div>
   </div>
 
   <div class="body">
 
-    <div class="rail left">
-      <div class="plabel"><span>Shots</span><span class="note num" id="shotCount">0</span></div>
+    <div class="rail left" id="railLeft">
+      <div class="plabel"><span>Frames</span><span class="note num" id="shotCount">0</span></div>
       <div class="shot-head">
         <span style="width:2px"></span><span style="flex:1">Name</span>
-        <span>Frames</span><span style="width:34px;text-align:right">Peak</span>
+        <span>Size</span><span style="width:40px;text-align:right">Peak</span>
         <span style="width:26px"></span>
       </div>
       <div id="shots"></div>
+      <div class="empty-rail" id="framesEmpty">Drop frames anywhere, or File ▸ Open</div>
       <div class="spacer"></div>
       <div class="rail-foot">
         <div><span class="k">Storage</span><span class="v">log2_extended</span></div>
@@ -51,7 +124,7 @@
       <div class="viewer" id="viewer">
         <div class="empty" id="empty">
           <b>Drop an SDR frame</b>
-          PNG, JPEG or TIFF — anywhere in this window
+          PNG, JPEG or TIFF — one, or a whole sequence
         </div>
         <div class="plate" id="plate" hidden>
           <canvas id="gl" title="Hold to see the baseline"></canvas>
@@ -64,15 +137,15 @@
 
       <div class="transport">
         <div class="seg">
-          <button type="button" class="tbtn" aria-label="Previous frame">
+          <button type="button" class="tbtn" id="btnPrev" aria-label="Previous frame">
             <svg width="9" height="10" viewBox="0 0 9 10" fill="none"><path d="M8 1L1 5L8 9V1Z" stroke="#9a9a9a"/></svg></button>
-          <button type="button" class="tbtn on" aria-label="Play">
+          <button type="button" class="tbtn" id="btnPlay" aria-label="Play">
             <svg width="9" height="10" viewBox="0 0 9 10"><path d="M1 1L8 5L1 9V1Z" fill="#e8e8e8"/></svg></button>
-          <button type="button" class="tbtn" aria-label="Next frame">
+          <button type="button" class="tbtn" id="btnNext" aria-label="Next frame">
             <svg width="9" height="10" viewBox="0 0 9 10" fill="none"><path d="M1 1L8 5L1 9V1Z" stroke="#9a9a9a"/></svg></button>
         </div>
-        <span class="num" style="font-size:12px;color:#e0e0e0" id="tc">00:00:00:01</span>
-        <div class="scrub"><div class="track"></div><div class="head" style="left:0"></div></div>
+        <span class="num" style="font-size:12px;color:#e0e0e0" id="tc">00:00:00:00</span>
+        <div class="scrub" id="scrub"><div class="track"></div><div class="head" id="scrubHead" style="left:0"></div></div>
         <span class="num" style="font-size:10px;color:#6e6e6e" id="srcInfo">—</span>
         <div class="seg" id="viewMode">
           <button type="button" data-view="model" class="on">RUDRA</button>
@@ -80,7 +153,7 @@
         </div>
       </div>
 
-      <div class="scopes">
+      <div class="scopes" id="scopes">
         <div class="scope wave">
           <div class="plabel"><span>Waveform</span><span class="note">nits, log</span></div>
           <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="xMidYMid meet"></svg></div>
@@ -98,7 +171,7 @@
       </div>
     </div>
 
-    <div class="rail right">
+    <div class="rail right" id="railRight">
       <div class="plabel">Reconstruction</div>
       <div class="ctl">
         <div class="seg" id="mode">
@@ -125,24 +198,15 @@
       </div>
 
       <div class="hr"></div>
-      <div class="plabel"><span>Region EV</span><span class="note num">3</span></div>
-      <div style="padding:0 4px 8px">
-        <div class="region" style="height:16px">
-          <span class="sw" style="border:0"></span>
-          <span class="q" style="font-family:var(--ui);font-size:9px;letter-spacing:.06em;color:#5a5a5a;text-transform:uppercase">Luminance qualifier</span>
-          <span style="font-size:9px;letter-spacing:.06em;color:#5a5a5a;text-transform:uppercase">Lift</span>
-        </div>
-        <div class="region sel"><span class="sw"></span><span class="q">400 – 2 000 nits</span><span class="ev">+1.00</span><span class="u">EV</span></div>
-        <div class="region"><span class="sw"></span><span class="q">2 000 – 8 000 nits</span><span class="ev">−0.40</span><span class="u">EV</span></div>
-        <div class="region"><span class="sw"></span><span class="q">0.05 – 12 nits</span><span class="ev">+0.25</span><span class="u">EV</span></div>
-      </div>
+      <div class="plabel"><span>Region EV</span><span class="note num" id="regionCount">3</span></div>
+      <div style="padding:0 4px 8px" id="regions"></div>
 
       <div class="hr"></div>
       <div class="plabel">Delivery</div>
       <div class="ctl">
         <div class="field"><span class="k">Container</span><span class="v" id="containerField">OpenEXR — ACES 2065-1</span></div>
         <div class="field"><span class="k">Transfer</span><span class="v">linear (scene-referred)</span></div>
-        <div class="field"><span class="k">Primaries</span><span class="v">AP0 (ST 2065-4)</span></div>
+        <div class="field"><span class="k">Primaries</span><span class="v" id="primariesField">AP0 (ST 2065-4)</span></div>
         <div class="field"><span class="k">White</span><span class="v">diffuse 1.0 = 203 nits</span></div>
       </div>
 
@@ -166,8 +230,10 @@
   </div>
 </div>
 
-<input type="file" id="file" accept="image/*" hidden>
-<script src="compositor.js?v=1"></script>
-<script src="app.js?v=4"></script>
+<div class="overlay" id="overlay" hidden><div class="sheet" id="overlaySheet"></div></div>
+
+<input type="file" id="file" accept="image/*" multiple hidden>
+<script src="compositor.js?v=2"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
