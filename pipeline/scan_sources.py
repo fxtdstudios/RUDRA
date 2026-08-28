@@ -48,13 +48,26 @@ ENCODING_KEYWORDS = (
     ("logc3", ("logc3", "logc", "alexa", "arri")),
     ("slog3", ("slog3", "s-log3", "slog", "venice", "fx9", "fx6", "sony")),
     ("hlg", ("hlg", "hybridlog")),
-    ("pq", ("pq", "hdr10", "st2084", "st-2084", "2084", "dolby", "chimera", "netflix")),
+    # "stuttgart"/"hdm" cover the HdM-HDR-2014 and HdM-HFR-2017 sets. The 2014
+    # graded TIFFs carry no transfer function in the path or the container, and
+    # every frame in every sequence tops out at code 59150 -- which is exactly
+    # the ST-2084 code for 4,000 nits, the grading ceiling the dataset states.
+    # Without this they classify as UNKNOWN and 11,007 frames are skipped in
+    # silence, or -- worse, with --include-unknown-encoding -- decoded as sRGB.
+    ("pq", ("pq", "hdr10", "st2084", "st-2084", "2084", "dolby", "chimera",
+            "netflix", "stuttgart", "hdm-hdr", "hdm_hdr", "hdm-hfr", "hdm_hfr")),
     ("linear", ("linear", "polyhaven", "poly haven", "hdri", "aces", "acescg", "scene_linear")),
 )
 
 
-def guess_encoding(path: Path) -> tuple[str, str]:
-    """Return (encoding, why). Explicit about its own confidence."""
+def guess_encoding(path: Path, declared: str | None = None) -> tuple[str, str]:
+    """Return (encoding, why). Explicit about its own confidence.
+
+    ``declared`` comes from --encoding and wins over every heuristic: the
+    operator looked at the dataset's documentation, and a filename did not.
+    """
+    if declared:
+        return declared, "declared:cli"
     blob = " ".join(p.lower() for p in path.parts)
     for encoding, keywords in ENCODING_KEYWORDS:
         for word in keywords:
@@ -138,8 +151,9 @@ def _radiometry(sample: np.ndarray, encoding: str) -> dict:
     return out
 
 
-def inspect(path: Path, video_probe_frames: int) -> dict:
-    encoding, why = guess_encoding(path)
+def inspect(path: Path, video_probe_frames: int,
+            declared_encoding: str | None = None) -> dict:
+    encoding, why = guess_encoding(path, declared_encoding)
     scene, is_sequence = scene_key(path)
     record = {
         "path": str(path),
@@ -166,16 +180,40 @@ def inspect(path: Path, video_probe_frames: int) -> dict:
     return record
 
 
-def walk(root: Path, follow_links: bool) -> list[Path]:
+# Directory names that hold RUDRA's own OUTPUT, not source footage. Feeding
+# derived pairs back in as sources is silent poison: 08_Research/data/hdr holds
+# already-normalised August targets (linear * 203/10000), and re-ingesting them
+# as scene-linear put 4,071 pairs -- 21% of the 23 Aug corpus -- roughly 5,000x
+# too dark, each frame its own single-frame "scene".
+DERIVED_DIRS = {"data", "pairs", "hdrdata", "checkpoints", "_trash", "outputs"}
+
+
+def is_derived(path: Path, root: Path) -> bool:
+    try:
+        parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        parts = path.parts[:-1]
+    return any(part.lower() in DERIVED_DIRS for part in parts)
+
+
+def walk(root: Path, follow_links: bool, include_derived: bool = False) -> list[Path]:
     found: list[Path] = []
+    skipped = 0
     for path in root.rglob("*"):
         try:
             if not path.is_file():
                 continue
         except OSError:
             continue
-        if path.suffix.lower() in IMAGE_EXT | VIDEO_EXT:
-            found.append(path)
+        if path.suffix.lower() not in IMAGE_EXT | VIDEO_EXT:
+            continue
+        if not include_derived and is_derived(path, root):
+            skipped += 1
+            continue
+        found.append(path)
+    if skipped:
+        print(f"  skipped {skipped:,} file(s) under {sorted(DERIVED_DIRS)} "
+              f"-- RUDRA output, not source (--include-derived overrides)", flush=True)
     return found
 
 
@@ -220,7 +258,14 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("hdrdata/source_inventory.jsonl"))
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--video-probe-frames", type=int, default=8)
+    parser.add_argument("--encoding",
+                        choices=("pq", "hlg", "logc3", "logc4", "slog3", "linear", "srgb"),
+                        default=None,
+                        help="Declare the transfer function for everything under this root, "
+                             "overriding the filename heuristic. Use it whenever the dataset documents its encoding and the path does not say so -- HdM-HDR-2014 is PQ graded to 4,000 nits and nothing in its filenames says PQ.")
     parser.add_argument("--follow-links", action="store_true")
+    parser.add_argument("--include-derived", action="store_true",
+                        help="Scan directories named data/pairs/hdrdata/... too. Almost always wrong: those hold RUDRA output, and re-ingesting it as source is what poisoned 21%% of the 23 Aug 2026 corpus.")
     parser.add_argument("--limit", type=int, default=0, help="Stop after N files (smoke test)")
     args = parser.parse_args()
 
@@ -229,7 +274,7 @@ def main() -> int:
         return 2
 
     print(f"walking {args.root} ...", flush=True)
-    paths = walk(args.root, args.follow_links)
+    paths = walk(args.root, args.follow_links, args.include_derived)
     if args.limit:
         paths = paths[: args.limit]
     print(f"  {len(paths):,} candidate files", flush=True)
@@ -239,7 +284,7 @@ def main() -> int:
 
     records: list[dict] = []
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = {pool.submit(inspect, p, args.video_probe_frames): p for p in paths}
+        futures = {pool.submit(inspect, p, args.video_probe_frames, args.encoding): p for p in paths}
         for done, future in enumerate(as_completed(futures), 1):
             try:
                 records.append(future.result())

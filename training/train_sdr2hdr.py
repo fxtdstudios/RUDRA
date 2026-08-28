@@ -53,7 +53,21 @@ def manifest_hash(path: str | Path) -> str:
 
 
 def load_image_checkpoint(path: str | Path, device: torch.device) -> tuple[SDR2HDRNet, dict]:
-    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    # Temporal training refines an IMAGE model's per-frame output; it cannot
+    # start without one. A bare FileNotFoundError from torch.load buries that
+    # under six frames of serialization internals, so say it here instead.
+    checkpoint_path = Path(path)
+    if not checkpoint_path.exists():
+        siblings = sorted(checkpoint_path.parent.parent.glob("*/best.pt")) if \
+            checkpoint_path.parent.parent.is_dir() else []
+        hint = ("\n       image checkpoints that DO exist:\n         "
+                + "\n         ".join(str(s) for s in siblings)) if siblings else ""
+        raise SystemExit(
+            f"error: --image-checkpoint {checkpoint_path} does not exist.\n"
+            f"       Temporal training starts from a trained image model -- run "
+            f"--mode image first, or point at an existing checkpoint.{hint}"
+        )
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", {})
     model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
     state = checkpoint.get("model", checkpoint)
@@ -81,13 +95,26 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
         "loss": 0.0, "log_l1": 0.0, "highlight": 0.0, "shadow": 0.0,
         "chroma": 0.0, "shadow_chroma": 0.0, "shadow_smoothness": 0.0,
         "psnr_tm": 0.0, "psnr_log": 0.0,
+        # The analytic inverse-ACES baseline, scored on the same batches. The
+        # network is a residual on top of it, so "is it better than nothing?"
+        # is the only question that matters, and it should not have to be
+        # reconstructed from the step-0 row of a log file.
+        "baseline_log_l1": 0.0, "baseline_psnr_log": 0.0,
+        # The same prediction under preserve_outside=True, which blends back to
+        # the baseline wherever the learned masks are cold. Free to compute from
+        # the fields we already have, and it is the lever for the 26 Aug split:
+        # +1.63 dB on degraded SDR but -4.63 dB on clean SDR, with nothing at
+        # inference to say which kind of SDR arrived.
+        "preserved_psnr_log": 0.0,
     }
     count = 0
     for batch in loader:
         sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
+        ceiling = batch["ceiling"].to(device) if "ceiling" in batch else None
         output = model(sdr)
         losses = sdr2hdr_loss(
             output, sdr, target, shadow_chroma_weight, shadow_smoothness_weight,
+            target_ceiling=ceiling,
         )
         mse_tm = F.mse_loss(_tone_map(output.hdr), _tone_map(target)).clamp_min(1e-12)
         pred_log, target_log = torch.log1p(output.hdr * 16.0), torch.log1p(target * 16.0)
@@ -99,11 +126,26 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
             sums[key] += float(losses[key])
         sums["psnr_tm"] += float(-10.0 * torch.log10(mse_tm))
         sums["psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(mse_log))
+        base_log = torch.log1p(output.baseline * 16.0)
+        base_mse = F.mse_loss(base_log, target_log).clamp_min(1e-12)
+        sums["baseline_log_l1"] += float(F.l1_loss(base_log, target_log))
+        sums["baseline_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(base_mse))
+        recovery = torch.maximum(output.highlight_mask, output.shadow_mask)
+        preserved = output.baseline + recovery * (output.hdr - output.baseline)
+        pres_mse = F.mse_loss(torch.log1p(preserved.clamp_min(0.0) * 16.0),
+                              target_log).clamp_min(1e-12)
+        sums["preserved_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(pres_mse))
         count += 1
         if count >= max_batches:
             break
     model.train()
-    return {key: value / max(count, 1) for key, value in sums.items()}
+    metrics = {key: value / max(count, 1) for key, value in sums.items()}
+    # Positive = the network improved on the analytic baseline. Negative means
+    # it is actively making the baseline worse, which is the failure the August
+    # 2026 run and the 26 Aug clean-SDR eval both showed.
+    metrics["gain_db"] = metrics["psnr_log"] - metrics["baseline_psnr_log"]
+    metrics["preserved_gain_db"] = metrics["preserved_psnr_log"] - metrics["baseline_psnr_log"]
+    return metrics
 
 
 @torch.no_grad()
@@ -138,6 +180,11 @@ def build_loaders(args: argparse.Namespace):
         val = SDRHDRDataset(args.manifest, split="val", augment=False,
                             augmentation_strength=0.0, max_items=args.max_val_items,
                             crop_size=args.crop_size)
+        # Same records, same crops, deterministically degraded: the condition
+        # the model is for. See SDRHDRDataset.deterministic_degradation.
+        val_hard = SDRHDRDataset(args.manifest, split="val", augment=False,
+                                 augmentation_strength=0.0, max_items=args.max_val_items,
+                                 crop_size=args.crop_size, deterministic_degradation=True)
     else:
         train = SDRHDRVideoDataset(args.manifest, augment=True, split="train",
                                    val_fraction=args.val_fraction, **common)
@@ -173,6 +220,8 @@ def build_loaders(args: argparse.Namespace):
         DataLoader(train, shuffle=sampler is None, sampler=sampler,
                    drop_last=len(train) >= args.batch_size, **loader_args),
         DataLoader(val, shuffle=False, drop_last=False, **loader_args),
+        (DataLoader(val_hard, shuffle=False, drop_last=False, **loader_args)
+         if args.mode == "image" else None),
     )
 
 
@@ -181,7 +230,7 @@ def train(args: argparse.Namespace) -> Path:
     device = torch.device(args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu"))
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
-    train_loader, val_loader = build_loaders(args)
+    train_loader, val_loader, val_hard_loader = build_loaders(args)
     image_model: SDR2HDRNet | None = None
     if args.mode == "image":
         model: torch.nn.Module = SDR2HDRNet(base_channels=args.base_channels).to(device)
@@ -229,13 +278,46 @@ def train(args: argparse.Namespace) -> Path:
     model.train()
     started = time.time()
 
+    def image_eval() -> tuple[dict, float]:
+        """Both held-out conditions, and the score best.pt is selected on.
+
+        clean_*  : val SDR exactly as prepare_pairs wrote it -- the ACES output
+                   the target was tone-mapped from. sdr_to_baseline_hdr is very
+                   nearly its analytic inverse here, so a zero-residual network
+                   is already near-optimal and gain_db near zero is CORRECT, not
+                   a failure. It is a do-no-harm check.
+        hard_*   : the same records under a seeded camera/codec degradation --
+                   an unknown tone curve, 4:2:0 chroma, banding, JPEG. This is
+                   the deployment condition, so this is what selects best.pt.
+        """
+        clean = evaluate_image(model, val_loader, device, args.eval_batches,
+                               args.shadow_chroma_weight, args.shadow_smoothness_weight)
+        merged = {f"clean_{k}": v for k, v in clean.items()}
+        chosen = clean
+        if val_hard_loader is not None:
+            hard = evaluate_image(model, val_hard_loader, device, args.eval_batches,
+                                  args.shadow_chroma_weight, args.shadow_smoothness_weight)
+            merged.update({f"hard_{k}": v for k, v in hard.items()})
+            if args.best_eval == "hard":
+                chosen = hard
+        if args.best_metric == "composite_gain" and val_hard_loader is not None:
+            # Reward the gain on degraded SDR, subtract any HARM done to clean
+            # SDR, and count a clean gain as worth nothing -- clean input is a
+            # constraint, not an objective. Negated because lower wins.
+            #
+            # This is not academic. The 26 Aug 2026 run selected on hard_loss
+            # alone, which falls monotonically, so best.pt landed on step 48,000
+            # (hard +1.81, clean -4.22) while step 44,000 sat right there at
+            # hard +1.71 for only -0.90 clean -- nearly all of the upside for a
+            # fifth of the damage.
+            merged["composite_gain"] = (merged["hard_gain_db"]
+                                        + min(0.0, merged["clean_gain_db"]))
+            return merged, -merged["composite_gain"]
+        return merged, chosen[args.best_metric]
+
     if start_step == 0:
         if args.mode == "image":
-            initial_metrics = evaluate_image(
-                model, val_loader, device, args.eval_batches,
-                args.shadow_chroma_weight, args.shadow_smoothness_weight,
-            )
-            best = initial_metrics[args.best_metric]
+            initial_metrics, best = image_eval()
         else:
             assert image_model is not None
             initial_metrics = evaluate_temporal(image_model, model, val_loader, device, args.eval_batches)
@@ -260,6 +342,8 @@ def train(args: argparse.Namespace) -> Path:
                 losses = sdr2hdr_loss(
                     output, sdr, target, args.shadow_chroma_weight,
                     args.shadow_smoothness_weight,
+                    target_ceiling=(batch["ceiling"].to(device, non_blocking=True)
+                                    if "ceiling" in batch else None),
                 )
                 loss = losses["total"]
             else:
@@ -291,11 +375,7 @@ def train(args: argparse.Namespace) -> Path:
 
         if step % args.eval_every == 0 or step == args.steps:
             if args.mode == "image":
-                metrics = evaluate_image(
-                    model, val_loader, device, args.eval_batches,
-                    args.shadow_chroma_weight, args.shadow_smoothness_weight,
-                )
-                score = metrics[args.best_metric]
+                metrics, score = image_eval()
             else:
                 metrics = evaluate_temporal(image_model, model, val_loader, device, args.eval_batches)
                 score = metrics["log_l1"] + args.temporal_weight * metrics["temporal"]
@@ -323,6 +403,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output-dir", default="hdrdata/checkpoints/sdr2hdr_image")
     parser.add_argument("--image-checkpoint")
+    parser.add_argument("--best-eval", choices=("hard", "clean"), default="hard",
+                        help="Which held-out condition selects best.pt. 'hard' is the "
+                             "seeded camera/codec degradation -- what the model is for. "
+                             "'clean' scores the untouched ACES output, where the analytic "
+                             "baseline is already near-optimal and every model looks the "
+                             "same (26 Aug 2026: 12,000 steps, not one eval beat step 0).")
     parser.add_argument("--resume")
     parser.add_argument("--init-checkpoint",
                         help="Load model weights only and start a fresh optimizer/schedule")
@@ -350,7 +436,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temporal-weight", type=float, default=0.5)
     parser.add_argument("--shadow-chroma-weight", type=float, default=0.15)
     parser.add_argument("--shadow-smoothness-weight", type=float, default=0.02)
-    parser.add_argument("--best-metric", choices=("loss", "log_l1"), default="loss")
+    parser.add_argument("--best-metric",
+                        choices=("composite_gain", "loss", "log_l1"), default="composite_gain",
+                        help="composite_gain = hard_gain_db + min(0, clean_gain_db): the "
+                             "improvement on degraded SDR, less any damage done to clean "
+                             "SDR. 'loss' selects on the raw objective, which falls "
+                             "monotonically and therefore always picks the last checkpoint "
+                             "-- on 26 Aug 2026 that meant -4.22 dB on clean input for "
+                             "0.1 dB more on degraded. Image mode only; temporal ignores it.")
     parser.add_argument("--val-fraction", type=float, default=0.10)
     parser.add_argument("--eval-every", type=int, default=500)
     parser.add_argument("--eval-batches", type=int, default=8)

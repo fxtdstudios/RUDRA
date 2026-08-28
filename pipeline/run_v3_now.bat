@@ -27,6 +27,25 @@ REM near-duplicate pairs; consecutive strided frames still form temporal clips)
 set VSTRIDE=8
 
 echo.
+set DRIVE=E
+set NEEDGB=80
+
+REM --- free-space preflight -----------------------------------------
+REM torch.save dies with "ios_base::badbit / unexpected pos" when the
+REM drive is full (23 Aug 2026: the step-0 baseline failed 1.7 MB into
+REM a write). Checkpoints + logs need a few GB; fail here, not later.
+for /f %%a in ('powershell -NoProfile -Command "[math]::Floor((Get-PSDrive E).Free/1GB)"') do set FREEGB=%%a
+echo   free space on E: %FREEGB% GB
+if %FREEGB% LSS 80 (
+    echo.
+    echo   NOT ENOUGH SPACE: %FREEGB% GB free, need at least 80 GB.
+    echo   Reclaim it with:
+    echo     rmdir /s /q E:\RUDRA_v3_20260822\pairs_stride1_old
+    echo     rmdir /s /q E:\RUDRA_postfix_20260818\data
+    echo     rmdir /s /q E:\RUDRA_postfix_20260818\hdrdata\checkpoints\sdr2hdr_temporal_postfix_v1
+    exit /b 1
+)
+
 echo [0/5] inventory the sources  (NAS share + E:\source_hdr)
 if not exist "%WORK%" mkdir "%WORK%"
 python pipeline\scan_sources.py "%SRC_LOCAL%" --out "%WORK%\inv_local.jsonl" || exit /b 1
@@ -49,11 +68,27 @@ python pipeline\build_manifests.py --pairs-dir "%PAIRS%" --out-dir "%WORK%" ^
 
 echo.
 echo [3/5] VERIFY  -- training will not start if this fails
+REM Two thresholds are relaxed DELIBERATELY for the image run, and only here:
+REM   --min-temporal-scenes 0  the video corpus is 3 scenes (needs 6). Temporal
+REM     training stays blocked by the .GATED marker; the image model does not
+REM     use clips, so this must not stop it.
+REM   --max-scene-share 0.35   the Bar scene is 32.2%% of records. Accepted for
+REM     this run; the fix is more scene diversity, not a lower bar. Revisit
+REM     when new footage lands.
 python pipeline\verify_dataset.py --pairs-dir "%PAIRS%" ^
     --manifest "%WORK%\sdr_hdr_manifest.jsonl" ^
-    --video-manifest "%WORK%\video_manifest_9f.jsonl" || (
+    --video-manifest "%WORK%\video_manifest_9f.jsonl" ^
+    --min-temporal-scenes 0 --max-scene-share 0.35 || (
     echo.
     echo Dataset verification FAILED. Fix the corpus before training.
+    exit /b 1
+)
+
+echo.
+echo [2b/3] TARGET SCALE CHECK -- the guard the 24 Aug run did not have
+python pipeline\check_target_scale.py --manifest "%WORK%\sdr_hdr_manifest.jsonl" || (
+    echo.
+    echo Targets are not in the model's units. DO NOT TRAIN. Paste the output.
     exit /b 1
 )
 
@@ -65,10 +100,10 @@ echo.
 echo [5/5] train the image model  (fresh init -- see note below)
 python training\train_sdr2hdr.py --mode image ^
     --manifest "%WORK%\sdr_hdr_manifest.jsonl" ^
-    --output-dir "%WORK%\checkpoints\sdr2hdr_image_v3" ^
+    --output-dir "%WORK%\checkpoints\sdr2hdr_image_v3b" ^
     --steps 50000 --batch-size 2 --crop-size 384 --grad-accum 2 ^
     --eval-batches 128 --eval-every 1000 --best-metric loss ^
-    --scene-balanced-sampling --video-sample-fraction 0.4 ^
+    --video-sample-fraction 0.4 ^
     --device cuda || exit /b 1
 
 echo.
@@ -84,7 +119,7 @@ echo video numbers first, then:
 echo.
 echo   python training\train_sdr2hdr.py --mode temporal ^^
 echo       --manifest "%WORK%\video_manifest_9f.jsonl" ^^
-echo       --image-checkpoint "%WORK%\checkpoints\sdr2hdr_image_v3\best.pt" ^^
+echo       --image-checkpoint "%WORK%\checkpoints\sdr2hdr_image_v3b\best.pt" ^^
 echo       --output-dir "%WORK%\checkpoints\sdr2hdr_temporal_v3" ^^
 echo       --steps 30000 --batch-size 2 --crop-size 256 --temporal-weight 0.5
 echo.

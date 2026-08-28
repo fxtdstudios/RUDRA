@@ -49,6 +49,10 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("hdrdata/eval/sdr2hdr_test.csv"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--cvvdp", action="store_true")
+    # Match training/infer_sdr2hdr.py: the shipped inference mode is the one
+    # that must be measured. See training/sweep_inference.py for why it is on.
+    parser.add_argument("--preserve-outside", action=argparse.BooleanOptionalAction,
+                        default=True)
     args = parser.parse_args()
     device = torch.device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
@@ -63,7 +67,7 @@ def main() -> None:
     with torch.inference_mode():
         for index, batch in enumerate(loader, 1):
             sdr, target = batch["sdr"].to(device), batch["hdr"].to(device)
-            output = model(sdr)
+            output = model(sdr, preserve_outside=args.preserve_outside)
             row: dict[str, object] = {"asset_id": batch["asset_id"][0]}
             for prefix, prediction in (("model", output.hdr), ("baseline", output.baseline)):
                 for name, value in score(prediction, target).items():

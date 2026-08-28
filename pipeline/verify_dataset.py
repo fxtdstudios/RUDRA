@@ -143,17 +143,39 @@ def check_split_video(rows: list[dict], report: Report, min_share: float) -> Non
 
 
 def check_concentration(rows: list[dict], report: Report, max_share: float) -> None:
-    counts = Counter(r["scene_id"] for r in rows)
-    total = sum(counts.values())
-    top_scene, top_count = counts.most_common(1)[0]
-    share = top_count / total
-    top_two = sum(c for _, c in counts.most_common(2)) / total
-    detail = (f"largest scene {share:.1%} of records, top two {top_two:.1%} "
-              f"across {len(counts):,} scenes")
-    status = FAIL if share > max_share else (WARN if top_two > max_share * 1.5 else PASS)
-    if status != PASS:
-        detail += f"  (threshold {max_share:.0%}; August top two were 91.8%)"
-    report.add(status, "7 concentration", detail)
+    """How much of each split is one scene.
+
+    Judged per split, and judged differently by split, because the consequence
+    differs:
+
+      * val/test are plain means over records, so a scene's share IS its weight
+        in every number you will quote. One scene at 95.6% of val -- the Bar
+        interior, 23 Aug 2026 -- means the held-out metric measures one room.
+        That is a FAIL.
+      * train draws through a scene-balanced weighted sampler, so record counts
+        do not set a scene's influence there. A high share is worth saying out
+        loud, but it is not the same defect. That is a WARN.
+    """
+    for split in ("train", "val", "test"):
+        subset = [r for r in rows if r.get("split") == split]
+        if not subset:
+            continue
+        counts = Counter(r["scene_id"] for r in subset)
+        total = sum(counts.values())
+        share = counts.most_common(1)[0][1] / total
+        top_two = sum(c for _, c in counts.most_common(2)) / total
+        detail = (f"{split}: largest scene {share:.1%} of records, top two "
+                  f"{top_two:.1%} across {len(counts):,} scenes")
+        if split == "train":
+            status = WARN if share > max_share else PASS
+            if status is WARN:
+                detail += "  (scene-balanced sampling compensates; more scenes is the fix)"
+        else:
+            status = FAIL if share > max_share else (
+                WARN if top_two > max_share * 1.5 else PASS)
+            if status != PASS:
+                detail += f"  (threshold {max_share:.0%}; August top two were 91.8%)"
+        report.add(status, f"7 concentration/{split}", detail)
 
 
 def check_temporal_floor(clips: list[dict], report: Report, minimum: int) -> None:
@@ -173,15 +195,22 @@ def check_temporal_floor(clips: list[dict], report: Report, minimum: int) -> Non
     report.add(status, "8 temporal floor", detail)
 
 
-def check_loss_ceiling(storage: HDRStorage, report: Report, max_hdr: float) -> None:
+def check_loss_ceiling(storage: HDRStorage, report: Report, max_hdr: float,
+                       rows: list[dict] | None = None) -> None:
     """SDR2HDRNet(max_hdr) caps what the network can emit, in units of 10,000 nits."""
     net_ceiling = max_hdr * 10_000.0
     store_ceiling = 10_000.0 if storage.mode == "pq_10000" else storage.ceiling_nits
     if store_ceiling > net_ceiling:
+        affected = ""
+        if rows:
+            peaks = [float(r.get("peak_nits", 0.0)) for r in rows]
+            over = sum(1 for x in peaks if x == x and x > net_ceiling)
+            affected = f" {over:,}/{len(peaks):,} records ({over / len(peaks):.1%}) reach past it;"
         report.add(WARN, "9 loss ceiling",
-                   f"targets reach {store_ceiling:,.0f} nits but the network caps at "
-                   f"{net_ceiling:,.0f} (max_hdr={max_hdr}). Set --loss-ceiling-nits "
-                   f"{net_ceiling:,.0f} in training, or raise max_hdr.")
+                   f"targets reach {store_ceiling:,.0f} nits, network caps at "
+                   f"{net_ceiling:,.0f} (max_hdr={max_hdr}).{affected} the dataset clamps "
+                   f"targets there so the residue is unreachable, not unlearnable -- "
+                   f"raise max_hdr and DEFAULT_TARGET_CEILING together to recover it.")
     else:
         report.add(PASS, "9 loss ceiling",
                    f"targets <= {store_ceiling:,.0f} nits, network reaches {net_ceiling:,.0f}")
@@ -217,7 +246,7 @@ def main() -> int:
     clips = read_jsonl(args.video_manifest) if args.video_manifest and args.video_manifest.exists() else []
     check_temporal_floor(clips, report, args.min_temporal_scenes)
     if storage is not None:
-        check_loss_ceiling(storage, report, args.max_hdr)
+        check_loss_ceiling(storage, report, args.max_hdr, rows)
 
     print("=" * 78)
     print(f"DATASET VERIFICATION  {args.pairs_dir}")

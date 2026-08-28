@@ -244,21 +244,65 @@ def _gradient_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     return F.l1_loss(px, tx) + F.l1_loss(py, ty)
 
 
+# How far above a censored pixel's grading ceiling the model may reconstruct
+# for free. Beyond this the excess is charged, so a one-sided loss cannot just
+# run every clipped highlight to the network's max_hdr clamp. Three stops takes
+# a 4,000-nit graded clip up to 32,000 nits, which covers real specular
+# highlights without licensing invention.
+CENSORED_HEADROOM_STOPS = 3.0
+
+
 def sdr2hdr_loss(
     output: SDR2HDROutput,
     sdr: torch.Tensor,
     target: torch.Tensor,
     shadow_chroma_weight: float = 0.15,
     shadow_smoothness_weight: float = 0.02,
+    target_ceiling: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
-    """Stable HDR recovery objective in log-radiance and masked regions."""
+    """Stable HDR recovery objective in log-radiance and masked regions.
+
+    ``target_ceiling`` (B,) or (B,1,1,1), in the same units as ``target``, is
+    the delivery ceiling the source was graded to -- 4,000 nits for HdM-HDR-2014,
+    ~1,000 for Rec2100-PQ-1K, 10,000 for Chimera. Pixels sitting on it are
+    CENSORED: the grade says ">= ceiling", not "= ceiling". 84% of the v3 corpus
+    comes from such sources, and training plain L1 against those pixels teaches
+    the model to cap -- measured on 28 Aug 2026, the model trained on that mix
+    reconstructed 1.23 stops LESS highlight than its predecessor.
+
+    Where a pixel is censored the error becomes one-sided: predicting ABOVE the
+    ceiling is free, predicting below is penalised as usual. Every term that
+    reads the per-pixel error inherits it.
+    """
     scale = 16.0
     pred_log = torch.log1p(output.hdr.clamp_min(0.0) * scale)
     target_log = torch.log1p(target.clamp_min(0.0) * scale)
     hi, sh = recovery_masks(sdr)
-    base = F.l1_loss(pred_log, target_log)
-    highlight = ((pred_log - target_log).abs() * hi).sum() / (hi.sum() * 3.0 + 1e-6)
-    shadow = ((pred_log - target_log).abs() * sh).sum() / (sh.sum() * 3.0 + 1e-6)
+
+    error = (pred_log - target_log).abs()
+    censored_fraction = torch.zeros((), device=pred_log.device, dtype=pred_log.dtype)
+    if target_ceiling is not None:
+        ceiling = target_ceiling.to(device=target.device, dtype=target.dtype)
+        while ceiling.ndim < target.ndim:
+            ceiling = ceiling.unsqueeze(-1)
+        # 1e-3 relative slack: the target went through a uint16 log2 round trip,
+        # so a pixel graded at exactly 4,000 nits comes back a hair off it.
+        censored = (target >= ceiling * (1.0 - 1e-3)) & torch.isfinite(ceiling)
+        under = (target_log - pred_log).clamp_min(0.0)
+        # A purely one-sided loss has no upper anchor, so the cheapest thing a
+        # censored pixel can do is run to the network's max_hdr clamp. The grade
+        # says ">= ceiling", not ">= ceiling and arbitrarily far above it":
+        # allow CENSORED_HEADROOM_STOPS of free reconstruction, then charge for
+        # the excess so highlights stay physical.
+        allowance = torch.log1p(
+            (ceiling * (2.0 ** CENSORED_HEADROOM_STOPS)).clamp_max(1e6) * scale)
+        over = (pred_log - allowance).clamp_min(0.0)
+        error = torch.where(censored, under + over, error)
+        censored_fraction = censored.float().mean()
+
+    base = error.mean()
+    highlight = (error * hi).sum() / (hi.sum() * 3.0 + 1e-6)
+    shadow = (error * sh).sum() / (sh.sum() * 3.0 + 1e-6)
     mask = F.binary_cross_entropy_with_logits(output.highlight_logits, hi) + F.binary_cross_entropy_with_logits(output.shadow_logits, sh)
     edge = _gradient_loss(pred_log, target_log)
     pred_chroma = output.hdr / (output.hdr.sum(1, keepdim=True) + 1e-4)
@@ -283,7 +327,7 @@ def sdr2hdr_loss(
         + (residual_dy.abs() * shadow_dy).sum() / (shadow_dy.sum() * 3.0 + 1e-6)
     )
     recovery = torch.maximum(hi, sh)
-    outside = ((pred_log - target_log).abs() * (1.0 - recovery)).mean()
+    outside = (error * (1.0 - recovery)).mean()
     residual_outside = (output.log_residual.abs() * (1.0 - recovery)).mean()
     total = (base + 0.50 * highlight + 0.20 * shadow + 0.10 * chroma +
              float(shadow_chroma_weight) * shadow_chroma +
@@ -295,6 +339,7 @@ def sdr2hdr_loss(
         "shadow_chroma": shadow_chroma,
         "shadow_smoothness": shadow_smoothness, "edge": edge,
         "mask": mask, "outside": outside, "residual_outside": residual_outside,
+        "censored_fraction": censored_fraction,
     }
 
 

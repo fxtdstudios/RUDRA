@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -44,32 +45,191 @@ MIN_TEMPORAL_HELDOUT_SCENES = 2
 _TAKE_SEG = re.compile(r"^[A-Z]\d{3}C\d{3}_\d{6}(_\w+)?$")   # A004C006_170212_R3W4
 _SHOT_SUFFIX = re.compile(r"[_-]Shot[_-]?\d+$", re.IGNORECASE)
 
+# HdM-HDR-2014 ships several framings of ONE physical setup as sibling folders:
+# cars_closeshot / cars_fullshot / cars_longshot, fishing_closeshot /
+# fishing_longshot, poker_fullshot / poker_travelling_slowmotion, showgirl_01 /
+# showgirl_02. Same location, same lighting, same dynamic range -- so putting
+# two of them on opposite sides of a split is leakage dressed as scene-safety.
+# Collapse the framing qualifier and the trailing take number; keep the subject.
+_FRAMING_SUFFIX = re.compile(
+    r"[_-](close ?shot|full ?shot|long ?shot|medium ?shot|travelling(_slowmotion)?|"
+    r"slowmotion|closeup|wide)$", re.IGNORECASE)
+_TAKE_NUMBER = re.compile(r"[_-]\d{1,2}$")
+
+
+def _strip_shot(name: str) -> str:
+    """Remove shot/framing/take qualifiers, leaving the physical scene's name."""
+    name = _SHOT_SUFFIX.sub("", name)
+    previous = None
+    while previous != name:
+        previous = name
+        name = _FRAMING_SUFFIX.sub("", name)
+        name = _TAKE_NUMBER.sub("", name)
+    return name or previous
+
 
 def normalize_scene_id(scene_id: str) -> str:
     """Collapse shot/take structure so a scene id names a PHYSICAL scene."""
     path_part, _, stem = scene_id.partition("::")
     segments = [s for s in path_part.split("/") if not _TAKE_SEG.match(s)]
     if segments:
-        segments[-1] = _SHOT_SUFFIX.sub("", segments[-1])
+        segments[-1] = _strip_shot(segments[-1])
     if stem and not _TAKE_SEG.match(stem):
-        stem = _SHOT_SUFFIX.sub("", stem)
+        stem = _strip_shot(stem)
         return "/".join(segments) + "::" + stem
     return "/".join(segments)
 
 
-def load_records(pairs_dir: Path) -> list[dict]:
+def load_records(pairs_dir: Path, min_peak_nits: float = 0.0) -> list[dict]:
     index = pairs_dir / "pairs_index.jsonl"
     if not index.exists():
         raise SystemExit(f"error: {index} not found -- run prepare_pairs.py first")
     records = [json.loads(line) for line in index.open(encoding="utf-8") if line.strip()]
+
+    # A source frame carrying NaN/Inf pixels encodes to undefined uint16 codes,
+    # and the decode side cannot tell them from real radiance -- the stored
+    # target is finite garbage.  prepare_pairs records peak_nits from the same
+    # array, so a non-finite peak is the tell.  Two Poly Haven crops
+    # (venice_dawn_1, venice_sunrise) tripped this on 23 Aug 2026.
+    poisoned = [r for r in records if not math.isfinite(float(r.get("peak_nits", 0.0)))]
+    if poisoned:
+        names = ", ".join(r["asset_id"] for r in poisoned[:4])
+        print(f"  dropped {len(poisoned)} record(s) with non-finite source pixels: {names}"
+              + (" ..." if len(poisoned) > 4 else ""))
+        keep = {id(r) for r in poisoned}
+        records = [r for r in records if id(r) not in keep]
+
+    if min_peak_nits > 0:
+        dark = [r for r in records if float(r.get("peak_nits", 0.0)) < min_peak_nits]
+        if dark:
+            roots = Counter(r["scene_id"].rsplit("::", 1)[0] for r in dark)
+            print(f"  dropped {len(dark):,} pair(s) peaking below {min_peak_nits:g} nit "
+                  f"({len(dark) / len(records):.1%} of the index) -- no HDR content to learn:")
+            for root, count in roots.most_common(4):
+                print(f"      {count:>7,}  {root}")
+            drop = {id(r) for r in dark}
+            records = [r for r in records if id(r) not in drop]
+            if not records:
+                raise SystemExit("error: --min-peak-nits removed every record")
+
     raw = {r["scene_id"] for r in records}
     for record in records:
         record["scene_id"] = normalize_scene_id(record["scene_id"])
+    annotate_ceilings(records)
+
     merged = {r["scene_id"] for r in records}
     if len(merged) != len(raw):
         print(f"  scene normalization: {len(raw)} raw scene ids -> "
               f"{len(merged)} physical scenes (shot/take structure collapsed)")
+
     return records
+
+
+# A grading ceiling is a peak value that MANY FRAMES LAND ON EXACTLY. Natural
+# scene peaks never repeat bit-for-bit; a clip does. Measured 28 Aug 2026 on the
+# v3 corpus this flags 12 scenes (HdM 4,000 nits, Rec2100-PQ-1K ~991, Chimera
+# 10,000) and none of the 963 Poly Haven stills.
+#
+# Why it matters: a pixel at exactly 4,000 nits in a 4,000-nit graded source is
+# a CENSORED observation -- it means ">= 4,000", not "= 4,000". 84% of this
+# corpus comes from such sources and 8,234 records peak right at their ceiling.
+# Training L1 against them teaches the model to cap, which is measurable: the
+# v4 model, trained on this mix, reconstructs 1.23 stops LESS highlight than
+# v3b did on a controlled specular.
+CEILING_MIN_REPEATS = 8
+CEILING_MIN_NITS = 100.0
+
+
+def detect_grading_ceiling(peaks: list[float],
+                           min_repeats: int = CEILING_MIN_REPEATS,
+                           floor: float = CEILING_MIN_NITS) -> float | None:
+    """The scene's delivery ceiling, or None if its peaks look scene-referred."""
+    finite = [p for p in peaks if math.isfinite(p)]
+    if len(finite) < min_repeats:
+        return None
+    value, count = Counter(finite).most_common(1)[0]
+    if count < min_repeats or value < floor:
+        return None
+    return float(value)
+
+
+def annotate_ceilings(records: list[dict]) -> int:
+    """Tag every record with its scene's grading ceiling in nits (or None)."""
+    peaks: dict[str, list[float]] = defaultdict(list)
+    for record in records:
+        peaks[record["scene_id"]].append(float(record.get("peak_nits", 0.0)))
+    ceilings = {scene: detect_grading_ceiling(values) for scene, values in peaks.items()}
+    censored = 0
+    for record in records:
+        ceiling = ceilings.get(record["scene_id"])
+        record["ceiling_nits"] = ceiling
+        at_ceiling = ceiling is not None and float(record.get("peak_nits", 0.0)) >= ceiling
+        record["peak_at_ceiling"] = bool(at_ceiling)
+        censored += at_ceiling
+    limited = sum(1 for c in ceilings.values() if c)
+    if limited:
+        print(f"  grading ceilings: {limited} of {len(ceilings)} scenes are delivery-graded; "
+              f"{censored:,} record(s) peak AT their ceiling (censored highlights)")
+    return censored
+
+
+def _thin_scene(rows: list[dict], target: int) -> list[dict]:
+    """Keep ~target rows of one scene by dropping whole SOURCE FRAMES on a stride.
+
+    Not a random sample: build_video_manifest needs a uniform frame step to form
+    clips, and all crops of a kept frame must survive together or the per-frame
+    dedup picks a different crop for neighbouring frames. Dropping whole frames
+    on a stride multiplies the ingest stride and leaves both properties intact.
+    """
+    if target >= len(rows) or target <= 0:
+        return rows if target >= len(rows) else []
+    frames = sorted({(r.get("source_take") or "", r.get("frame_index")) for r in rows})
+    # Walk the stride up until the result is genuinely at or under target.
+    # A single ceil() is not enough: it can leave the scene ONE record over,
+    # and the caller then re-thins with the only stride left to it -- 2 --
+    # halving a scene that was 0.1 percentage points too big. That is what
+    # took the test split's fireplace scene 1,392 -> 156 -> 78 on 27 Aug 2026
+    # and dropped its video share under the --min-video-share floor.
+    step = max(1, -(-len(rows) // target))
+    while step <= len(frames):
+        allowed = set(frames[::step])
+        kept = [r for r in rows
+                if (r.get("source_take") or "", r.get("frame_index")) in allowed]
+        if len(kept) <= target:
+            return kept
+        step += 1
+    return rows[:target]
+
+
+def cap_scene_share(rows: list[dict], max_share: float) -> tuple[list[dict], list[tuple]]:
+    """Thin whichever scene dominates until no scene exceeds max_share of rows.
+
+    Self-tuning rather than a fixed record cap: to leave a scene at share s of
+    the total, keep s/(1-s) times the records every OTHER scene contributes.
+    Repeated because thinning the leader shrinks the total and can promote the
+    runner-up.
+    """
+    trimmed: list[tuple] = []
+    done: set[str] = set()
+    for _ in range(8):
+        counts = Counter((r["scene_id"] for r in rows if r["scene_id"] not in done))
+        if not counts:
+            break
+        total = sum(Counter(r["scene_id"] for r in rows).values())
+        scene, count = counts.most_common(1)[0]
+        if total == 0 or count / total <= max_share:
+            break
+        # One pass per scene, ever. Thinning is a stride over frames, so it
+        # lands where the stride lands; re-entering to shave a rounding
+        # remainder is how a scene gets halved.
+        done.add(scene)
+        others = total - count
+        target = max(1, int(max_share * others / (1.0 - max_share)))
+        scene_rows = [r for r in rows if r["scene_id"] == scene]
+        kept = _thin_scene(scene_rows, target)
+        trimmed.append((scene, len(scene_rows), len(kept)))
+        rows = [r for r in rows if r["scene_id"] != scene] + kept
+    return rows, trimmed
 
 
 def split_scenes(scenes: list[str], val_frac: float, test_frac: float,
@@ -95,7 +255,8 @@ def split_scenes(scenes: list[str], val_frac: float, test_frac: float,
 
 
 def build_image_manifest(records: list[dict], val_frac: float, test_frac: float,
-                         seed: int, min_video_share: float) -> tuple[list[dict], dict]:
+                         seed: int, min_video_share: float,
+                         max_eval_scene_share: float = 0.0) -> tuple[list[dict], dict]:
     by_kind: dict[bool, set[str]] = defaultdict(set)
     for record in records:
         by_kind[bool(record.get("is_video", False))].add(record["scene_id"])
@@ -112,6 +273,27 @@ def build_image_manifest(records: list[dict], val_frac: float, test_frac: float,
         row = dict(record)
         row["split"] = assignment[record["scene_id"]]
         out.append(row)
+
+    # Thin over-represented scenes in val/test ONLY.
+    #
+    # Training is immune: the trainer draws with a scene-balanced weighted
+    # sampler, so a scene's record count does not set its influence there, and
+    # extra frames from a shot are free diversity. Evaluation is a plain mean
+    # over records, so record counts ARE the weighting -- and because whole
+    # scenes are held out, one big scene does not merely dominate a split, it
+    # becomes the split. On 23 Aug 2026 the Bar scene was 95.6% of val: every
+    # "held-out" number described one bar interior.
+    if max_eval_scene_share > 0:
+        kept = [r for r in out if r["split"] == "train"]
+        for split in ("val", "test"):
+            rows = [r for r in out if r["split"] == split]
+            rows, trimmed = cap_scene_share(rows, max_eval_scene_share)
+            for scene, before, after in trimmed:
+                print(f"  {split} scene share cap {max_eval_scene_share:.0%}: "
+                      f"{before:,} -> {after:,} records  "
+                      f"{scene.rsplit('/', 1)[-1][:60]}")
+            kept.extend(rows)
+        out = kept
 
     stats = {}
     for split in ("train", "val", "test"):
@@ -187,6 +369,9 @@ def build_video_manifest(image_rows: list[dict], clip_length: int, stride: int,
                 "sdr_frames": [w["sdr_path"] for w in window],
                 "hdr_frames": [w["hdr_path"] for w in window],
                 "metadata_paths": [w.get("metadata_path") for w in window],
+                # Carried through so the temporal loss censors graded highlights
+                # the same way the image loss does; one scene, one ceiling.
+                "ceiling_nits": window[0].get("ceiling_nits"),
             })
 
     with out_path.open("w", encoding="utf-8") as handle:
@@ -224,14 +409,40 @@ def main() -> int:
                         help="Minimum share of val/test records that must be video frames")
     parser.add_argument("--clip-length", type=int, default=9)
     parser.add_argument("--clip-stride", type=int, default=9)
+    parser.add_argument("--min-peak-nits", type=float, default=1.0,
+                        help="Drop pairs whose HDR target never reaches this peak. "
+                             "Default 1.0 nit: a target that dark carries no HDR "
+                             "information to learn, and on 23 Aug 2026 this was "
+                             "exactly the 4,071 pairs (21%% of the corpus) that the "
+                             "scan pulled out of 08_Research/data/hdr -- ALREADY "
+                             "NORMALISED August output, re-ingested as if it were "
+                             "scene-linear source, so every frame landed ~5,000x too "
+                             "dark and each became its own single-frame 'scene'. "
+                             "0 disables.")
+    parser.add_argument("--max-eval-scene-share", type=float, default=0.35,
+                        help="No single scene may exceed this share of val or of test. "
+                             "Training is untouched -- its sampler is already "
+                             "scene-balanced -- but evaluation is a plain mean over "
+                             "records, so a scene's share IS its weight in every number "
+                             "you quote. On 23 Aug 2026 the Bar scene was 95.6%% of val "
+                             "and the held-out metric described one bar interior. Frames "
+                             "are dropped on a uniform stride so clips still form. "
+                             "0 disables.")
     parser.add_argument("--seed", type=int, default=20260822)
     parser.add_argument("--allow-problems", action="store_true",
                         help="Write manifests even when guards fail (you must say why)")
+    parser.add_argument("--require-temporal", action="store_true",
+                        help="Fail the whole build when the temporal corpus is too small. "
+                             "Off by default: an under-sized VIDEO corpus must not block "
+                             "IMAGE training, which is what happened on 23 Aug 2026 -- a "
+                             "healthy 19,275-pair image corpus never reached the trainer "
+                             "because temporal was 3 scenes short.")
     args = parser.parse_args()
 
-    records = load_records(args.pairs_dir)
+    records = load_records(args.pairs_dir, args.min_peak_nits)
     rows, image_stats = build_image_manifest(
-        records, args.val_frac, args.test_frac, args.seed, args.min_video_share)
+        records, args.val_frac, args.test_frac, args.seed, args.min_video_share,
+        args.max_eval_scene_share)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     image_path = args.out_dir / "sdr_hdr_manifest.jsonl"
@@ -254,15 +465,32 @@ def main() -> int:
         s = video_stats.get(split, {"clips": 0, "scenes": 0})
         print(f"  {split:<6} {s['clips']:>7,} clips    {s['scenes']:>5,} scenes")
 
-    problems = image_stats["problems"] + video_stats["problems"]
-    if problems:
+    image_problems = image_stats["problems"]
+    video_problems = video_stats["problems"]
+
+    if image_problems:
         print("\n" + "!" * 66)
-        for problem in problems:
+        for problem in image_problems:
             print(f"  FAIL  {problem}")
         print("!" * 66)
         if not args.allow_problems:
-            print("\nManifests were written but SHOULD NOT be trained on. "
-                  "Fix the corpus, or re-run with --allow-problems if you accept this.")
+            print("\nThe IMAGE manifest is not trainable. Fix the corpus, or re-run "
+                  "with --allow-problems if you accept this.")
+            return 1
+
+    if video_problems:
+        # Mark the video manifest so the temporal trainer can refuse it, and say
+        # plainly that this does not stop the image model.
+        marker = video_path.with_suffix(video_path.suffix + ".GATED")
+        marker.write_text("\n".join(video_problems) + "\n", encoding="utf-8")
+        print("\n" + "-" * 66)
+        print("  TEMPORAL GATED -- do not start temporal training:")
+        for problem in video_problems:
+            print(f"    {problem}")
+        print(f"  marker: {marker.name}")
+        print("  IMAGE training is unaffected and may proceed.")
+        print("-" * 66)
+        if args.require_temporal and not args.allow_problems:
             return 1
 
     print(f"\nwrote {image_path}\nwrote {video_path}")

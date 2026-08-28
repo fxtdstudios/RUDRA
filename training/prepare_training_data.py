@@ -279,9 +279,20 @@ _EOTF = {
 
 
 def to_scene_linear(data: np.ndarray, encoding: EncodingHint) -> np.ndarray:
-    """Apply the appropriate EOTF and return a float32 scene-linear array."""
-    fn = _EOTF.get(encoding, eotf_srgb)
-    return fn(data)
+    """Apply the appropriate EOTF and return a float32 scene-linear array.
+
+    Refuses an unrecognised encoding rather than falling back to sRGB. That
+    fallback is silent and catastrophic: applying a 2.4 gamma to PQ-encoded
+    HDR produces plausible-looking, finite, entirely wrong radiance, and
+    nothing downstream can tell. Declare it with scan_sources --encoding.
+    """
+    try:
+        return _EOTF[encoding](data)
+    except KeyError:
+        raise ValueError(
+            f"unknown source encoding {encoding!r}; known: {sorted(_EOTF)}. "
+            f"Re-scan with 'scan_sources.py --encoding <name>' to declare it."
+        ) from None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

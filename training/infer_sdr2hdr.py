@@ -267,7 +267,22 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/sdr2hdr"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--clip-length", type=int, default=9)
-    parser.add_argument("--preserve-outside", action="store_true")
+    # ON by default since 26 Aug 2026. Measured on step 44,000 of the v3b run,
+    # val split, 128 batches (training/sweep_inference.py):
+    #
+    #                     clean psnr_log   gain     hard psnr_log   gain
+    #   inverse-ACES              52.76      --             30.24     --
+    #   plain                     51.86   -0.90             31.95  +1.71
+    #   preserve_outside          52.77   +0.01             31.79  +1.55
+    #
+    # Off, the model gives back 0.9 dB on a clean well-graded master for 0.16 dB
+    # more on a degraded one -- and nothing at inference says which one arrived.
+    parser.add_argument("--preserve-outside", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="Blend the prediction back to the analytic inverse-ACES "
+                             "baseline wherever the learned highlight/shadow masks are "
+                             "cold, so the network only acts where the SDR mapping was "
+                             "genuinely non-invertible. --no-preserve-outside disables.")
     parser.add_argument("--input-transfer", choices=("auto", "srgb", "rec709", "gamma22", "gamma24"), default="auto")
     parser.add_argument("--input-range", choices=("full", "limited"), default="full")
     parser.add_argument("--tile-size", type=int, default=512,

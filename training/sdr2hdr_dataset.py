@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import random
+import sys
 from pathlib import Path
 
 import cv2
@@ -11,6 +12,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+
+from pipeline.hdr_io import HDRStorage, decode_hdr_u16  # noqa: E402
 
 
 def read_jsonl(path: str | Path) -> list[dict]:
@@ -27,6 +34,79 @@ def read_jsonl(path: str | Path) -> list[dict]:
     return records
 
 
+# --------------------------------------------------------------------------
+# HDR target decoding
+# --------------------------------------------------------------------------
+# The network predicts -- and its inverse-ACES baseline emits -- radiance in
+# "network units": nits / NETWORK_PEAK_NITS.  See rudra.sdr2hdr.
+# sdr_to_baseline_hdr, which multiplies the inverse tone map by 2 * 203/10000.
+#
+# The August 2026 corpus stored targets as clip(linear * 203/10000) * 65535, so
+# reading the PNG and dividing by the dtype maximum landed in network units by
+# coincidence.  Under pipeline/hdr_io.py v3 the stored code is a *transfer
+# function* value (PQ, or a log2 ramp over 0.005..1e6 nits), and that same
+# division hands the trainer a target on a completely unrelated scale: mid grey
+# reads 0.465 where the model's own baseline says 0.02.  The 50,000-step run of
+# 24 Aug 2026 -- loss 1.83, psnr_log 6.12 dB, against 42.57 for the older and
+# far worse corpus -- is exactly that mismatch, and nothing else.
+#
+# So: decode through hdr_io, using the storage block the ingest recorded next
+# to the pairs.  Never infer the convention from the pixels.
+NETWORK_PEAK_NITS = 10_000.0
+
+# SDR2HDRNet clamps its output at max_hdr (default 4.0 == 40,000 nits).
+# Targets above that are unreachable by construction: they contribute a
+# constant, unlearnable error and pull the highlight branch permanently toward
+# the ceiling.  log2_extended deliberately preserves suns up to 1e6 nits, so
+# this clamp is load-bearing -- raise it only together with max_hdr.
+DEFAULT_TARGET_CEILING = 4.0
+
+_STORAGE_CACHE: dict[str, HDRStorage | None] = {}
+
+
+def storage_for(hdr_path: str | Path) -> HDRStorage | None:
+    """The ingest sentinel governing this HDR target, or None for legacy dirs.
+
+    Looked up from the file's directory upward (hdr/ -> pairs/ -> work/) and
+    cached per directory, so this costs one stat per pairs dir, not per sample.
+    """
+    directory = Path(hdr_path).parent
+    key = str(directory).lower()
+    if key in _STORAGE_CACHE:
+        return _STORAGE_CACHE[key]
+    storage: HDRStorage | None = None
+    for candidate in (directory, *list(directory.parents)[:3]):
+        sentinel = candidate / "_ingest_config.json"
+        if not sentinel.exists():
+            continue
+        block = json.loads(sentinel.read_text(encoding="utf-8")).get("storage")
+        if block:
+            storage = HDRStorage.from_dict(block)
+        break
+    _STORAGE_CACHE[key] = storage
+    return storage
+
+
+def decode_hdr_target(image: np.ndarray, path: str | Path,
+                      ceiling: float = DEFAULT_TARGET_CEILING) -> np.ndarray:
+    """Stored HDR pixels -> network units (nits / 10,000), clamped at ceiling."""
+    if not np.issubdtype(image.dtype, np.integer):
+        # Float targets (EXR/TIFF written straight through) are already
+        # scene-linear in the repo's normalised convention.
+        decoded = image.astype(np.float32)
+    else:
+        storage = storage_for(path)
+        if storage is None:
+            # Legacy corpus, no sentinel: the code *is* linear * 203/10000.
+            decoded = image.astype(np.float32) / float(np.iinfo(image.dtype).max)
+        else:
+            scene_linear = decode_hdr_u16(image, storage)
+            decoded = scene_linear * np.float32(
+                storage.diffuse_white_nits / NETWORK_PEAK_NITS
+            )
+    return np.clip(decoded, 0.0, ceiling).astype(np.float32)
+
+
 def load_rgb(path: str | Path, hdr: bool) -> np.ndarray:
     image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if image is None:
@@ -36,13 +116,13 @@ def load_rgb(path: str | Path, hdr: bool) -> np.ndarray:
     if image.shape[2] == 4:
         image = image[..., :3]
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    if np.issubdtype(image.dtype, np.integer):
+    if hdr:
+        image = decode_hdr_target(image, path)
+    elif np.issubdtype(image.dtype, np.integer):
         scale = float(np.iinfo(image.dtype).max)
-        image = image.astype(np.float32) / scale
+        image = np.clip(image.astype(np.float32) / scale, 0.0, 1.0)
     else:
-        image = image.astype(np.float32)
-    if not hdr:
-        image = np.clip(image, 0.0, 1.0)
+        image = np.clip(image.astype(np.float32), 0.0, 1.0)
     if not np.isfinite(image).all():
         raise ValueError(f"NaN or Inf pixels in {path}")
     return np.ascontiguousarray(image)
@@ -128,6 +208,22 @@ def _to_tensor(image: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(image).permute(2, 0, 1).contiguous()
 
 
+def announce_storage(label: str, hdr_path: str | Path) -> HDRStorage | None:
+    """Print how targets will be decoded. Silence here is how 50k steps died."""
+    storage = storage_for(hdr_path)
+    if storage is None:
+        print(f"[{label}] HDR targets: no _ingest_config.json found next to "
+              f"{Path(hdr_path).parent} -- assuming the legacy linear*203/10000 "
+              f"convention. If this corpus came from prepare_pairs.py, STOP: the "
+              f"sentinel is missing and the targets will be misread.")
+    else:
+        print(f"[{label}] HDR targets: {storage.describe()} "
+              f"-> network units (nits/{NETWORK_PEAK_NITS:,.0f}), "
+              f"clamped at {DEFAULT_TARGET_CEILING:g} "
+              f"({DEFAULT_TARGET_CEILING * NETWORK_PEAK_NITS:,.0f} nits, SDR2HDRNet max_hdr)")
+    return storage
+
+
 class SDRHDRDataset(Dataset):
     def __init__(
         self,
@@ -138,6 +234,7 @@ class SDRHDRDataset(Dataset):
         augmentation_strength: float = 1.0,
         degradation_probability: float = 0.65,
         max_items: int | None = None,
+        deterministic_degradation: bool = False,
     ):
         records = read_jsonl(manifest_path)
         self.records = [r for r in records if r.get("split") == split]
@@ -150,8 +247,17 @@ class SDRHDRDataset(Dataset):
         self.augment = split == "train" if augment is None else bool(augment)
         self.augmentation_strength = float(augmentation_strength)
         self.degradation_probability = float(degradation_probability)
+        # Held-out SDR in this corpus is the EXACT ACES output that produced the
+        # target, so sdr_to_baseline_hdr is very nearly its analytic inverse and
+        # a zero-residual network is already near-optimal on it -- which is why
+        # no eval beat step 0 on 26 Aug 2026. Deterministic degradation gives a
+        # second held-out pass under the condition the model actually exists
+        # for: an SDR whose tone curve, codec and bit depth are unknown. Seeded
+        # per record, so the number is reproducible across steps and runs.
+        self.deterministic_degradation = bool(deterministic_degradation)
         if not 0.0 <= self.degradation_probability <= 1.0:
             raise ValueError("degradation_probability must be between 0 and 1")
+        self.storage = announce_storage(f"image/{split}", self.records[0]["hdr_path"])
 
     def __len__(self) -> int:
         return len(self.records)
@@ -172,8 +278,23 @@ class SDRHDRDataset(Dataset):
         # only on altered tone curves learns to "correct" already valid SDR.
         if self.augment and random.random() < self.degradation_probability:
             sdr = degrade_sdr(sdr, self.augmentation_strength)
+        elif self.deterministic_degradation:
+            py_state, torch_state = random.getstate(), torch.random.get_rng_state()
+            random.seed(24_082_600 + index)
+            torch.manual_seed(24_082_600 + index)
+            try:
+                sdr = degrade_sdr(sdr, 1.0)
+            finally:
+                random.setstate(py_state)
+                torch.random.set_rng_state(torch_state)
+        # The source's delivery ceiling, in the same units as the target. inf
+        # means "scene-referred, nothing is censored" -- see sdr2hdr_loss.
+        ceiling = record.get("ceiling_nits")
         return {
             "sdr": sdr, "clean_sdr": clean_sdr, "hdr": hdr.clamp_min(0.0),
+            "ceiling": torch.tensor(
+                float(ceiling) / NETWORK_PEAK_NITS if ceiling else float("inf"),
+                dtype=torch.float32),
             "asset_id": str(record["asset_id"]), "scene_id": str(record["scene_id"]),
         }
 
@@ -197,6 +318,8 @@ class SDRHDRVideoDataset(Dataset):
             raise ValueError(f"No video clips selected from {manifest_path} for split={split!r}")
         self.crop_size = int(crop_size)
         self.augment = bool(augment)
+        self.storage = announce_storage(f"video/{split or 'all'}",
+                                        self.records[0]["hdr_frames"][0])
 
     def __len__(self) -> int:
         return len(self.records)
@@ -222,4 +345,9 @@ class SDRHDRVideoDataset(Dataset):
                 torch.random.set_rng_state(torch_state)
                 augmented.append(degrade_sdr(frame))
             sdr = torch.stack(augmented)
-        return {"sdr": sdr, "hdr": hdr.clamp_min(0.0), "clip_id": str(record["clip_id"])}
+        ceiling = record.get("ceiling_nits")
+        return {"sdr": sdr, "hdr": hdr.clamp_min(0.0),
+                "ceiling": torch.tensor(
+                    float(ceiling) / NETWORK_PEAK_NITS if ceiling else float("inf"),
+                    dtype=torch.float32),
+                "clip_id": str(record["clip_id"])}
