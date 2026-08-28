@@ -44,6 +44,16 @@
   /* ---- dials -------------------------------------------------------------
      Relabelled, not just re-fed. Leaving "LPIPS" over a number that is not
      LPIPS is how the mock misled in the first place.                        */
+  // The left pane carries the analytic inverse-ACES baseline, not the SDR --
+  // that is the comparison worth showing. The markup's badge said "DISPLAY SDR
+  // (CLIPPED)", which described the mock's behaviour and is now simply wrong.
+  function relabelPanes() {
+    var sdr = document.querySelector(".badge-sdr");
+    var hdr = document.querySelector(".badge-hdr");
+    if (sdr) { sdr.textContent = "INVERSE-ACES BASELINE"; }
+    if (hdr) { hdr.textContent = "RUDRA RECONSTRUCTION"; }
+  }
+
   function relabelDials() {
     var boxes = document.querySelectorAll(".dial-box");
     if (boxes.length < 2) { return; }
@@ -192,11 +202,31 @@
     });
   }
 
+  // ?demo=1 runs the bundled asset through the model as soon as the page is
+  // live. Exists so a headless screenshot captures the product doing its job --
+  // real prediction, real MaxCLL -- instead of an empty upload card.
+  function autorun() {
+    if (!/[?&]demo=1/.test(location.search)) { return; }
+    fetch("assets/cinematic_hdr_sunset.png")
+      .then(function (r) { return r.blob(); })
+      .then(function (b) {
+        state.file = new File([b], "cinematic_hdr_sunset.png", {type: "image/png"});
+        var card = $("uploadCard"), viewer = $("viewerCard");
+        if (card) { card.style.display = "none"; }
+        if (viewer) { viewer.style.display = "block"; }
+        var handle = $("sliderHandle"), layer = $("hdrLayer");
+        if (layer) { layer.style.clipPath = "polygon(50% 0, 100% 0, 100% 100%, 50% 100%)"; }
+        if (handle) { handle.style.left = "50%"; }
+        infer();
+      });
+  }
+
   function boot() {
     relabelDials();
     fetch("/api/model").then(function (r) { return r.json(); }).then(function (info) {
       if (info.loaded) {
         state.live = true;
+        relabelPanes();
         setPill("cudaStatus", info.gpu + "  (" + info.device + ")", true);
         setPill("backboneStatus", "SDR2HDRNet " + (info.name || ""), true);
         log("model: " + info.checkpoint);
@@ -211,9 +241,15 @@
             ". Numbers on this page are NOT measurements.", "error");
       }
       hookUploads();
+      autorun();
     }).catch(function () {
       setPill("cudaStatus", "backend not reachable -- demo mode", false);
       log("no /api backend: serving statically. Run 'python ui/server.py'.", "error");
+      // Hook the handlers anyway. Without this a page loaded while the server
+      // was down stays inert even after it comes back, and every drop silently
+      // falls through to app.js's simulated path -- which is how a capture on
+      // 28 Aug 2026 came back showing the mock's LPIPS 0.082 / JOD 9.85 dials.
+      hookUploads();
     });
   }
 

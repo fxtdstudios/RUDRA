@@ -49,4 +49,14 @@ training/input.jpg
 
 # ── Docs stay local: ignore all markdown except README.md ────────────────────
 *.md
-!README.md
+# Root README only -- an anchored pattern, so a docs/README.md or any other
+# nested markdown cannot slip back in through the negation.
+!/README.md
+
+# Audit, review and status reports stay local too. These were written as HTML so
+# they slipped past the *.md rule and stayed tracked; the same content belongs in
+# the code's own docstrings, not in dated files that go stale in the repo.
+AUDIT_*.html
+*_REVIEW_*.html
+COMPETITIVE_*.html
+*_AUDIT_*.html

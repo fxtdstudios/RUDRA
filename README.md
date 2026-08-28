@@ -47,9 +47,6 @@ The repo has **four cooperating systems**:
 | Qwen-Image | 16ch / 8× | turbo | 26.67 |
 | Flux.2 Klein | 128ch / **16×** | turbo | 28.57 |
 
-See **[DECODER_CHEATSHEET.md](DECODER_CHEATSHEET.md)** for which `decoder_size` to select
-per backbone and the node settings.
-
 ### Pretrained weights (Hugging Face)
 
 Trained decoders are hosted at
@@ -94,17 +91,86 @@ python training/scan_model.py hdrdata/checkpoints/turbo_flux --model-type flux \
 
 ### Train direct 8-bit SDR to HDR recovery
 
+Four stages: inventory the sources, build pairs, build scene-safe manifests, train.
+Each stage refuses to proceed on a corpus it cannot vouch for.
+
 ```bash
-python training/build_sdr_hdr_manifest.py --sdr-dir G:/data/sdr --hdr-dir G:/data/hdr \
-  --metadata-dir G:/data/meta --output hdrdata/sdr_hdr_manifest.jsonl
-python training/train_sdr2hdr.py --mode image --manifest hdrdata/sdr_hdr_manifest.jsonl \
-  --output-dir hdrdata/checkpoints/sdr2hdr_image_50k --steps 50000 --device cuda
-python training/evaluate_sdr2hdr.py --manifest hdrdata/sdr_hdr_manifest.jsonl \
-  --checkpoint hdrdata/checkpoints/sdr2hdr_image_50k/best.pt --split test
+# 1. inventory. --encoding declares the transfer function when the dataset
+#    documents it and the filenames do not (HdM-HDR-2014 is PQ graded to 4,000
+#    nits and says so nowhere in its paths).
+python pipeline/scan_sources.py /path/to/source_hdr --out work/inventory.jsonl
+
+# 2. pairs. Targets are stored through pipeline/hdr_io.py -- log2_extended keeps
+#    0.005..1,000,000 nits at ~2,380 codes per stop, so nothing clips and the
+#    shadows get 36,384 codes below diffuse white instead of 1,330.
+python pipeline/prepare_pairs.py --inventory work/inventory.jsonl --dst work/pairs \
+  --mode log2_extended --crops 3 --video-stride 2
+
+# 3. manifests. Whole scenes are held out; framings of one setup collapse to one
+#    scene; delivery-graded sources are tagged with the ceiling they were graded to.
+python pipeline/build_manifests.py --pairs-dir work/pairs --out-dir work
+
+# 4. gate, then train. verify_dataset checks nine invariants and refuses on any.
+python pipeline/verify_dataset.py --pairs-dir work/pairs \
+  --manifest work/sdr_hdr_manifest.jsonl --video-manifest work/video_manifest_9f.jsonl
+python pipeline/check_target_scale.py --manifest work/sdr_hdr_manifest.jsonl
+python training/train_sdr2hdr.py --mode image --manifest work/sdr_hdr_manifest.jsonl \
+  --output-dir work/checkpoints/image --steps 100000 --best-metric composite_gain --device cuda
 ```
 
-`best.pt` is protected by a held-out baseline gate: training starts with the analytic
-inverse-tone-map checkpoint and only replaces it when validation log-radiance error improves.
+Three properties worth knowing about, because each exists to stop a specific
+class of silent failure:
+
+**Every eval scores two conditions.** `clean_*` is the held-out SDR as prepared;
+`hard_*` is the same frames under a seeded camera/codec degradation — unknown
+tone curve, 4:2:0 chroma, banding, JPEG. Only `hard_*` reflects deployment, so
+only `hard_*` selects `best.pt`. Both report `gain_db` against the analytic
+inverse-ACES baseline the network sits on top of, so "is this better than doing
+nothing" is a logged number, never an inference.
+
+**`--best-metric composite_gain`** scores `hard_gain_db + min(0, clean_gain_db)`:
+the improvement on degraded input, less any harm done to clean input. Selecting
+on raw loss instead always picks the last checkpoint, which is rarely the best
+trade.
+
+**Delivery-graded targets are treated as censored.** A pixel at exactly 4,000
+nits in a 4,000-nit graded source means "≥ 4,000", not "= 4,000". Plain L1
+against those pixels teaches the model to cap. `build_manifests.py` detects a
+grading ceiling (a peak value many frames land on bit-for-bit — natural scene
+peaks never repeat exactly) and the loss goes one-sided there: predicting above
+the ceiling is free up to `CENSORED_HEADROOM_STOPS`, predicting below still costs.
+
+### RUDRA Studio (local UI)
+
+![RUDRA Studio](docs/rudra_studio.png)
+
+```bash
+python ui/server.py --checkpoint work/checkpoints/image/best.pt --preload
+```
+
+<sub>The screenshot is captured from the running UI, not mocked up —
+`?demo=1` runs the bundled frame through the loaded checkpoint on page load, so
+the numbers in it are that checkpoint's real output:
+`chrome --headless=new --window-size=1600,1200 --virtual-time-budget=15000
+--screenshot=docs/rudra_studio.png "http://localhost:8080/?demo=1"`</sub>
+
+A local page on `http://localhost:8080` for looking at the model on your own
+footage, which no metric substitutes for. Drop an SDR image and it reports what
+is actually measurable without a reference: **MaxCLL / MaxFALL** from the same
+`rudra.delivery.metadata` code that writes the HDR10 sidecar, peak and P99 nits,
+the share of pixels above diffuse white, and how far the model moved from its
+analytic baseline — globally, inside each learned mask, and as an RMS departure
+in stops.
+
+The compare slider wipes the model against the **inverse-ACES baseline**, not
+against the SDR, so it shows what the network added rather than what the tone
+map already gave you. The exposure control moves the display peak
+(`203 × 2^EV`), not the prediction: raising it lifts the clip point so
+reconstructed highlights become visible on an SDR monitor.
+
+There is deliberately no LPIPS or JOD here. Both need the ground-truth HDR,
+which a file you just dropped in does not have; reference metrics live in
+`training/sweep_inference.py` on the held-out split.
 
 ### Master, measure, and export (delivery layer — no GPU required)
 
@@ -148,6 +214,10 @@ python training/benchmark_hdr.py --gt gt --a rudra_preds --b iclora_preds \
 ```
 rudra/            Research package: descriptor, DRE transformer, cross-attention,
                   FiLM decoder, DR-gated LoRA, losses, ColorVideoVDP metric, pipeline
+pipeline/         Corpus construction and its gates: source inventory, pair
+                  preparation, HDR storage (hdr_io), scene-safe manifests,
+                  verify_dataset, check_target_scale
+ui/               RUDRA Studio: static page + torch-backed inference server
 rudra/delivery/   Torch-free delivery layer: DoVi L1/HDR10+ metadata, ACES/EXR/OCIO,
                   grade controls, PU21/CVVDP bench, the `rudra` CLI
 pipeline/         Corrected data pipeline v3: hdr_io storage modes, source scanner,
@@ -174,14 +244,13 @@ from Mantiuk et al.) in JOD units, alongside ΔE2000, EV-error, highlight-recons
 accuracy, and tone-mapped PSNR/SSIM. Install `cvvdp` for the real metric; without it the
 code falls back to a clearly-labeled proxy.
 
-## Documentation
+## Reference
 
-- **[DELIVERY_2026-08-22.md](DELIVERY_2026-08-22.md)** — delivery layer: usage, conventions, verification.
-- **[MOAT_REVIEW_2026-08-22.md](MOAT_REVIEW_2026-08-22.md)** — system-design review vs Runway Ruby / Topaz Hyperion / Beeble.
-- **[RUDRA_TECHNICAL_REVIEW.md](RUDRA_TECHNICAL_REVIEW.md)** — full code review + every fix applied.
-- **[RUDRA_RETRAIN_RUNBOOK.md](RUDRA_RETRAIN_RUNBOOK.md)** — step-by-step (re)training guide.
-- **[DECODER_CHEATSHEET.md](DECODER_CHEATSHEET.md)** — decoder selection + lessons learned.
 - **[research/RUDRA_V01.pdf](research/RUDRA_V01.pdf)** — the paper.
+- Every script carries its own `--help` and a module docstring stating what it
+  does and why it exists; `pipeline/verify_dataset.py` documents the nine corpus
+  invariants, and `pipeline/hdr_io.py` is the single source of truth for how HDR
+  targets are stored on disk.
 
 ## Notes
 

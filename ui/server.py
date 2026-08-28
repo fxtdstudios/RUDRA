@@ -296,6 +296,14 @@ def make_handler(args):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(UI_DIR), **kw)
 
+        def end_headers(self):
+            # The page and its scripts are edited live during development, and a
+            # cached live.js silently keeps running the previous build -- on
+            # 28 Aug 2026 that made a fixed handler look broken for two rounds.
+            if (self.path or "").split("?")[0].endswith((".js", ".css", ".html", "/")):
+                self.send_header("Cache-Control", "no-store, must-revalidate")
+            super().end_headers()
+
         def log_message(self, fmt, *a):  # quieter than the default
             if "/api/" in (self.path or ""):
                 super().log_message(fmt, *a)
