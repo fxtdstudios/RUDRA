@@ -148,11 +148,13 @@ the ceiling is free up to `CENSORED_HEADROOM_STOPS`, predicting below still cost
 python ui/server.py --checkpoint work/checkpoints/image/best.pt --preload
 ```
 
-<sub>The screenshot is captured from the running UI, not mocked up —
-`?demo=1` runs the bundled frame through the loaded checkpoint on page load, so
-the numbers in it are that checkpoint's real output:
-`chrome --headless=new --window-size=1600,1200 --virtual-time-budget=15000
---screenshot=docs/rudra_studio.png "http://localhost:8080/?demo=1"`</sub>
+<sub>The screenshot is captured from the running UI, not mocked up — regenerate
+it with `python ui/capture_shot.py` while the server is running. `?demo=1` runs
+the bundled frame through the loaded checkpoint on page load, so the numbers in
+it are that checkpoint's real output. The script refuses to write unless a model
+is actually loaded and the capture is a plausible size: Chrome exits 0 and
+writes a valid PNG when a page fails to load, so an unguarded capture taken with
+the server down silently commits a picture of "This site can't be reached".</sub>
 
 A local page on `http://localhost:8080` for looking at the model on your own
 footage, which no metric substitutes for. Drop an SDR image and it reports what
