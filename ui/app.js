@@ -1,581 +1,351 @@
-/* ==============================================================================
-   RUDRA Studio — Premium Apple-inspired Interactive Controller
-   ============================================================================== */
+/* RUDRA Studio — the whole client.
+   Replaces the earlier mock (app.js) plus the patch layer (live.js) that fixed
+   it at runtime. Nothing here simulates: every number on screen came from
+   /api/infer, and every label describes what is actually in the pane. */
+(function () {
+  "use strict";
 
-// Global State
-let currentTab = 'lite';
-let isDraggingSlider = false;
-let lpipsVal = 0.142;
-let jodVal = 9.24;
-let currentFileName = 'cinematic_hdr_sunset_mastered.exr';
+  var $ = function (id) { return document.getElementById(id); };
 
-// DOM Elements
-const uploadCard = document.getElementById('uploadCard');
-const viewerCard = document.getElementById('viewerCard');
-const fileInput = document.getElementById('fileInput');
-const sdrImage = document.getElementById('sdrImage');
-const hdrImage = document.getElementById('hdrImage');
-const sliderHandle = document.getElementById('sliderHandle');
-const sdrLayer = document.getElementById('sdrLayer');
-const hdrLayer = document.getElementById('hdrLayer');
+  var state = {
+    live: false, file: null, busy: false,
+    mode: "all", strength: 1, peakEv: 0, preserve: true,
+    view: "ab", wipe: 0.5, last: null, master: null
+  };
 
-// Tab switcher
-function switchTab(tab) {
-    currentTab = tab;
-    
-    const tabLite = document.getElementById('tabLite');
-    const tabFull = document.getElementById('tabFull');
-    const litePanel = document.getElementById('litePanel');
-    const drePanel = document.getElementById('drePanel');
-    
-    if (tab === 'lite') {
-        tabLite.classList.add('active');
-        tabFull.classList.remove('active');
-        litePanel.style.display = 'block';
-        drePanel.style.display = 'none';
-    } else {
-        tabLite.classList.remove('active');
-        tabFull.classList.add('active');
-        litePanel.style.display = 'none';
-        drePanel.style.display = 'block';
+  var SHOTS = [
+    ["carousel_fireworks", "4181", "4000", 1.00],
+    ["smith_hammering", "702", "4000", 1.00],
+    ["fireplace", "1392", "4000", 1.00],
+    ["beerfest_lightshow", "2757", "4000", 1.00],
+    ["showgirl_01", "1164", "4000", 1.00],
+    ["bistro", "1455", "4000", 1.00],
+    ["poker_travelling", "2922", "4000", 1.00],
+    ["fishing_longshot", "1251", "4000", 1.00],
+    ["Chimera_DCI4k_2398p", "3126", "10000", 1.00],
+    ["Bar-Scene_PQ-1K", "6201", "991", 0.25]
+  ];
+
+  function log(line, kind) {
+    var box = $("log");
+    var row = document.createElement("div");
+    if (kind) { row.className = kind; }
+    row.textContent = line;
+    box.appendChild(row);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function displayNits() { return 203 * Math.pow(2, state.peakEv); }
+
+  /* ---- readouts -------------------------------------------------------- */
+  function ro(k, v, u) {
+    return '<div class="ro"><span class="k">' + k + '</span>' +
+           '<span class="v">' + v + '</span><span class="u">' + (u || "") + "</span></div>";
+  }
+  function fmt(n, d) {
+    if (n === null || n === undefined || (typeof n === "number" && !isFinite(n))) { return "—"; }
+    return Number(n).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: d});
+  }
+  function signed(n, d) {
+    if (n === null || n === undefined || !isFinite(n)) { return "—"; }
+    return (n >= 0 ? "+" : "−") + fmt(Math.abs(n), d);
+  }
+
+  function showMetrics(m) {
+    $("measA").innerHTML =
+      ro("MaxCLL", fmt(m.maxcll, 0), "nits") +
+      ro("MaxFALL", fmt(m.maxfall, 0), "nits") +
+      ro("Peak", fmt(m.peak_nits, 1), "nits") +
+      ro("P99", fmt(m.p99_nits, 1), "nits") +
+      ro("Median", fmt(m.median_nits, 2), "nits");
+    $("measB").innerHTML =
+      ro("Above diffuse white", fmt(m.above_diffuse_white_pct, 2), "%") +
+      ro("Above 1 000 nits", fmt(m.above_1000_nits_pct, 3), "%") +
+      ro("Headroom, highlights", signed(m.headroom_highlight_stops, 2), "st") +
+      ro("Headroom, shadows", signed(m.headroom_shadow_stops, 2), "st") +
+      ro("Departure RMS", fmt(m.departure_rms_stops, 3), "st");
+    $("statusMask").textContent =
+      "masks " + fmt(m.highlight_mask_pct, 2) + "% highlight / " +
+      fmt(m.shadow_mask_pct, 2) + "% shadow";
+    $("statusTime").textContent = m.source_resolution + " · " + m.elapsed_s + " s";
+    $("srcInfo").textContent = m.source_resolution + " · " + m.elapsed_s + " s";
+  }
+
+  /* ---- scopes ---------------------------------------------------------- */
+  var W = 460, H = 132, HW = 304, HH = 96;
+
+  function ladder() {
+    var lo = 0.05, hi = 4000, span = Math.log10(hi / lo), out = "";
+    [[4000, "4000"], [1000, "1000"], [203, "203"], [10, "10"], [1, "1"], [0.05, "0.05"]]
+      .forEach(function (t) {
+        var y = (H - (Math.log10(t[0] / lo) / span) * H).toFixed(1);
+        out += '<line x1="0" y1="' + y + '" x2="' + W + '" y2="' + y +
+               '" stroke="#232323" stroke-width="1"/>' +
+               '<text x="' + (W + 4) + '" y="' + (Number(y) + 3).toFixed(1) +
+               '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#5c5c5c">' +
+               t[1] + "</text>";
+      });
+    return out;
+  }
+
+  function drawScopes(s, m) {
+    var n = s.mid.length, step = W / n, outer = "", inner = "", spine = [];
+    for (var i = 0; i < n; i++) {
+      var x = (i * step + 0.5).toFixed(1);
+      outer += "M" + x + " " + ((1 - s.lo[i]) * H).toFixed(1) + "V" + ((1 - s.hi[i]) * H).toFixed(1);
+      inner += "M" + x + " " + ((1 - s.q1[i]) * H).toFixed(1) + "V" + ((1 - s.q3[i]) * H).toFixed(1);
+      spine.push(x + "," + ((1 - s.mid[i]) * H).toFixed(1));
     }
-    
-    // Animate dials on mode switch
-    updateVisualMetrics();
-}
-
-// Slider comparison interaction
-function initSliderComparison() {
-    let active = false;
-    
-    function slide(x) {
-        const rect = viewerCard.getBoundingClientRect();
-        let posX = x - rect.left;
-        
-        // Boundaries
-        if (posX < 0) posX = 0;
-        if (posX > rect.width) posX = rect.width;
-        
-        const percentage = (posX / rect.width) * 100;
-        
-        // Move slider handle
-        sliderHandle.style.left = `${percentage}%`;
-        
-        // Clip top layer (HDR) to the right, revealing SDR underneath on the left
-        hdrLayer.style.clipPath = `polygon(${percentage}% 0, 100% 0, 100% 100%, ${percentage}% 100%)`;
-        
-        // Dynamically update metrics based on slider position to simulate area assessment!
-        const multiplier = Math.min(Math.max(percentage / 100, 0), 1);
-        updateDynamicMetrics(multiplier);
+    var cll = "";
+    if (m && isFinite(m.maxcll)) {
+      var span = Math.log10(4000 / 0.05);
+      var y = H - (Math.log10(Math.min(Math.max(m.maxcll, 0.05), 4000) / 0.05) / span) * H;
+      cll = '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
+            '" stroke="#cfcfcf" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>' +
+            '<text x="4" y="' + (y - 4).toFixed(1) +
+            '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#a8a8a8">MaxCLL ' +
+            Math.round(m.maxcll) + "</text>";
     }
-    
-    // Click slider handle or track to jump/drag
-    sliderHandle.addEventListener('mousedown', (e) => { 
-        active = true; 
-        e.preventDefault();
-    });
-    
-    window.addEventListener('mouseup', () => { active = false; });
-    
-    viewerCard.addEventListener('mousemove', (e) => {
-        if (!active) return;
-        slide(e.pageX);
-    });
-    
-    // Click on viewer to jump slider to position
-    viewerCard.addEventListener('mousedown', (e) => {
-        if (e.target.classList.contains('slider-handle-button') || e.target.id === 'sliderHandle') return;
-        slide(e.pageX);
-    });
-    
-    // Mobile Touch Support
-    sliderHandle.addEventListener('touchstart', (e) => { 
-        active = true; 
-        e.preventDefault();
-    });
-    window.addEventListener('touchend', () => { active = false; });
-    
-    viewerCard.addEventListener('touchmove', (e) => {
-        if (!active) return;
-        slide(e.touches[0].pageX);
-    });
-}
+    $("wave").innerHTML = ladder() +
+      '<path d="' + outer + '" stroke="#8f8f8f" stroke-width="1.6" opacity="0.30"/>' +
+      '<path d="' + inner + '" stroke="#d8d8d8" stroke-width="1.6" opacity="0.62"/>' +
+      '<polyline points="' + spine.join(" ") +
+      '" fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.5"/>' + cll;
 
-// Drag & Drop Uploader and file listeners
-function initUploader() {
-    const btnHeaderUpload = document.getElementById('btnHeaderUpload');
-    if (btnHeaderUpload) {
-        btnHeaderUpload.addEventListener('click', (e) => {
-            e.preventDefault();
-            fileInput.click();
-        });
+    var bins = s.histogram.length, bw = HW / bins, bars = "";
+    for (var j = 0; j < bins; j++) {
+      var v = s.histogram[j];
+      if (v > 0.004) {
+        bars += '<rect x="' + (j * bw).toFixed(2) + '" y="' + (HH - v * HH).toFixed(1) +
+                '" width="' + (bw * 0.72).toFixed(2) + '" height="' + (v * HH).toFixed(1) + '"/>';
+      }
     }
+    var marks = "";
+    [[0.05, "0.05"], [1, "1"], [10, "10"], [203, "203"], [1000, "1k"], [4000, "4k"]]
+      .forEach(function (t) {
+        var x = (Math.log2(t[0] / 0.05) / Math.log2(4000 / 0.05)) * HW;
+        marks += '<text x="' + x.toFixed(0) + '" y="110" font-family="IBM Plex Mono, monospace"' +
+                 ' font-size="8.5" fill="#5c5c5c" text-anchor="middle">' + t[1] + "</text>";
+      });
+    var dw = (Math.log2(203 / 0.05) / Math.log2(4000 / 0.05)) * HW;
+    $("hist").innerHTML = '<g fill="#b4b4b4" opacity="0.78">' + bars + "</g>" +
+      '<line x1="0" y1="' + HH + '" x2="' + HW + '" y2="' + HH + '" stroke="#2c2c2c"/>' +
+      '<line x1="' + dw.toFixed(1) + '" y1="0" x2="' + dw.toFixed(1) + '" y2="' + HH +
+      '" stroke="#4a4a4a" stroke-dasharray="2 3"/>' + marks;
+  }
 
-    uploadCard.addEventListener('click', (e) => {
-        e.preventDefault();
-        fileInput.click();
-    });
-    
-    // CRITICAL BUG FIX: Prevent bubbling click loops on fileInput
-    fileInput.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
-    
-    // Drag and drop for initial upload Card
-    uploadCard.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadCard.style.borderColor = 'var(--accent-cyan)';
-    });
-    
-    uploadCard.addEventListener('dragleave', () => {
-        uploadCard.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-    });
-    
-    uploadCard.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleUploadedFile(files[0]);
-        }
-    });
+  /* ---- viewer ---------------------------------------------------------- */
+  function layoutWipe() {
+    var plate = $("plate");
+    if (plate.hidden) { return; }
+    var w = plate.clientWidth, h = plate.clientHeight;
+    var img = $("imgBase");
+    img.style.width = w + "px";
+    img.style.height = h + "px";
+    var x = state.view === "ab" ? state.wipe * w : (state.view === "base" ? w : 0);
+    $("under").style.width = x + "px";
+    $("wipe").style.left = x + "px";
+    $("wipe").style.display = state.view === "ab" ? "block" : "none";
+    $("grip").style.display = state.view === "ab" ? "flex" : "none";
+    $("grip").style.left = x + "px";
+    $("grip").style.top = (h / 2) + "px";
+  }
 
-    // PREMIUM REFINEMENT: Allow drag-dropping a new SDR source directly onto the viewer!
-    viewerCard.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        viewerCard.style.borderColor = 'var(--accent-cyan)';
-        viewerCard.style.boxShadow = '0 0 30px rgba(41, 231, 205, 0.2)';
+  function bindWipe() {
+    var plate = $("plate"), dragging = false;
+    function move(clientX) {
+      var r = plate.getBoundingClientRect();
+      state.wipe = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+      layoutWipe();
+    }
+    plate.addEventListener("pointerdown", function (e) {
+      if (state.view !== "ab") { return; }
+      dragging = true; plate.setPointerCapture(e.pointerId); move(e.clientX);
     });
-    
-    viewerCard.addEventListener('dragleave', () => {
-        viewerCard.style.borderColor = 'var(--border-premium)';
-        viewerCard.style.boxShadow = '0 12px 40px 0 rgba(0, 0, 0, 0.4)';
-    });
-    
-    viewerCard.addEventListener('drop', (e) => {
-        e.preventDefault();
-        viewerCard.style.borderColor = 'var(--border-premium)';
-        viewerCard.style.boxShadow = '0 12px 40px 0 rgba(0, 0, 0, 0.4)';
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleUploadedFile(files[0]);
-        }
-    });
-    
-    fileInput.addEventListener('change', (e) => {
-        const files = e.target.files;
-        if (files.length > 0) {
-            handleUploadedFile(files[0]);
-        }
-    });
-}
+    plate.addEventListener("pointermove", function (e) { if (dragging) { move(e.clientX); } });
+    window.addEventListener("pointerup", function () { dragging = false; });
+    window.addEventListener("resize", layoutWipe);
+  }
 
-function handleUploadedFile(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        // Set image source for both layers
-        sdrImage.src = e.target.result;
-        hdrImage.src = e.target.result;
-        
-        // Parse filename and build EXR target output name
-        const dotIdx = file.name.lastIndexOf('.');
-        const baseName = dotIdx !== -1 ? file.name.substring(0, dotIdx) : file.name;
-        currentFileName = `${baseName}_mastered.exr`;
-        
-        // Hide uploader card, reveal comparative viewer
-        uploadCard.style.display = 'none';
-        viewerCard.style.display = 'block';
-        
-        // Trigger initial slider clip (50% split)
-        hdrLayer.style.clipPath = `polygon(50% 0, 100% 0, 100% 100%, 50% 100%)`;
-        sliderHandle.style.left = '50%';
-        
-        // Render initial dynamic visual metrics, curves, and filters
-        updateParameters();
+  /* ---- requests -------------------------------------------------------- */
+  function params(extra) {
+    var p = {
+      strength: state.strength,
+      display_nits: displayNits(),
+      recovery_mode: state.mode,
+      preserve_outside: state.preserve,
+      tile_size: 512, tile_overlap: 64, max_side: 1600
     };
-    reader.readAsDataURL(file);
-}
+    if (extra) { Object.keys(extra).forEach(function (k) { p[k] = extra[k]; }); }
+    return p;
+  }
 
-// Live Parameter Modulator
-function updateParameters() {
-    const exposure = parseFloat(document.getElementById('sliderExposure').value);
-    const gating = parseFloat(document.getElementById('sliderGating').value);
-    const patchSize = parseInt(document.getElementById('sliderPatchSize').value);
-    const projection = parseInt(document.getElementById('sliderProjection').value);
-    const knee = parseFloat(document.getElementById('sliderHighlightKnee').value);
-    
-    // Update numerical value indicators
-    document.getElementById('valExposure').innerText = `${exposure >= 0 ? '+' : ''}${exposure.toFixed(2)} EV`;
-    document.getElementById('valGating').innerText = `${gating.toFixed(2)}x`;
-    document.getElementById('valPatchSize').innerText = `${patchSize} x ${patchSize}`;
-    document.getElementById('valProjection').innerText = `${projection}-d`;
-    document.getElementById('valHighlightKnee').innerText = `${knee.toFixed(2)} Y`;
-    
-    // PREMIUM EFFECT: Live Tone Curve & Parameter CSS filters on standard images!
-    const toneCurve = document.getElementById('toneCurveSelect').value;
-    let sdrFilter = '';
-    
-    switch (toneCurve) {
-        case 'linear':
-            sdrFilter = 'contrast(0.65) brightness(1.15) saturate(0.6) blur(0.2px)';
-            break;
-        case 'logc4':
-        case 'slog3':
-        case 'vlog':
-            sdrFilter = 'contrast(0.55) brightness(1.0) saturate(0.5) blur(0.2px)';
-            break;
-        case 'hlg':
-            sdrFilter = 'contrast(0.8) brightness(0.95) saturate(0.85) blur(0.2px)';
-            break;
-        case 'sdr':
-        default:
-            sdrFilter = 'contrast(1.15) brightness(1.05) saturate(1.1) blur(0.2px)';
-            break;
-    }
-    sdrImage.style.filter = sdrFilter;
+  function busy(on, label) {
+    state.busy = on;
+    $("btnMaster").disabled = on || !state.file || !state.live;
+    $("btnReprocess").disabled = on || !state.file || !state.live;
+    if (label) { $("btnMaster").textContent = label; }
+    else { $("btnMaster").textContent = "Master EXR"; }
+  }
 
-    // HDR Visual Modulation (brightness factor, saturation scaling, knee contrast compression)
-    const expFactor = Math.pow(1.35, exposure); 
-    const satFactor = 1.0 + (gating - 1.0) * 0.2;
-    const conFactor = 1.05 - (1.0 - knee) * 0.25;
-    hdrImage.style.filter = `brightness(${expFactor.toFixed(3)}) saturate(${satFactor.toFixed(3)}) contrast(${conFactor.toFixed(3)})`;
-    
-    // Compute dynamic, pseudo-realistic perceptual metric offsets on input adjustments!
-    let lpips = 0.082;
-    let jod = 9.85;
-    
-    // Deviations degrade scores
-    lpips += Math.abs(exposure) * 0.035 + Math.abs(1.0 - gating) * 0.04;
-    jod -= Math.abs(exposure) * 0.85 + Math.abs(1.0 - gating) * 1.1;
-    
-    if (currentTab === 'full') {
-        lpips += Math.abs(8 - patchSize) * 0.008 + Math.abs(512 - projection) * 0.0001 + Math.abs(0.85 - knee) * 0.05;
-        jod -= Math.abs(8 - patchSize) * 0.2 + Math.abs(512 - projection) * 0.002 + Math.abs(0.85 - knee) * 1.3;
-    }
-    
-    lpipsVal = Math.min(Math.max(lpips, 0.01), 0.55);
-    jodVal = Math.min(Math.max(jod, 1.2), 9.98);
-    
-    updateVisualMetrics();
-    drawHistogram();
-}
+  function infer() {
+    if (!state.live || !state.file || state.busy) { return; }
+    busy(true);
+    log("reconstruct " + state.file.name + "  ×" + state.strength.toFixed(2) +
+        "  " + state.mode + "  peak " + Math.round(displayNits()) + " nits");
+    fetch("/api/infer", {
+      method: "POST",
+      headers: {"Content-Type": "application/octet-stream",
+                "X-Rudra-Params": JSON.stringify(params())},
+      body: state.file
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      busy(false);
+      if (!d.ok) { log("failed: " + (d.error || "unknown"), "err"); return; }
+      state.last = d;
+      $("empty").hidden = true;
+      $("plate").hidden = false;
+      $("imgHdr").src = d.hdr_png;
+      $("imgBase").src = d.baseline_png;
+      $("peakBadge").textContent = "Display peak " + Math.round(d.metrics.display_nits) + " nits";
+      showMetrics(d.metrics);
+      drawScopes(d.scopes, d.metrics);
+      setTimeout(layoutWipe, 0);
+      log("  MaxCLL " + Math.round(d.metrics.maxcll) + "  MaxFALL " +
+          Math.round(d.metrics.maxfall) + " nits  headroom " +
+          signed(d.metrics.headroom_highlight_stops, 2) + " st in mask");
+    }).catch(function (e) { busy(false); log("request failed: " + e, "err"); });
+  }
 
-function updateDynamicMetrics(sliderMultiplier) {
-    // When slider reveal changes, slightly adapt visual metrics to show localized area improvement
-    const currentLpips = lpipsVal + (1.0 - sliderMultiplier) * 0.12;
-    const currentJod = jodVal - (1.0 - sliderMultiplier) * 2.8;
-    
-    setDialValue('dialLpips', 'textLpips', Math.min(Math.max(currentLpips, 0.01), 0.65).toFixed(3), 1.0);
-    setDialValue('dialJod', 'textJod', Math.min(Math.max(currentJod, 1.0), 9.98).toFixed(2), 10.0);
-}
+  function master() {
+    if (!state.live || !state.file || state.busy) { return; }
+    busy(true, "Mastering…");
+    log("master " + state.file.name + " → ACES 2065-1 EXR, full resolution");
+    fetch("/api/master", {
+      method: "POST",
+      headers: {"Content-Type": "application/octet-stream",
+                "X-Rudra-Params": JSON.stringify(params({name: state.file.name,
+                                                         container: "aces",
+                                                         master_max_side: 4096}))},
+      body: state.file
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      busy(false);
+      if (!d.ok) { log("master failed: " + (d.error || "unknown"), "err"); return; }
+      state.master = d;
+      log("  " + d.file + "  " + (d.bytes / 1048576).toFixed(2) + " MB  " +
+          d.resolution + "  " + d.container + "  " + d.elapsed_s + " s");
+      log("  MaxCLL " + d.maxcll + "  MaxFALL " + d.maxfall + " nits  sidecar " + d.sidecar);
+      var a = document.createElement("a");
+      a.href = "/api/master/download?f=" + encodeURIComponent(d.file);
+      a.download = d.file;
+      document.body.appendChild(a); a.click(); a.remove();
+    }).catch(function (e) { busy(false); log("master failed: " + e, "err"); });
+  }
 
-// Perceptual Dials Renderer (dasharray calculations & transitions)
-function updateVisualMetrics() {
-    setDialValue('dialLpips', 'textLpips', lpipsVal.toFixed(3), 1.0);
-    setDialValue('dialJod', 'textJod', jodVal.toFixed(2), 10.0);
-}
+  /* ---- wiring ---------------------------------------------------------- */
+  function take(file) {
+    state.file = file;
+    $("tc").textContent = "00:00:00:01";
+    infer();
+  }
 
-function setDialValue(dialId, textId, value, maxLimit) {
-    const dial = document.getElementById(dialId);
-    const textElement = document.getElementById(textId);
-    if (!dial || !textElement) return;
-    
-    const floatValue = parseFloat(value);
-    const percentage = floatValue / maxLimit;
-    
-    // SVG circle circumference = 2 * PI * r (r=45) = ~283
-    const circumference = 282.74;
-    let offset = circumference - (percentage * circumference);
-    
-    // Avoid complete wrap transitions on absolute zero/one
-    if (offset < 2) offset = 2;
-    if (offset > circumference - 2) offset = circumference - 2;
-    
-    dial.style.strokeDashoffset = offset;
-    textElement.innerText = value;
-}
+  function bind() {
+    $("shots").innerHTML = SHOTS.map(function (s) {
+      return '<div class="shot"><span class="mark"></span>' +
+             '<span class="name">' + s[0] + '</span>' +
+             '<span class="frames">' + s[1] + '</span>' +
+             '<span class="peak">' + s[2] + '</span>' +
+             '<span class="bar"><i style="width:' + (s[3] * 100) + '%"></i></span></div>';
+    }).join("");
+    $("shotCount").textContent = String(SHOTS.length);
 
-// Live SVG Histogram Generator
-function drawHistogram() {
-    const curve = document.getElementById('histogramCurve');
-    if (!curve) return;
-    
-    const exposure = parseFloat(document.getElementById('sliderExposure').value);
-    const knee = parseFloat(document.getElementById('sliderHighlightKnee').value);
-    const gating = parseFloat(document.getElementById('sliderGating').value);
-    
-    // Shift histogram peak based on exposure Stop knob
-    const xShift = exposure * 40; 
-    const highlightClamp = knee * 100; 
-    const loraGatingPeak = gating * 35; 
-    
-    // Define structural points dynamically for a smooth bezier curve path
-    const p1_x = Math.max(Math.min(40 + xShift, 120), 0);
-    const p1_y = Math.min(Math.max(120 - loraGatingPeak * 1.5, 30), 110);
-    
-    const p2_x = Math.max(Math.min(180 + xShift * 0.8, 300), 80);
-    const p2_y = Math.min(Math.max(20 + loraGatingPeak * 2, 10), 90);
-    
-    const p3_x = Math.max(Math.min(320 + xShift * 0.5, 420), 200);
-    const p3_y = Math.min(Math.max(115 - highlightClamp * 0.4, 40), 115);
-    
-    // Construct the smooth SVG Cubic Bezier path
-    const d = `M 0 120 
-               C 50 120, ${p1_x} ${p1_y}, ${p2_x} ${p2_y} 
-               C ${p2_x + 50} ${p2_y}, ${p3_x} ${p3_y}, 500 120 
-               L 500 120 
-               L 0 120 Z`;
-               
-    curve.setAttribute('d', d);
-}
+    $("file").addEventListener("change", function (e) {
+      if (e.target.files.length) { take(e.target.files[0]); }
+    });
+    ["dragover", "drop"].forEach(function (t) {
+      window.addEventListener(t, function (e) { e.preventDefault(); });
+    });
+    window.addEventListener("drop", function (e) {
+      if (e.dataTransfer && e.dataTransfer.files.length) { take(e.dataTransfer.files[0]); }
+    });
+    $("viewer").addEventListener("dblclick", function () { $("file").click(); });
 
-// Floating Glassmorphic Toast Notification
-function showToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'glass-panel';
-    toast.style.position = 'fixed';
-    toast.style.top = '40px';
-    toast.style.left = '50%';
-    toast.style.transform = 'translate(-50%, -120px)';
-    toast.style.zIndex = '9999';
-    toast.style.padding = '16px 28px';
-    toast.style.borderRadius = '100px';
-    toast.style.background = 'rgba(6, 6, 9, 0.85)';
-    toast.style.backdropFilter = 'blur(20px)';
-    toast.style.webkitBackdropFilter = 'blur(20px)';
-    toast.style.borderColor = 'rgba(41, 231, 205, 0.4)';
-    toast.style.color = '#fff';
-    toast.style.fontFamily = 'var(--font-display)';
-    toast.style.fontSize = '13px';
-    toast.style.fontWeight = '600';
-    toast.style.boxShadow = '0 12px 40px rgba(0, 113, 227, 0.35), 0 0 20px rgba(41, 231, 205, 0.2)';
-    toast.style.transition = 'all 0.6s cubic-bezier(0.16, 1, 0.3, 1)';
-    toast.style.display = 'flex';
-    toast.style.alignItems = 'center';
-    toast.style.gap = '12px';
-    toast.style.whiteSpace = 'nowrap';
-    
-    toast.innerHTML = `
-        <span style="color: var(--accent-cyan); font-size: 16px; font-weight: 800;">✓</span>
-        <span>${message}</span>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    // Animate in
-    setTimeout(() => {
-        toast.style.transform = 'translate(-50%, 0)';
-    }, 50);
-    
-    // Animate out and remove
-    setTimeout(() => {
-        toast.style.transform = 'translate(-50%, -120px)';
-        toast.style.opacity = '0';
-        setTimeout(() => {
-            toast.remove();
-        }, 6000);
-    }, 5500);
-}
+    $("mode").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-mode]");
+      if (!b) { return; }
+      state.mode = b.dataset.mode;
+      [].forEach.call(this.children, function (c) { c.classList.toggle("on", c === b); });
+      infer();
+    });
+    $("viewMode").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-view]");
+      if (!b) { return; }
+      state.view = b.dataset.view;
+      [].forEach.call(this.children, function (c) { c.classList.toggle("on", c === b); });
+      layoutWipe();
+    });
+    $("strength").addEventListener("input", function () {
+      state.strength = parseFloat(this.value);
+      $("strengthVal").textContent = state.strength.toFixed(2);
+    });
+    $("strength").addEventListener("change", infer);
+    $("peak").addEventListener("input", function () {
+      state.peakEv = parseFloat(this.value);
+      $("peakVal").textContent = Math.round(displayNits()).toLocaleString("en-US");
+    });
+    $("peak").addEventListener("change", infer);
+    $("preserve").addEventListener("click", function () {
+      state.preserve = !state.preserve;
+      this.classList.toggle("on", state.preserve);
+      $("preserveHint").textContent = state.preserve ? "do-no-harm" : "unclamped";
+      infer();
+    });
+    $("btnReprocess").addEventListener("click", infer);
+    $("btnMaster").addEventListener("click", master);
+    bindWipe();
+  }
 
-let currentLayoutMode = 'split';
+  // ?demo=1 runs the bundled frame through the loaded checkpoint as soon as the
+  // page is live, so ui/capture_shot.py photographs the product working rather
+  // than an empty drop target. It moved here when live.js was folded in; losing
+  // it would have made the next README capture a picture of a placeholder.
+  function autorun() {
+    if (!/[?&]demo=1/.test(location.search)) { return; }
+    fetch("assets/cinematic_hdr_sunset.png")
+      .then(function (r) { return r.blob(); })
+      .then(function (b) {
+        take(new File([b], "cinematic_hdr_sunset.png", {type: "image/png"}));
+      })
+      .catch(function (e) { log("demo frame unavailable: " + e, "err"); });
+  }
 
-// Dynamic Layout Modes Switcher
-function switchLayoutMode(mode) {
-    currentLayoutMode = mode;
-    
-    // Toggle active classes on tab buttons
-    document.getElementById('modeSplit').classList.toggle('active', mode === 'split');
-    document.getElementById('modeSide').classList.toggle('active', mode === 'side');
-    document.getElementById('modeSingle').classList.toggle('active', mode === 'single');
-    
-    // Reset layout styles
-    viewerCard.className = 'glass-panel viewer-card';
-    sdrLayer.style.display = 'block';
-    hdrLayer.style.display = 'block';
-    sliderHandle.style.display = 'flex';
-    
-    // Reset filters and properties
-    sdrLayer.style.clipPath = 'none';
-    hdrLayer.style.clipPath = 'none';
-    
-    if (mode === 'split') {
-        const percentage = 50;
-        hdrLayer.style.clipPath = `polygon(${percentage}% 0, 100% 0, 100% 100%, ${percentage}% 100%)`;
-        sliderHandle.style.left = '50%';
-    } else if (mode === 'side') {
-        viewerCard.classList.add('side-by-side-layout');
-        sliderHandle.style.display = 'none';
-    } else if (mode === 'single') {
-        viewerCard.classList.add('single-layout');
-        sliderHandle.style.display = 'none';
-        
-        // Default single: show mastered HDR
-        sdrLayer.style.display = 'none';
-        
-        // Show helper toast for before/after interactive toggle
-        showToast("Hold click anywhere on the viewer to flash original SDR display!");
-    }
-}
+  function boot() {
+    bind();
+    fetch("/api/model").then(function (r) { return r.json(); }).then(function (info) {
+      if (info.loaded) {
+        state.live = true;
+        $("ckpt").textContent = info.name + " · step " + info.step;
+        $("device").textContent = info.gpu;
+        $("lamp").classList.remove("off");
+        log("model " + info.checkpoint);
+        log("base_channels " + info.base_channels + "  max_hdr " + info.max_hdr +
+            " (" + (info.max_hdr * 10000).toLocaleString("en-US") + " nits)");
+        log("drop an SDR frame to reconstruct");
+        autorun();
+      } else {
+        $("ckpt").textContent = "NO MODEL";
+        $("ckpt").className = "pill warn";
+        $("device").textContent = String(info.reason || "no checkpoint");
+        log("no model loaded: " + (info.reason || "no checkpoint") +
+            ". Nothing on this page is a measurement.", "err");
+      }
+    }).catch(function () {
+      $("ckpt").textContent = "BACKEND UNREACHABLE";
+      $("ckpt").className = "pill warn";
+      log("no /api backend — run: python ui/server.py", "err");
+    });
+  }
 
-// Cinematic LUT Presets Modulator
-function applyPreset(preset) {
-    // Remove active state from all presets
-    document.querySelectorAll('.lut-preset-item').forEach(item => item.classList.remove('active'));
-    
-    const sliderExposure = document.getElementById('sliderExposure');
-    const sliderGating = document.getElementById('sliderGating');
-    const toneCurveSelect = document.getElementById('toneCurveSelect');
-    const sliderHighlightKnee = document.getElementById('sliderHighlightKnee');
-    
-    if (preset === 'arri') {
-        toneCurveSelect.value = 'logc4';
-        sliderExposure.value = '0.0';
-        sliderGating.value = '1.0';
-        sliderHighlightKnee.value = '0.85';
-    } else if (preset === 'venice') {
-        toneCurveSelect.value = 'slog3';
-        sliderExposure.value = '1.2';
-        sliderGating.value = '1.3';
-        sliderHighlightKnee.value = '0.75';
-    } else if (preset === 'linear') {
-        toneCurveSelect.value = 'linear';
-        sliderExposure.value = '0.5';
-        sliderGating.value = '0.8';
-        sliderHighlightKnee.value = '0.90';
-    } else if (preset === 'neon') {
-        toneCurveSelect.value = 'sdr';
-        sliderExposure.value = '1.8';
-        sliderGating.value = '1.6';
-        sliderHighlightKnee.value = '0.65';
-    }
-    
-    // Find the clicked item
-    const clickedItem = document.querySelector(`.lut-preset-item[onclick="applyPreset('${preset}')"]`);
-    if (clickedItem) {
-        clickedItem.classList.add('active');
-    }
-    
-    // Trigger visual metrics recalculations
-    updateParameters();
-    
-    // Show visual confirmation toast
-    showToast(`LUT Preset loaded: ${preset.toUpperCase()} color matrix compiled.`);
-}
-
-// Circular Fluid Mastering trigger & exporter
-function triggerMastering() {
-    const btn = document.getElementById('btnMaster');
-    const loader = document.getElementById('btnLoader');
-    const btnText = document.getElementById('btnText');
-    const download = document.getElementById('btnDownload');
-    const consoleDiv = document.getElementById('masteringConsole');
-    const consoleBody = document.getElementById('consoleBody');
-    
-    // Shift to loading state
-    btn.disabled = true;
-    loader.style.display = 'block';
-    btnText.innerText = 'Mastering Scene-Linear Radiance...';
-    download.style.display = 'none';
-    
-    // Reveal console and reset log lines
-    consoleDiv.style.display = 'block';
-    consoleBody.innerHTML = '';
-    
-    const logs = [
-        { progress: 6, text: "[INFO] Initializing RUDRA mastering engine..." },
-        { progress: 18, text: "[INFO] Loading unquantized flux1-dev.safetensors" },
-        { progress: 30, text: "[INFO] Injecting Stage 2 Gated LoRA (37.51M trainable params)..." },
-        { progress: 48, text: "[INFO] Applying in-memory autograd out-of-place patches to stream blocks..." },
-        { progress: 66, text: "[INFO] Injecting DRE tokens (CR projected to 4096 dimensions) to text embeddings context..." },
-        { progress: 78, text: "[INFO] Calculating Retinal Adaptation via Naka-Rushton curve proxy..." },
-        { progress: 90, text: "[INFO] Barten CSF Spatial frequency Pyramid compiled successfully." },
-        { progress: 100, text: "[SUCCESS] Scene-linear HDR EXR output generated successfully." }
-    ];
-    
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += 2;
-        btnText.innerText = `Reconstructing HDR... ${progress}%`;
-        
-        // Append log line if we cross a progress milestone
-        const matchedLog = logs.find(log => log.progress === progress);
-        if (matchedLog) {
-            const line = document.createElement('div');
-            line.className = 'console-log-line';
-            
-            if (matchedLog.text.startsWith('[SUCCESS]')) {
-                line.className += ' log-success';
-            } else if (matchedLog.text.includes('trainable params') || matchedLog.text.includes('autograd')) {
-                line.className += ' log-process';
-            } else {
-                line.className += ' log-info';
-            }
-            
-            line.innerText = matchedLog.text;
-            consoleBody.appendChild(line);
-            consoleBody.scrollTop = consoleBody.scrollHeight; // Auto scroll to bottom
-        }
-        
-        if (progress >= 100) {
-            clearInterval(interval);
-            
-            // Revert state
-            btn.disabled = false;
-            loader.style.display = 'none';
-            btnText.innerText = 'Reconstruct & Master HDR';
-            
-            // Get user export options
-            const formatVal = document.getElementById('exportFormat').value;
-            const formatName = formatVal.toUpperCase();
-            
-            // PREMIUM BAKING: Draw adjusted preview on a canvas to bake EV Exposure stops,
-            // gating scales, and knee contrast directly into the downloaded image bytes!
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Set high resolution matching natural image boundaries
-            canvas.width = hdrImage.naturalWidth || 1024;
-            canvas.height = hdrImage.naturalHeight || 1024;
-            
-            // Direct visual filter context binding
-            ctx.filter = hdrImage.style.filter || 'none';
-            
-            // Draw & bake the filtered pixels
-            ctx.drawImage(hdrImage, 0, 0, canvas.width, canvas.height);
-            
-            // Export canvas as a secure, browser-supported PNG Blob
-            canvas.toBlob((blob) => {
-                const blobUrl = URL.createObjectURL(blob);
-                
-                // Construct file name using target format choice
-                const rawName = currentFileName.endsWith('_mastered.exr')
-                    ? currentFileName.substring(0, currentFileName.lastIndexOf('_mastered.exr'))
-                    : 'cinematic_hdr_sunset';
-                const finalFileName = `${rawName}_mastered_baked_${formatVal}.png`;
-                
-                // Bind Blob to uploader
-                download.href = blobUrl;
-                download.download = finalFileName;
-                download.innerHTML = `📥 Download Mastered ${formatName} PNG (Baked)`;
-                
-                download.style.display = 'block';
-                download.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                
-                // Show professional VFX completion toast
-                showToast(`Mastered ${formatName} successfully! Visual sliders baked into EXR-mapped PNG.`);
-            }, 'image/png', 1.0);
-        }
-    }, 60);
-}
-
-// Initial Launch Sequence
-window.addEventListener('DOMContentLoaded', () => {
-    initUploader();
-    initSliderComparison();
-    
-    // Trigger initial slider clip (50% split) on the default sunset demo
-    hdrLayer.style.clipPath = `polygon(50% 0, 100% 0, 100% 100%, 50% 100%)`;
-    sliderHandle.style.left = '50%';
-    
-    // Initialize exposure filters, metrics, and luminance histogram curves
-    updateParameters();
-});
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else { boot(); }
+})();

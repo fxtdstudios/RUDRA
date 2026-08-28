@@ -142,3 +142,81 @@ def test_masked_headroom_is_nan_not_zero_when_no_mask_fired():
     m = server.measure(frame, frame.copy(), hi, sh)
 
     assert math.isnan(m["headroom_highlight_stops"])
+
+
+# --------------------------------------------------------------------------
+# scopes — read off the prediction, so they have to be right
+# --------------------------------------------------------------------------
+def test_scopes_normalise_onto_the_ladder_they_are_drawn_against():
+    """0 is the scope floor, 1 the ceiling; the page maps them straight to y."""
+    frame = np.zeros((3, 32, 64), dtype=np.float32)
+    frame[:, :, :32] = server.SCOPE_LO_NITS / NETWORK_PEAK_NITS      # floor
+    frame[:, :, 32:] = server.SCOPE_HI_NITS / NETWORK_PEAK_NITS      # ceiling
+
+    s = server.scopes(frame, columns=8, bins=16)
+
+    assert len(s["mid"]) == 8 and len(s["histogram"]) == 16
+    assert all(0.0 <= v <= 1.0 for v in s["mid"])
+    assert s["mid"][0] == pytest.approx(0.0, abs=1e-3), "floor must sit at 0"
+    assert s["mid"][-1] == pytest.approx(1.0, abs=1e-3), "ceiling must sit at 1"
+    # The envelope brackets the median everywhere.
+    for lo, q1, mid, q3, hi in zip(s["lo"], s["q1"], s["mid"], s["q3"], s["hi"]):
+        assert lo <= q1 <= mid <= q3 <= hi
+
+
+def test_scope_histogram_is_normalised_to_its_own_peak():
+    rng = np.random.default_rng(3)
+    frame = (rng.random((3, 24, 48)).astype(np.float32) * 0.2) + 0.01
+    s = server.scopes(frame, columns=12, bins=24)
+    assert max(s["histogram"]) == pytest.approx(1.0)
+    assert min(s["histogram"]) >= 0.0
+
+
+# --------------------------------------------------------------------------
+# the EXR master — the file is the deliverable, so it must survive a round trip
+# --------------------------------------------------------------------------
+def test_master_exr_round_trips_with_its_delivery_metadata():
+    """What run_master writes, minus the torch half: nits -> scene-linear ->
+    EXR -> back, with MaxCLL/MaxFALL preserved. A master that loses its
+    metadata is worse than no master, because it looks fine."""
+    import tempfile
+
+    from rudra.delivery import metadata as dm
+    from rudra.delivery.aces import write_aces_exr
+    from rudra.delivery.exr import read_exr
+
+    nits = np.full((32, 48, 3), 203.0)
+    nits[4:8, 4:8] = 4000.0          # specular
+    nits[20:24, :] = 0.02            # deep shadow
+    scene_linear = (nits / 203.0).astype(np.float32)
+    cll, fall = dm.maxcll_maxfall([dm.analyze_frame(nits, index=0)])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = write_aces_exr(scene_linear, Path(tmp) / "m.exr", source_space="rec2020",
+                              provenance={"rudra:checkpoint": "image_v4/best.pt"})
+        pixels, attrs = read_exr(path)
+
+    assert attrs.get("acesImageContainerFlag") == "1"
+    assert "chromaticities" in attrs, "an ACES container must carry ST 2065-4 primaries"
+    assert "image_v4/best.pt" in attrs.get("rudra:provenance", "")
+    assert pixels.shape == (32, 48, 3)
+    # AP0 conversion moves the primaries, so peak luminance is preserved, not
+    # each channel: check the thing a colourist would check.
+    back_cll, back_fall = dm.maxcll_maxfall([dm.analyze_frame(pixels * 203.0, index=0)])
+    assert abs(back_cll - cll) <= max(2, cll * 0.002), (back_cll, cll)
+    assert abs(back_fall - fall) <= 2, (back_fall, fall)
+
+
+def test_half_float_holds_the_full_scene_referred_range():
+    """HALF tops out near 65 504. Scene-linear is nits/203, so a 1e6-nit sun is
+    ~4 926 — inside. This is why the writer may stay half; assert it stays true."""
+    import tempfile
+
+    from rudra.delivery.exr import read_exr, write_exr
+
+    scene_linear = np.full((4, 4, 3), 1_000_000.0 / 203.0, dtype=np.float32)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = write_exr(Path(tmp) / "sun.exr", scene_linear, half=True)
+        back, _ = read_exr(path)
+    assert np.isfinite(back).all(), "the sun must not become inf in half"
+    assert back.max() * 203.0 == pytest.approx(1_000_000.0, rel=2e-3)

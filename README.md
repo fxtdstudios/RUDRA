@@ -170,6 +170,18 @@ map already gave you. The exposure control moves the display peak
 (`203 × 2^EV`), not the prediction: raising it lifts the clip point so
 reconstructed highlights become visible on an SDR monitor.
 
+The waveform and histogram are computed from the prediction itself and sent as
+numbers for the page to draw — a scope that is drawn rather than measured is
+decoration, and this one is what you read the grade off.
+
+**Master EXR** reconstructs at full resolution and writes a real ACES 2065-1
+container: scene-linear AP0, ST 2065-4 chromaticities, `acesImageContainerFlag`,
+and the checkpoint recorded in the file's provenance attribute, beside a JSON
+sidecar carrying MaxCLL/MaxFALL. It opens in Resolve or Nuke as an ACES image
+rather than as untagged floats. HALF is enough for the full scene-referred
+range: scene-linear is nits/203, so even a 1,000,000-nit sun lands at ~4,926,
+comfortably inside half's ~65,504 ceiling.
+
 There is deliberately no LPIPS or JOD here. Both need the ground-truth HDR,
 which a file you just dropped in does not have; reference metrics live in
 `training/sweep_inference.py` on the held-out split.

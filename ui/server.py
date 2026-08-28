@@ -37,6 +37,7 @@ import http.server
 import io
 import json
 import os
+import re
 import socketserver
 import sys
 import threading
@@ -240,6 +241,47 @@ def measure(hdr_chw, baseline_chw, highlight_mask, shadow_mask) -> dict:
     }
 
 
+SCOPE_LO_NITS = 0.05
+SCOPE_HI_NITS = 4000.0
+
+
+def scopes(hdr_chw, columns: int = 230, bins: int = 76) -> dict:
+    """Waveform envelope and log2 histogram of the actual prediction.
+
+    Sent as numbers, drawn as SVG by the page. A scope that is drawn rather
+    than measured is decoration, and this one has to be trustworthy: it is
+    what a colourist reads the grade off.
+    """
+    import numpy as np
+
+    nits = np.transpose(hdr_chw, (1, 2, 0)).astype(np.float64) * NETWORK_PEAK_NITS
+    luma = 0.2627 * nits[..., 0] + 0.6780 * nits[..., 1] + 0.0593 * nits[..., 2]
+    luma = np.clip(luma, SCOPE_LO_NITS, SCOPE_HI_NITS)
+
+    edges = np.linspace(0, luma.shape[1], columns + 1).astype(int)
+    lo, hi = [], []
+    mid, q1, q3 = [], [], []
+    for i in range(columns):
+        col = luma[:, edges[i]:max(edges[i] + 1, edges[i + 1])].ravel()
+        a, b, c, d, e = np.percentile(col, [2, 25, 50, 75, 98])
+        lo.append(a); q1.append(b); mid.append(c); q3.append(d); hi.append(e)
+
+    span = (np.log10(SCOPE_HI_NITS / SCOPE_LO_NITS))
+
+    def norm(values):
+        # 0 at the floor, 1 at the ceiling, on the same log scale as the ladder
+        return [round(float(np.log10(v / SCOPE_LO_NITS) / span), 4) for v in values]
+
+    counts, _ = np.histogram(np.log2(luma), bins=bins,
+                             range=(np.log2(SCOPE_LO_NITS), np.log2(SCOPE_HI_NITS)))
+    peak = max(int(counts.max()), 1)
+    return {
+        "lo": norm(lo), "q1": norm(q1), "mid": norm(mid), "q3": norm(q3), "hi": norm(hi),
+        "histogram": [round(float(c) / peak, 4) for c in counts],
+        "floor_nits": SCOPE_LO_NITS, "ceiling_nits": SCOPE_HI_NITS,
+    }
+
+
 def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     import numpy as np
     import torch
@@ -277,6 +319,7 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     base_np = baseline[0].cpu().numpy()
     metrics = measure(hdr_np, base_np, highlight, shadow)
     metrics["elapsed_s"] = round(time.time() - started, 2)
+    metrics["source_resolution"] = f"{image.width}x{image.height}"
     metrics["resolution"] = f"{image.width}x{image.height}"
     metrics["display_nits"] = round(display_nits, 1)
     return {
@@ -285,6 +328,100 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
         "hdr_png": png_data_url(display_map(hdr_np, display_nits)),
         "baseline_png": png_data_url(display_map(base_np, display_nits)),
         "metrics": metrics,
+        "scopes": scopes(hdr_np),
+    }
+
+
+# ---------------------------------------------------------------------------
+# mastering
+# ---------------------------------------------------------------------------
+MASTER_DIR = UI_DIR / "_masters"
+SAFE_STEM = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
+    """Reconstruct at full resolution and write a real EXR master.
+
+    Scene-linear, diffuse white = 1.0, which is the convention every other
+    part of RUDRA already speaks (pipeline/hdr_io.py, rudra/normalization.py).
+    The ACES container additionally converts to AP0 and stamps the ST 2065-4
+    chromaticities, so the file lands in Resolve or Nuke as an ACES image
+    rather than as untagged floats.
+    """
+    import numpy as np
+    import torch
+    from PIL import Image
+
+    from rudra.delivery import metadata as dm
+    from rudra.delivery.aces import write_aces_exr
+    from rudra.delivery.exr import write_exr
+    from training.infer_sdr2hdr import predict_image
+
+    started = time.time()
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    # Full resolution: a master is the one output that must not be downsampled.
+    limit = int(params.get("master_max_side", 4096))
+    if max(image.size) > limit:
+        ratio = limit / max(image.size)
+        image = image.resize((max(1, int(image.width * ratio)),
+                              max(1, int(image.height * ratio))), Image.LANCZOS)
+
+    sdr = np.asarray(image, dtype=np.float32) / 255.0
+    tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
+    hdr = predict_image(model, tensor,
+                        preserve_outside=bool(params.get("preserve_outside", True)),
+                        tile_size=int(params.get("tile_size", 512)),
+                        overlap=int(params.get("tile_overlap", 64)),
+                        recovery_mode=params.get("recovery_mode", "all"),
+                        recovery_strength=float(params.get("strength", 1.0)))
+    network = hdr[0].cpu().numpy()                      # nits / 10,000
+    nits = np.transpose(network, (1, 2, 0)).astype(np.float64) * NETWORK_PEAK_NITS
+    scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
+
+    stats = dm.analyze_frame(nits, index=0)
+    maxcll, maxfall = dm.maxcll_maxfall([stats])
+
+    MASTER_DIR.mkdir(parents=True, exist_ok=True)
+    stem = SAFE_STEM.sub("_", Path(str(params.get("name", "frame"))).stem)[:60] or "frame"
+    container = params.get("container", "aces")
+    provenance = {
+        "rudra:checkpoint": str(params.get("checkpoint", "")),
+        "rudra:maxCLL": f"{maxcll}",
+        "rudra:maxFALL": f"{maxfall}",
+        "rudra:recoveryMode": str(params.get("recovery_mode", "all")),
+        "rudra:preserveOutside": str(bool(params.get("preserve_outside", True))),
+    }
+    if container == "aces":
+        out = MASTER_DIR / f"{stem}_rudra_aces.exr"
+        # HALF tops out near 65,504; scene-linear here is nits/203, so a
+        # 1,000,000-nit sun is ~4,926 -- comfortably inside. Keep half.
+        write_aces_exr(scene_linear, out, source_space="rec2020", provenance=provenance)
+    else:
+        out = MASTER_DIR / f"{stem}_rudra_linear.exr"
+        write_exr(out, scene_linear, half=True, attributes=provenance)
+
+    sidecar = out.with_suffix(".json")
+    sidecar.write_text(json.dumps({
+        "maxcll_nits": maxcll, "maxfall_nits": maxfall,
+        "peak_nits": round(float(nits.max()), 1),
+        "resolution": [image.width, image.height],
+        "container": "ACES 2065-1 (AP0)" if container == "aces" else "scene-linear Rec.2020",
+        "transfer": "linear", "diffuse_white_nits": DIFFUSE_WHITE_NITS,
+        "checkpoint": params.get("checkpoint", ""),
+    }, indent=2), encoding="utf-8")
+
+    return {
+        "ok": True,
+        "file": out.name,
+        "path": str(out),
+        "bytes": out.stat().st_size,
+        "sidecar": sidecar.name,
+        "maxcll": maxcll,
+        "maxfall": maxfall,
+        "peak_nits": round(float(nits.max()), 1),
+        "resolution": f"{image.width}x{image.height}",
+        "container": "ACES 2065-1" if container == "aces" else "Linear Rec.2020",
+        "elapsed_s": round(time.time() - started, 2),
     }
 
 
@@ -321,10 +458,33 @@ def make_handler(args):
             if self.path.startswith("/api/model"):
                 _, info = ensure_model(args)
                 return self._json(info)
+            if self.path.startswith("/api/master/download"):
+                return self._send_master()
             return super().do_GET()
 
+        def _send_master(self):
+            """Hand back one file from _masters, by name only."""
+            from urllib.parse import parse_qs, urlparse
+
+            wanted = (parse_qs(urlparse(self.path).query).get("f") or [""])[0]
+            # Name only: no separators, no traversal, and it must already exist
+            # in the directory we wrote it to.
+            if not wanted or "/" in wanted or "\\" in wanted or wanted != Path(wanted).name:
+                return self.send_error(400, "bad file")
+            target = (MASTER_DIR / wanted).resolve()
+            if target.parent != MASTER_DIR.resolve() or not target.is_file():
+                return self.send_error(404, "no such master")
+            payload = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{target.name}"')
+            self.end_headers()
+            self.wfile.write(payload)
+
         def do_POST(self):
-            if not self.path.startswith("/api/infer"):
+            if not self.path.startswith(("/api/infer", "/api/master")):
                 return self.send_error(404, "no such endpoint")
             model, info = ensure_model(args)
             if model is None:
@@ -347,7 +507,11 @@ def make_handler(args):
                                            "error": f"checkpoint not found: {requested}"},
                                           status=400)
                     model, info_used = model_for(requested, args)
-                payload = run_inference(model, raw, params, args)
+                params.setdefault("checkpoint_name", info_used.get("name"))
+                if self.path.startswith("/api/master"):
+                    payload = run_master(model, raw, params, args)
+                else:
+                    payload = run_inference(model, raw, params, args)
                 payload["checkpoint"] = info_used.get("name") or info_used.get("checkpoint")
                 payload["step"] = info_used.get("step")
                 return self._json(payload)
