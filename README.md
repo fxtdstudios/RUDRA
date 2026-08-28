@@ -1,7 +1,7 @@
 # RUDRA
 
 **Radiometric Dynamic-Range Conditioning for HDR-Aware Diffusion Models**
-FXTD Studios / Radiance Research
+[FXTD Studios](https://fxtdstudios.com) / Radiance Research
 
 Diffusion models are trained on tone-mapped images, so they learn a world where
 nothing is brighter than white. RUDRA gives them the rest of the range back: it
@@ -98,6 +98,32 @@ python training/train_sdr2hdr.py --mode image --manifest work/sdr_hdr_manifest.j
     --output-dir work/checkpoints/image --steps 100000 --best-metric composite_gain --device cuda
 ```
 
+### Training data
+
+The released model was trained on public HDR footage. None of it is committed
+here; `pipeline/scan_sources.py` reads whatever you point it at.
+
+| Source | What it gives | Grade ceiling | Licence |
+|---|---|---|---|
+| [Poly Haven HDRIs](https://polyhaven.com/hdris) | 963 scene-referred panoramas, real suns above 100,000 nits | none — scene-referred | [CC0](https://polyhaven.com/license) |
+| [HdM-HDR-2014](https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/) | 9 cinematic scenes: fireworks, forge sparks, fire, stage lights | 4,000 nits, Rec.2020 | free for academic use; commercial needs a licence from HdM |
+| HdM-HFR-2017 | Bar and Fire scenes, 192 fps, same FTP host | 1,000 nits (PQ-1K) | as above |
+| [Netflix Chimera](https://opencontent.netflix.com/) | 4K live action, P3-PQ | 10,000 nits | [CC BY 4.0](http://download.opencontent.netflix.com/) |
+
+Both HdM sets come off the same plain-FTP host, `hdr-2014.hdm-stuttgart.de`
+(user `HdM-HDR-2014`). `pipeline/fetch_stuttgart.py` handles the download and
+resumes if it drops:
+
+```bash
+python pipeline/fetch_stuttgart.py --list-root
+python pipeline/fetch_stuttgart.py --root HdM-HDR-2014_Color-Graded-for-HDR \
+    --dest /path/to/source_hdr/Stuttgart_HDR_2014 --only carousel_fireworks fireplace
+```
+
+The grade ceilings in that table are not decoration. Three of the four sources
+stop at a hard delivery ceiling, which is why the loss treats those pixels as
+censored — see the third bullet below.
+
 Three things that will make a training log make sense:
 
 - Every eval scores two conditions. `clean_*` is the held-out frame as prepared;
@@ -108,6 +134,51 @@ Three things that will make a training log make sense:
 - Graded sources are treated as censored. A pixel at exactly 4,000 nits in a
   4,000-nit grade means *at least* 4,000, so the loss goes one-sided there —
   otherwise the model learns to cap.
+
+---
+
+## Results
+
+Measured on the held-out split of the corpus below, and on a controlled frame
+(mid-grey field, one small specular, 0.36% of pixels clipped) that isolates
+highlight reconstruction.
+
+**Direct SDR → HDR, image model** — gain in log-radiance PSNR over the analytic
+inverse-ACES baseline the network sits on top of. `hard` is the deployment
+condition: unknown tone curve, 4:2:0 chroma, banding, JPEG.
+
+| Checkpoint | hard | clean | Headroom in highlight mask |
+|---|---|---|---|
+| v3b, step 44 000 | +1.71 dB | −0.90 dB | **+2.18 st** |
+| v4, step 78 000 (6× data) | **+1.74 dB** | −0.18 dB | +0.95 st |
+
+v4 saw six times the footage and gained 0.03 dB, while reconstructing 1.23 stops
+*less* highlight. That is the corpus-ceiling problem, not a training problem:
+78% of public HDR footage is delivery-graded, and L1 against pixels sitting on
+that ceiling teaches the model to cap. The censored-highlight loss is the fix;
+it is in the trainer and its effect is not yet measured here.
+
+**Inference mode**, step 44 000, val split, 128 batches. `preserve_outside`
+blends back to the baseline where the learned masks are cold:
+
+| Mode | clean PSNR_log | gain | hard PSNR_log | gain |
+|---|---|---|---|---|
+| inverse-ACES baseline | 52.76 | — | 30.24 | — |
+| plain | 51.86 | −0.90 | 31.95 | +1.71 |
+| **preserve_outside** | **52.77** | **+0.01** | 31.79 | +1.55 |
+
+Preserving outside the masks costs 0.16 dB on degraded input and removes the
+regression on clean input entirely, so it is the shipped default.
+
+**Corpus.** 28 542 pairs across 976 physical scenes — 963 Poly Haven stills and
+13 video scenes. Whole scenes are held out; no scene straddles a split.
+
+Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifest
+<manifest>`.
+
+> These are gains over RUDRA's own analytic baseline, not a comparison against
+> published inverse tone mapping work, and CVVDP JOD numbers are not in yet.
+> Read them as internal progress, not as a benchmark result.
 
 ---
 

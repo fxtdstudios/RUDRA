@@ -1,0 +1,23 @@
+# Line endings are normalised to LF in the repository, whatever the checkout
+# does locally. Without this, a Windows editor saving a file it did not really
+# change rewrites every line, and the diff reads as a full-file rewrite: on
+# 28 Aug 2026 the GitHub-authored workflow file showed 34 insertions and 34
+# deletions with no content change at all.
+* text=auto
+
+# Never touch these.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.exr  binary
+*.tif  binary
+*.tiff binary
+*.pdf  binary
+*.safetensors binary
+*.pt   binary
+*.pth  binary
+*.ckpt binary
+*.npz  binary
+
+# Batch files are run by cmd.exe and want CRLF.
+*.bat  text eol=crlf
