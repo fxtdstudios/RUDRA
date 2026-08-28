@@ -80,8 +80,10 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--out", type=Path, default=REPO / "docs" / "rudra_studio.png")
     parser.add_argument("--chrome", default=None)
+    # 16:9. The app is laid out for a landscape colour suite; a taller window
+    # just stretches the viewer and squeezes the scopes.
     parser.add_argument("--width", type=int, default=1600)
-    parser.add_argument("--height", type=int, default=1000)
+    parser.add_argument("--height", type=int, default=900)
     parser.add_argument("--wait-ms", type=int, default=20000,
                         help="virtual time budget: the model has to finish inferring "
                              "before the frame is grabbed")
