@@ -14,6 +14,7 @@ import contextlib
 import hashlib
 import json
 import math
+from statistics import median
 import os
 import random
 import sys
@@ -149,6 +150,34 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
     return metrics
 
 
+def selection_score(history: list[float], window: int) -> float:
+    """The score best.pt is actually selected on: a trailing median.
+
+    The v5 run selected best.pt on a single evaluation, and that was a mistake
+    worth naming. The clean/hard eval set is already deterministic -- centre
+    crops, `shuffle=False`, the same 256 records every time -- so its spread is
+    not sampling noise. It is the model genuinely oscillating from step to
+    step: across the 102 evals of the v5 run `clean_gain_db` had mean -1.43 dB
+    and standard deviation 1.29 dB, with only 10 of them positive. Taking a raw
+    maximum over that series does not find a better model, it finds the
+    luckiest step, and `composite_gain = hard_gain + min(0, clean_gain)` climbs
+    exactly the term that oscillates. The shipped step-81 000 checkpoint's
+    `clean_gain_db` of +0.02 ranked 9th of 102, and the independent benchmark
+    later measured +1.43 dB on held-out frames where selection had promised
+    +1.80.
+
+    A trailing median over `window` evaluations cannot be won by one lucky
+    step: a checkpoint is only best if the neighbourhood it sits in is best.
+    best.pt then holds the most recent weights from that neighbourhood, which
+    is a member of a good region rather than the peak of a noisy one.
+
+    `window = 1` restores the old single-eval behaviour.
+    """
+    if window <= 1:
+        return history[-1]
+    return float(median(history[-window:]))
+
+
 def temporal_score(metrics: dict, temporal_weight: float) -> float:
     """What selects the refiner's best.pt -- and it must match what it trains on.
 
@@ -268,6 +297,9 @@ def train(args: argparse.Namespace) -> Path:
     optimizer_steps = max(math.ceil(args.steps / args.grad_accum), 1)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=optimizer_steps, eta_min=args.lr * 0.05)
     start_step, best = 0, math.inf
+    # Trailing window of raw eval scores; selection_score() reads it. A resumed
+    # run starts it empty and the median simply covers fewer evals until it fills.
+    score_history: list[float] = []
     if args.resume and args.init_checkpoint:
         raise ValueError("--resume and --init-checkpoint are mutually exclusive")
     if args.init_checkpoint:
@@ -279,8 +311,14 @@ def train(args: argparse.Namespace) -> Path:
         optimizer.load_state_dict(checkpoint["optimizer"])
         scheduler.load_state_dict(checkpoint["scheduler"])
         start_step = int(checkpoint["step"])
-        previous_metric = checkpoint.get("config", {}).get("best_metric", "log_l1")
-        if args.reset_best or previous_metric != args.best_metric:
+        previous_config = checkpoint.get("config", {})
+        previous_metric = previous_config.get("best_metric", "log_l1")
+        # A smoothed best and a raw best are different quantities; carrying one
+        # across as if it were the other would let a stale single-eval maximum
+        # block every honest checkpoint for the rest of the run.
+        previous_window = int(previous_config.get("best_smoothing", 1))
+        if (args.reset_best or previous_metric != args.best_metric
+                or previous_window != args.best_smoothing):
             best = math.inf
         else:
             best = float(checkpoint.get("best", best))
@@ -345,6 +383,7 @@ def train(args: argparse.Namespace) -> Path:
             assert image_model is not None
             initial_metrics = evaluate_temporal(image_model, model, val_loader, device, args.eval_batches)
             best = temporal_score(initial_metrics, args.temporal_weight)
+        score_history.append(best)
         _atomic_save({"model": model.state_dict(), "step": 0, "best": best, "config": config},
                      output_dir / "best.pt")
         print(f"[baseline] {json.dumps(initial_metrics)}")
@@ -413,10 +452,16 @@ def train(args: argparse.Namespace) -> Path:
             print(f"[eval] step {step}: {json.dumps(metrics)}")
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"step": step, "eval": metrics}) + "\n")
-            if score < best:
-                best = score
-                _atomic_save({"model": model.state_dict(), "step": step, "best": best, "config": config},
-                             output_dir / "best.pt")
+            score_history.append(score)
+            smoothed = selection_score(score_history, args.best_smoothing)
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"step": step, "score_raw": score,
+                                         "score_smoothed": smoothed,
+                                         "best_smoothing": args.best_smoothing}) + "\n")
+            if smoothed < best:
+                best = smoothed
+                _atomic_save({"model": model.state_dict(), "step": step, "best": best,
+                              "config": config}, output_dir / "best.pt")
 
         if step % args.save_every == 0 or step == args.steps:
             payload = {
@@ -467,6 +512,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temporal-weight", type=float, default=0.5)
     parser.add_argument("--shadow-chroma-weight", type=float, default=0.15)
     parser.add_argument("--shadow-smoothness-weight", type=float, default=0.02)
+    parser.add_argument("--best-smoothing", type=int, default=5,
+                        help="best.pt is selected on the trailing median of this many "
+                             "evaluations instead of a single one. The eval set is "
+                             "deterministic, so its spread is the model oscillating, not "
+                             "sampling noise -- and a raw maximum over 100+ evals finds "
+                             "the luckiest step rather than the best model. The v5 run "
+                             "shipped a checkpoint whose clean_gain_db ranked 9th of 102 "
+                             "and promised +1.80 dB where the benchmark measured +1.43. "
+                             "Pass 1 to restore the old single-eval behaviour.")
     parser.add_argument("--best-metric",
                         choices=("composite_gain", "loss", "log_l1"), default="composite_gain",
                         help="composite_gain = hard_gain_db + min(0, clean_gain_db): the "

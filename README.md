@@ -210,8 +210,43 @@ Peak highlight recovery has not moved in four runs. Around +1.8 dB is where
 this architecture sits on this corpus, and neither lever shifts it: v4 saw six
 times the footage for 0.03 dB, and v6 four times the parameters for 0.11.
 
+> **Correction, 29 Aug 2026.** The clean column above is selected on noise and
+> the v5 row should not be read as "free". Across all 102 evals of the v5 run,
+> `clean_gain_db` has mean **-1.43 dB** and standard deviation **1.29 dB**, and
+> only **10 of 102** evals ever came out positive. The shipped step-81 000
+> checkpoint's `+0.02` ranks **9th of 102** -- and `composite_gain =
+> hard_gain + min(0, clean_gain)` is a maximum over exactly that noisy term, so
+> the selection rule climbs the sampling error. `hard_gain_db` is selected the
+> same way: mean **+1.19 dB**, sd 0.64, shipped value +1.80. The independent
+> benchmark measured **+1.43 dB** on held-out frames -- between the eval's mean
+> and its selected maximum, which is what an honest held-out number should look
+> like. Report the eval means, not the selected row.
+>
+> Six methodological differences between the eval and the benchmark were tested
+> one at a time on the same checkpoint and frames: reference clamping accounts
+> for **0.02 dB** (ruled out), crop-vs-full-frame for under 0.5 dB with the sign
+> varying, `preserve_outside` for **+1.9 dB**, and the metric change from
+> log1p-PSNR to PU21-PSNR for about **-2.5 dB**. None of them, alone or
+> together, turns -1.4 into +0.02. The selection effect does.
+>
+> **The fix, and what it would have shipped.** `best.pt` is now selected on the
+> trailing median of `--best-smoothing` evaluations (default 5) rather than a
+> single one, so a checkpoint only wins if the neighbourhood it sits in wins.
+> Replayed on the v5 run's own 102-eval series, that rule selects step 72 000
+> instead of 81 000: the same hard gain to within 0.1 dB, but a five-eval
+> neighbourhood averaging **-0.19 dB** on clean where step 81 000's averages
+> **-0.91 dB**. Nearly 0.7 dB of sustained clean behaviour, bought for almost
+> nothing -- which is the trade `composite_gain` was written to make and could
+> not, because it was maximising a quantity that oscillates by 1.29 dB.
+> `--best-smoothing 1` restores the old behaviour. Note that the eval set was
+> never the problem: it is already deterministic, centre crops with
+> `shuffle=False` over the same 256 records, so a larger or fixed eval set
+> would not have helped.
+
 What moved is the price. v3b and v4 bought their highlight recovery by damaging
-well-graded input, by as much as 4.2 dB. v5 gets the same recovery for nothing.
+well-graded input, by as much as 4.2 dB. v5 does less of that damage -- but the
+"for nothing" claim this README used to make came from one lucky eval, and the
+honest figure is about -1.4 dB by the eval's own metric.
 That is the censored-highlight loss working: 78% of public HDR footage is
 delivery-graded, and plain L1 against pixels sitting on a grading ceiling teaches
 the model to cap. Treating those pixels as *at least* the ceiling rather than
@@ -284,9 +319,53 @@ Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifes
 <manifest>`.
 
 > These are gains over RUDRA's own analytic baseline, not a comparison against
-> published inverse tone mapping work. CVVDP JOD numbers are not in yet and
-> highlight-mask headroom has not been re-measured on v5. Read them as internal
-> progress, not as a benchmark result.
+> published inverse tone mapping work. Read them as internal progress. The
+> measured benchmark is below, and it does not agree with them everywhere.
+
+### The measured benchmark
+
+429 held-out frames at native 1280x720, scene-linear with diffuse white at 1.0,
+scored at `--nits-scale 203`. PU21-PSNR and CVVDP JOD, both against the same
+unclamped reference. Run with `training/run_bench.ps1` on 29 Aug 2026 -- the
+first time this project produced a number a reviewer can weigh.
+
+| Condition | Method | PU21-PSNR (dB) | CVVDP (JOD) |
+| --- | --- | ---: | ---: |
+| clean | analytic baseline | **45.99** | 9.448 |
+| clean | v5 (32ch, step 81 000) | 42.99 | 9.402 |
+| clean | v6 (64ch) | 43.24 | **9.452** |
+| hard | analytic baseline | 25.92 | 7.362 |
+| hard | **v5** | **27.34** | **7.805** |
+| hard | v6 | 26.88 | 7.706 |
+
+**On degraded input the model earns its keep.** v5 beats the analytic baseline
+by +1.43 dB and +0.44 JOD, and wins on 346 of 429 frames (81%). That is the
+deployment condition, and it is the result the project is for.
+
+**On clean input the model is a PSNR regression and a perceptual tie.** It
+loses 3.0 dB, winning only 115 frames (27%) -- but CVVDP puts the same gap at
+**-0.046 JOD**, far below a just-noticeable difference. The two metrics
+disagree in magnitude by two orders of magnitude, which is the finding: what
+RUDRA adds to well-graded input is highlight energy PU21-PSNR punishes and no
+viewer sees. Do not report the clean PSNR row without the JOD beside it.
+
+**The failure mode has a name.** Splitting the clean frames by how much
+headroom the ground truth actually has settles it:
+
+| clean frames | mean delta vs baseline | median ground-truth peak |
+| --- | ---: | ---: |
+| 60 worst | **-10.76 dB** | 238 nits |
+| 60 best | **+3.41 dB** | 19 590 nits |
+
+Correlation between `log2(peak_nits)` and RUDRA's gain is **+0.46**. Where the
+reference barely exceeds diffuse white the model invents highlights that are
+not there; where the reference genuinely has 20 000 nits in it, the model finds
+them. RUDRA has no idea when the right answer is to do nothing. That is the
+next thing to fix, and it is a gate on the model, not on the corpus.
+
+**Capacity confirms its own ablation.** v6 is better on clean (+0.25 dB, +0.05
+JOD) and worse on hard (-0.46 dB, -0.10 JOD) than v5. Four times the parameters
+moved the result in both directions by less than the spread between conditions.
 
 **Getting numbers that are comparable to published work.** All of it runs
 from one command -- `training/run_bench.ps1` does the four exports and the
