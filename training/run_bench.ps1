@@ -163,7 +163,16 @@ try {
             $md += ("| {0} | {1} | {2} | {3} | {4} |" -f $cond, $tree, $j.pairs, $psnr, $(if ($jod) { $jod } else { "n/a" }))
         }
     }
-    $rows | Format-Table -AutoSize | Out-String | Write-Host
+    # Format-Table renders nothing in a host with no console width (a redirected
+    # or headless shell), so the on-screen table is built by hand. RESULTS.md
+    # below is written either way.
+    Write-Host ("  {0,-10} {1,-10} {2,6} {3,16} {4,13}" -f `
+                "Condition", "Method", "Pairs", "PU21-PSNR dB", "CVVDP JOD")
+    Write-Host ("  " + ("-" * 58))
+    foreach ($r in $rows) {
+        Write-Host ("  {0,-10} {1,-10} {2,6} {3,16} {4,13}" -f `
+                    $r.Condition, $r.Method, $r.Pairs, $r.'PU21-PSNR dB', $r.'CVVDP JOD')
+    }
 
     $mdPath = Join-Path $bench ("RESULTS" + $suffix + ".md")
     $header = @(
