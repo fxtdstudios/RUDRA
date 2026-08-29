@@ -363,6 +363,45 @@ not there; where the reference genuinely has 20 000 nits in it, the model finds
 them. RUDRA has no idea when the right answer is to do nothing. That is the
 next thing to fix, and it is a gate on the model, not on the corpus.
 
+**And one number per frame would fix it.** The gate that decides how much to
+reconstruct is a per-pixel luminance sigmoid -- `hp = sigma((y - 0.82) * 24)`,
+`sp = sigma((0.10 - y) * 24)`. It sees one pixel's brightness and nothing else,
+so it cannot tell a 238-nit studio interior from a 20 000-nit sunset. Giving it
+a single global scale `alpha` on the residual and letting an oracle choose it
+per frame (27 held-out scenes, PU21-PSNR gain over the analytic baseline):
+
+| alpha | clean | hard |
+| --- | ---: | ---: |
+| 1.0 — what ships | **-4.15** | +1.08 |
+| 0.125 — best single constant | +0.83 | **+0.17** |
+| per-frame oracle | **+1.69** | **+1.37** |
+
+The two conditions want opposite settings. Clean improves monotonically as
+alpha falls to ~0.125; hard improves monotonically as it rises to ~1.1. **No
+constant can serve both** -- the constant that fixes clean throws away 85% of
+the hard gain. Per-frame adaptation beats what ships by **5.84 dB on clean and
+0.29 dB on hard at the same time**, which is not a trade at all.
+
+The signal is exactly frame headroom, and only on clean input:
+
+| oracle alpha, median | reference peak < 1000 nits | >= 1000 nits |
+| --- | ---: | ---: |
+| clean | **0.125** | 0.969 |
+| hard | 1.250 | 1.094 |
+
+On clean input the oracle is bimodal in headroom -- do nothing for low-dynamic-
+range frames, full strength for high. On degraded input it wants full strength
+regardless, because the degradation destroyed information the baseline cannot
+recover whatever the scene's range. So the head to add is not a headroom
+predictor alone: it has to see **headroom and degradation together**. That is
+the concrete architectural change these numbers argue for.
+
+> The oracle is an upper bound -- it reads the ground truth -- and a learned
+> head will recover some fraction of it. The sample is 27 scenes, one frame
+> each, which runs about 1.15 dB pessimistic on clean against the full 429
+> (it reads -4.15 dB at alpha=1 where the full set reads -3.00). The relative
+> ordering is what this table is for; the absolute figures will move.
+
 **Capacity confirms its own ablation.** v6 is better on clean (+0.25 dB, +0.05
 JOD) and worse on hard (-0.46 dB, -0.10 JOD) than v5. Four times the parameters
 moved the result in both directions by less than the spread between conditions.
