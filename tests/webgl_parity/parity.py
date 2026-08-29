@@ -87,7 +87,14 @@ def main():
                 {"strength": strength, "mode": mode, "preserve": preserve,
                  "displayNits": nits, "regions": regions})
             gl_rgb = np.array(got["composite"], dtype=np.float64).reshape(H, W, 4)[..., :3]
-            gl_disp = np.array(got["display"], dtype=np.float64).reshape(H, W, 4)[..., :3]
+            # readPixels returns the default framebuffer bottom row first, and
+            # DISPLAY flips V so the frame is presented right way up, so the
+            # readback comes back in reverse row order. Undo that here and the
+            # comparison below is against the image as the viewer sees it --
+            # which is the point: a presentation flip has to show up as a
+            # failure, not cancel out.
+            gl_disp = np.array(got["display"], dtype=np.float64
+                               ).reshape(H, W, 4)[..., :3][::-1]
 
             ref = compose(sdr_u8.astype(np.float64) / 255.0,
                             residual.astype(np.float64), highlight.astype(np.float64),

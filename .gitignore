@@ -60,3 +60,6 @@ AUDIT_*.html
 *_REVIEW_*.html
 COMPETITIVE_*.html
 *_AUDIT_*.html
+
+# Master EXRs written by RUDRA Studio -- deliverables, not source.
+ui/_masters/

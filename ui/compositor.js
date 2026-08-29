@@ -129,7 +129,17 @@
     "uniform sampler2D uHdr;",
     "uniform float uScale;",
     "void main(){",
-    "  oCol = vec4(linearToSrgb(clamp(texture(uHdr, vUV).rgb * uScale, 0.0, 1.0)), 1.0);",
+    /* The one flip in the whole pipeline, and it belongs here. Every texture
+       is uploaded in array order -- row 0 is the TOP of the image -- and the
+       compositor keeps that order end to end, which is what readComposite(),
+       sample()/sourceIndex() and the Master EXR all assume. But the default
+       framebuffer puts row 0 at the BOTTOM of the canvas, so presenting with
+       vUV unchanged shows the frame upside down. Flip V here, at the last
+       step, and nothing upstream has to know. Do NOT "fix" this with
+       UNPACK_FLIP_Y_WEBGL at upload: that inverts the model/base targets too
+       and silently flips the readback paths, which no numeric test would
+       catch because they all compare the float buffer, never the canvas. */
+    "  oCol = vec4(linearToSrgb(clamp(texture(uHdr, vec2(vUV.x, 1.0 - vUV.y)).rgb * uScale, 0.0, 1.0)), 1.0);",
     "}"].join("\n");
 
   /* Point-sample into a smaller float target. The scopes and the

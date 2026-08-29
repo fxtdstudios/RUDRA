@@ -149,6 +149,21 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
     return metrics
 
 
+def temporal_score(metrics: dict, temporal_weight: float) -> float:
+    """What selects the refiner's best.pt -- and it must match what it trains on.
+
+    The training objective is censored: a pixel on a grading ceiling means
+    ">= ceiling", so reconstructing above it is free. Selecting on the plain
+    log_l1 would have graded that behaviour as WORSE, because plain L1 measures
+    against a target that was capped -- so best.pt would have preferred exactly
+    the flattening the censored loss exists to prevent. Selection follows the
+    loss; `log_l1` stays in the metrics for comparison with image mode and with
+    the runs before it.
+    """
+    spatial = metrics.get("censored_log_l1", metrics["log_l1"])
+    return spatial + temporal_weight * metrics["temporal"]
+
+
 @torch.no_grad()
 def evaluate_temporal(image_model: SDR2HDRNet, temporal: TemporalHDRRefiner,
                       loader: DataLoader, device: torch.device, max_batches: int = 4) -> dict[str, float]:
@@ -329,7 +344,7 @@ def train(args: argparse.Namespace) -> Path:
         else:
             assert image_model is not None
             initial_metrics = evaluate_temporal(image_model, model, val_loader, device, args.eval_batches)
-            best = initial_metrics["log_l1"] + args.temporal_weight * initial_metrics["temporal"]
+            best = temporal_score(initial_metrics, args.temporal_weight)
         _atomic_save({"model": model.state_dict(), "step": 0, "best": best, "config": config},
                      output_dir / "best.pt")
         print(f"[baseline] {json.dumps(initial_metrics)}")
@@ -394,7 +409,7 @@ def train(args: argparse.Namespace) -> Path:
                 metrics, score = image_eval()
             else:
                 metrics = evaluate_temporal(image_model, model, val_loader, device, args.eval_batches)
-                score = metrics["log_l1"] + args.temporal_weight * metrics["temporal"]
+                score = temporal_score(metrics, args.temporal_weight)
             print(f"[eval] step {step}: {json.dumps(metrics)}")
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"step": step, "eval": metrics}) + "\n")

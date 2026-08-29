@@ -247,7 +247,10 @@ def main() -> int:
         "reference_clamped_at_network_units": REFERENCE_CEILING,
         "trees": trees,
     }
-    (out / "export.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    # A second model exports with --only-test into the same directory; if it
+    # wrote export.json it would erase the first run's provenance.
+    stem = "export" if args.test_name == "test" else f"export_{args.test_name}"
+    (out / f"{stem}.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     print("=" * 66)
     print(f"   wrote {written} frame(s) to {out}")

@@ -40,6 +40,18 @@ The frames rail, the transport and the menus all do what they say — press `?`
 for the keyboard, and see `tests/ui_smoke/press_everything.py`, which presses
 every control and fails if one turns out to be decoration.
 
+Three layers check the viewer, because they fail in different ways.
+`tests/webgl_parity/parity.py` scores the shader against a numpy port of
+`SDR2HDRNet.forward`'s tail, `press_everything.py` presses all 54 controls,
+and `tests/webgl_parity/orientation.py` looks at the canvas itself. That last
+one exists because on 29 Aug 2026 the viewer presented every frame upside
+down: the default framebuffer puts row 0 at the bottom, and the display
+shader sampled `vUV` unchanged. No numeric test caught it, because the float
+composite -- the buffer every one of them reads -- is correct either way, and
+the parity test's `readPixels` readback was reading the flip and cancelling
+it. The flip now lives in the display shader alone, and a test looks at
+pixels. The master EXR was never affected.
+
 `?frame=<url>` loads a frame straight from the server instead of dropping one,
 and `?demo=1` loads the bundled sample — which is how the screenshot above is
 taken, so it can be regenerated rather than staged.
@@ -276,7 +288,10 @@ Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifes
 > highlight-mask headroom has not been re-measured on v5. Read them as internal
 > progress, not as a benchmark result.
 
-**Getting numbers that are comparable to published work.** `rudra bench`
+**Getting numbers that are comparable to published work.** All of it runs
+from one command -- `training/run_bench.ps1` does the four exports and the
+six scorings, skipping any stage whose output already exists, and writes a
+markdown results table at the end. What it drives is below. `rudra bench`
 scores paired directories in PU21-PSNR and CVVDP JOD — the only public
 measuring sticks in this field — but nothing produced its input, so between a
 trained checkpoint and a JOD there was no step at all. There is now:
@@ -340,14 +355,15 @@ rudra/delivery/   Torch-free: DoVi L1 / HDR10+, ACES / EXR / OCIO, grade
                   controls, benchmarks, the `rudra` CLI
 pipeline/         Corpus construction and its gates: scanner, pair preparation,
                   HDR storage (hdr_io), manifests, verify_dataset
-training/         Trainers, evaluation, inference, and the exporter that
-                  turns a checkpoint into benchmark pairs
+training/         Trainers, evaluation, inference, the exporter that turns a
+                  checkpoint into benchmark pairs, and run_bench.ps1, which
+                  drives the whole benchmark end to end
 ui/               RUDRA Studio: the page, its GPU compositor and the
                   inference server behind them
 config/, configs/ VAE registry and training recipes
 tests/            Curve round-trips, corpus guards, delivery, target decode,
-                  censored highlights, GPU/torch composite parity, and a
-                  smoke test that presses every control on the page
+                  censored highlights, GPU/torch composite parity, canvas
+                  orientation, and a smoke test that presses every control
 ```
 
 The composite lives in three languages — torch in `rudra/sdr2hdr.py`, GLSL in

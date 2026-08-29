@@ -177,3 +177,37 @@ def test_the_image_loss_still_agrees_with_the_shared_helper():
         error, _, _, fraction = censored_log_error(out.hdr, target, ceiling)
     assert float(losses["censored_fraction"]) == pytest.approx(float(fraction))
     assert float(losses["log_l1"]) == pytest.approx(float(error.mean()), rel=1e-6)
+
+
+def test_checkpoint_selection_follows_the_censored_objective():
+    """The loss and the selector have to agree, or the fix undoes itself.
+
+    The refiner trains on a censored objective but `log_l1` is reported plain,
+    for comparability with image mode. Selecting best.pt on that plain number
+    would have scored a refiner that correctly reconstructs ABOVE a grading
+    ceiling as worse than one that flattens to it -- because plain L1 measures
+    against a target that was capped. So the model that does the right thing
+    loses the checkpoint race, and the censored loss achieves nothing.
+    """
+    sys.path.insert(0, str(REPO / "training"))
+    from train_sdr2hdr import temporal_score
+
+    weight = 0.5
+    # identical temporal consistency; the two differ only in the highlights
+    flattens = {"log_l1": 0.0036, "censored_log_l1": 0.0036, "temporal": 0.0019}
+    reconstructs = {"log_l1": 0.0052, "censored_log_l1": 0.0021, "temporal": 0.0019}
+
+    naive = lambda m: m["log_l1"] + weight * m["temporal"]
+    assert naive(flattens) < naive(reconstructs), (
+        "premise check: plain L1 really does prefer the flattened highlight")
+    assert temporal_score(reconstructs, weight) < temporal_score(flattens, weight), (
+        "selection still prefers flattening -- the censored loss is being undone "
+        "at checkpoint time")
+
+
+def test_selection_falls_back_for_logs_written_before_censoring():
+    """Runs from before censored_log_l1 existed must still score, not crash."""
+    sys.path.insert(0, str(REPO / "training"))
+    from train_sdr2hdr import temporal_score
+    legacy = {"log_l1": 0.0036, "temporal": 0.0019}
+    assert temporal_score(legacy, 0.5) == pytest.approx(0.0036 + 0.5 * 0.0019)
