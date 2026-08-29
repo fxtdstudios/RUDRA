@@ -1,0 +1,30 @@
+ship v5, rebuild the Studio, fix the temporal loss, make the benchmark runnable
+
+v5 step 81,000 ships as shipped_v5_step81000.pt: +1.80 dB hard, +0.02 dB
+clean. Peak highlight recovery has not moved in three runs, but v3b and v4
+bought theirs by damaging well-graded input by up to 4.2 dB and v5 does not.
+Both long runs peak near 80k steps and decay after; best-checkpoint selection
+is what rescues them.
+
+Studio: the network runs once per frame and the page composes on the viewer's
+GPU (ui/compositor.js), so residual strength, recovery mode, preserve, region
+EV and display peak all run at frame rate instead of one round trip each.
+Compare is a flip, not a wipe. The menubar, frames rail and transport now do
+what they say, and tests/ui_smoke/press_everything.py presses every control
+and fails if one turns out to be decoration. Region EV is a real grade:
+rudra/delivery/controls.py applies the identical qualifier and gain when
+Master writes the EXR.
+
+Assets are served under mtime-stamped URLs, on a port that is not 8080, after
+a stylesheet another project had left in the browser cache answered a request
+for style.css?v=4 and the Studio rendered in someone else's CSS.
+
+The temporal refiner trained on a plain log-L1 that never saw a grading
+ceiling, on a video corpus where 84% of clips carry one; censored_log_error is
+now shared by both trainers.
+
+rudra bench had no way to be fed, and CVVDP had never once executed: pycvvdp
+was handed a device string where it wanted a torch.device, and three layers of
+except Exception reported that as "install torch + pycvvdp".
+training/export_bench_pairs.py produces the ref/test/baseline pairs; the
+summary now names the real reason when the backend falls back.

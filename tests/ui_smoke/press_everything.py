@@ -63,8 +63,12 @@ def main(URL, FRAMES):
         # failed request to our own origin is very much a page bug.
         pg.on("console", lambda m: errors.append("console.error: " + m.text)
               if m.type == "error" and "Failed to load resource" not in m.text else None)
-        pg.on("requestfailed", lambda r: errors.append("request failed: " + r.url)
-              if r.url.startswith(URL) else None)
+        # An aborted request is the page superseding its own work when the user
+        # moves to another frame -- that is the fix for the scrub storm, not a
+        # fault. Anything else failing on our own origin is.
+        pg.on("requestfailed", lambda r: errors.append(
+            "request failed: " + r.url + " " + str(r.failure))
+              if r.url.startswith(URL) and "ABORTED" not in str(r.failure or "") else None)
         pg.goto(URL); pg.wait_for_timeout(1200)
 
         def canvas():
@@ -280,6 +284,18 @@ def main(URL, FRAMES):
         tail = pg.inner_text("#log")
         record("Master EXR writes a graded file",
                "MaxCLL" in tail and "failed" not in tail.splitlines()[-1], logtail(2))
+
+        # ---- a filename is attacker-controlled text -----------------------------
+        hostile = Path(FRAMES[0]).parent / "<img src=x onerror=window.__pwned=1>.png"
+        hostile.write_bytes(Path(FRAMES[0]).read_bytes())
+        pg.set_input_files("#file", str(hostile))
+        pg.wait_for_timeout(4000)
+        pwned = pg.evaluate("() => !!window.__pwned")
+        names = pg.eval_on_selector_all(".shot .name", "els => els.map(e => e.textContent)")
+        record("A hostile filename does not execute", not pwned,
+               "window.__pwned=" + str(pwned))
+        record("...and renders as text", any("<img" in n for n in names),
+               " | ".join(n[:38] for n in names))
 
         # ---- File ▸ Close all --------------------------------------------------
         menu_click("close")

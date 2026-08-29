@@ -20,9 +20,19 @@ Master EXR path already uses -- so the benchmark is told `--nits-scale 203`.
     rudra bench <dir> --nits-scale 203
     rudra bench <dir> --nits-scale 203 --test-dir baseline
 
-`--condition hard` applies the same seeded degradation the training eval uses,
-so the exported frames are the ones behind the `hard_*` numbers in the train
-log rather than a fresh random draw.
+A second model reuses the reference rather than writing 429 more frames of it:
+
+    python training/export_bench_pairs.py --checkpoint <other> \
+        --manifest <manifest> --split test --out <dir> --condition clean \
+        --only-test --test-name v6
+    rudra bench <dir> --nits-scale 203 --test-dir v6
+
+`--condition hard` applies the same degradation model as the training eval,
+seeded per record the same way, so the condition is reproducible run to run.
+It is NOT pixel-identical to the eval's hard frames: the eval degrades a
+384-pixel crop and this degrades the whole frame, so the same seed lands on a
+different realisation. Treat the two as the same *condition*, not the same
+images -- the numbers here are not directly comparable with `hard_gain_db`.
 
 The reference is decoded WITHOUT the network's max_hdr clamp. Clamping it would
 score the model against a ground truth cropped to the model's own ceiling,
@@ -77,7 +87,12 @@ def to_scene_linear(network_units) -> np.ndarray:
 
 
 def degrade_like_eval(sdr: torch.Tensor, index: int) -> torch.Tensor:
-    """The eval's deterministic degradation, seeded exactly as it seeds it."""
+    """The eval's degradation model, seeded exactly as it seeds it.
+
+    Same model and same seed, but the eval feeds it a 384-pixel crop and this
+    feeds it a whole frame, so the realisations differ. Reproducible, not
+    identical -- see the module docstring.
+    """
     py_state, torch_state = random.getstate(), torch.random.get_rng_state()
     random.seed(24_082_600 + index)
     torch.manual_seed(24_082_600 + index)
@@ -115,6 +130,13 @@ def main() -> int:
                         help="0 runs the frame in one pass; falls back on OOM")
     parser.add_argument("--tile-overlap", type=int, default=64)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--test-name", default="test",
+                        help="directory the prediction goes into (default: test). "
+                             "Name a second model here to score it against a "
+                             "reference that already exists, e.g. --test-name v6.")
+    parser.add_argument("--only-test", action="store_true",
+                        help="write only the prediction tree, reusing the ref/ and "
+                             "baseline/ an earlier export already produced")
     parser.add_argument("--no-baseline", action="store_true",
                         help="skip the analytic baseline tree")
     parser.add_argument("--preserve-outside", action="store_true", default=True)
@@ -143,7 +165,12 @@ def main() -> int:
     announce_storage(f"image/{args.split}", records[0]["hdr_path"])
 
     out = Path(args.out)
-    trees = ["ref", "test"] + ([] if args.no_baseline else ["baseline"])
+    # The reference frames are the expensive half of an export and they do not
+    # depend on the checkpoint, so a second model reuses them: --only-test
+    # --test-name v6 adds one tree beside the first model's.
+    trees = ([] if args.only_test else ["ref"]) + [args.test_name]
+    if not (args.no_baseline or args.only_test):
+        trees.append("baseline")
     for tree in trees:
         (out / tree).mkdir(parents=True, exist_ok=True)
 
@@ -190,11 +217,14 @@ def main() -> int:
             hdr = predict(512)
 
         prediction = hdr[0].permute(1, 2, 0).float().cpu().numpy()
-        for tree, frame in (("ref", reference), ("test", prediction)):
+        written_here = [(args.test_name, prediction)]
+        if not args.only_test:
+            written_here.insert(0, ("ref", reference))
+        for tree, frame in written_here:
             path = out / tree / scene / f"{asset}.exr"
             path.parent.mkdir(parents=True, exist_ok=True)
             write_exr(path, to_scene_linear(frame), half=True)
-        if not args.no_baseline:
+        if not (args.no_baseline or args.only_test):
             base = sdr_to_baseline_hdr(sdr)[0].permute(1, 2, 0).float().cpu().numpy()
             path = out / "baseline" / scene / f"{asset}.exr"
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -209,6 +239,7 @@ def main() -> int:
         "checkpoint": str(Path(args.checkpoint).resolve()),
         "manifest": str(Path(args.manifest).resolve()),
         "split": args.split, "condition": args.condition,
+        "test_name": args.test_name,
         "preserve_outside": bool(args.preserve_outside),
         "frames": written, "skipped": skipped,
         "units": "scene-linear, diffuse white = 1.0",
@@ -223,8 +254,9 @@ def main() -> int:
     if skipped:
         print(f"   skipped {len(skipped)}: " + ", ".join(a for a, _ in skipped[:5])
               + (" ..." if len(skipped) > 5 else ""))
-    print(f"\n   rudra bench {out} --nits-scale {DIFFUSE_WHITE_NITS:.0f}")
-    if not args.no_baseline:
+    suffix = "" if args.test_name == "test" else f" --test-dir {args.test_name}"
+    print(f"\n   rudra bench {out} --nits-scale {DIFFUSE_WHITE_NITS:.0f}{suffix}")
+    if not (args.no_baseline or args.only_test):
         print(f"   rudra bench {out} --nits-scale {DIFFUSE_WHITE_NITS:.0f} --test-dir baseline")
     print()
     return 0

@@ -193,6 +193,20 @@
     return p;
   }
 
+  /* getUniformLocation is a string lookup into the linked program. The
+     reduction ladder called it once per uniform per level -- about 55 lookups
+     per reduce, three reduces per measurement -- and the composite called ten
+     more on every slider move. They never change for a linked program. */
+  function locator(gl) {
+    var cache = new Map();
+    return function (program, name) {
+      var byName = cache.get(program);
+      if (!byName) { byName = new Map(); cache.set(program, byName); }
+      if (!byName.has(name)) { byName.set(name, gl.getUniformLocation(program, name)); }
+      return byName.get(name);
+    };
+  }
+
   function texture(gl, unit) {
     var t = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0 + unit);
@@ -229,6 +243,7 @@
     if (!gl) { return null; }
     if (!gl.getExtension("EXT_color_buffer_float")) { return null; }
 
+    var uniform = locator(gl);
     var quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER,
@@ -283,16 +298,16 @@
        MaxCLL is entirely about. */
     function reduce(sourceTarget, op) {
       gl.useProgram(progReduce);
-      gl.uniform1i(gl.getUniformLocation(progReduce, "uSrc"), 7);
-      gl.uniform1i(gl.getUniformLocation(progReduce, "uOp"), op);
+      gl.uniform1i(uniform(progReduce, "uSrc"), 7);
+      gl.uniform1i(uniform(progReduce, "uOp"), op);
       var srcTex = sourceTarget.tex, sw = sourceTarget.w, sh = sourceTarget.h, first = true;
       for (var i = 0; i < chain.length; i++) {
         var dst = chain[i];
         gl.activeTexture(gl.TEXTURE7);
         gl.bindTexture(gl.TEXTURE_2D, srcTex);
-        gl.uniform2f(gl.getUniformLocation(progReduce, "uSrcSize"), sw, sh);
-        gl.uniform2f(gl.getUniformLocation(progReduce, "uDstSize"), dst.w, dst.h);
-        gl.uniform1i(gl.getUniformLocation(progReduce, "uFirst"), first ? 1 : 0);
+        gl.uniform2f(uniform(progReduce, "uSrcSize"), sw, sh);
+        gl.uniform2f(uniform(progReduce, "uDstSize"), dst.w, dst.h);
+        gl.uniform1i(uniform(progReduce, "uFirst"), first ? 1 : 0);
         draw(progReduce, dst.w, dst.h, dst.fb);
         srcTex = dst.tex; sw = dst.w; sh = dst.h; first = false;
       }
@@ -344,14 +359,14 @@
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texSdr);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, texFields);
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, texShadow);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uSdr"), 0);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uFields"), 1);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uShadow"), 2);
-      gl.uniform1f(gl.getUniformLocation(progComposite, "uStrength"), params.strength);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uMode"),
+      gl.uniform1i(uniform(progComposite, "uSdr"), 0);
+      gl.uniform1i(uniform(progComposite, "uFields"), 1);
+      gl.uniform1i(uniform(progComposite, "uShadow"), 2);
+      gl.uniform1f(uniform(progComposite, "uStrength"), params.strength);
+      gl.uniform1i(uniform(progComposite, "uMode"),
                    MODES[params.mode] === undefined ? 0 : MODES[params.mode]);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uPreserve"), params.preserve ? 1 : 0);
-      gl.uniform1i(gl.getUniformLocation(progComposite, "uBaselineOnly"), baselineOnly ? 1 : 0);
+      gl.uniform1i(uniform(progComposite, "uPreserve"), params.preserve ? 1 : 0);
+      gl.uniform1i(uniform(progComposite, "uBaselineOnly"), baselineOnly ? 1 : 0);
       var lo = [], hi = [], ev = [];
       for (var i = 0; i < 3; i++) {
         var band = params.regions[i] || {low_nits: 1, high_nits: 1, ev: 0};
@@ -359,10 +374,10 @@
         hi.push(Math.log2(Math.max(band.high_nits, 1e-6)));
         ev.push(band.ev || 0);
       }
-      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionLo"), lo);
-      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionHi"), hi);
-      gl.uniform3fv(gl.getUniformLocation(progComposite, "uRegionEv"), ev);
-      gl.uniform1f(gl.getUniformLocation(progComposite, "uRegionSoft"), params.regionSoft);
+      gl.uniform3fv(uniform(progComposite, "uRegionLo"), lo);
+      gl.uniform3fv(uniform(progComposite, "uRegionHi"), hi);
+      gl.uniform3fv(uniform(progComposite, "uRegionEv"), ev);
+      gl.uniform1f(uniform(progComposite, "uRegionSoft"), params.regionSoft);
     }
 
     function compositeBaseline() {
@@ -386,8 +401,8 @@
       gl.useProgram(progDisplay);
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, source.tex);
-      gl.uniform1i(gl.getUniformLocation(progDisplay, "uHdr"), 6);
-      gl.uniform1f(gl.getUniformLocation(progDisplay, "uScale"),
+      gl.uniform1i(uniform(progDisplay, "uHdr"), 6);
+      gl.uniform1f(uniform(progDisplay, "uScale"),
                    PEAK_NITS / Math.max(params.displayNits, 1e-3));
       draw(progDisplay, frame.w, frame.h, null);
     }
@@ -415,7 +430,7 @@
       gl.useProgram(progCopy);
       gl.activeTexture(gl.TEXTURE0 + SCRATCH_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, sourceTarget.tex);
-      gl.uniform1i(gl.getUniformLocation(progCopy, "uSrc"), SCRATCH_UNIT);
+      gl.uniform1i(uniform(progCopy, "uSrc"), SCRATCH_UNIT);
       draw(progCopy, dst.w, dst.h, dst.fb);
       var out = new Float32Array(dst.w * dst.h * 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);

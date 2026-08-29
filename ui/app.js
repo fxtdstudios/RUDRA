@@ -43,6 +43,19 @@
   var ctx = null;
   var hiMask = null, shMask = null;   // current frame's masks, full resolution
   var statsTimer = null, statsPending = false;
+  /* Dragging the scrub bar walks every frame it passes over. Without this each
+     one started its own forward pass on the server's GPU, concurrently and
+     uncancelled -- one drag across twenty uncached frames queued twenty. */
+  var inflight = null;
+
+  /* Filenames are chosen by whoever made the file, and they land in innerHTML.
+     A frame called <img src=x onerror=...> would otherwise run in this page's
+     origin, which can drive /api/master. */
+  function esc(value) {
+    return String(value === null || value === undefined ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
 
   function log(line, kind) {
     var box = $("log");
@@ -443,9 +456,9 @@
       var bar = f.aboveDW ? Math.min(1, f.aboveDW / 20) : 0;
       return '<div class="shot' + (i === state.index ? " on" : "") +
              (f.loading ? " loading" : "") + '" data-i="' + i + '">' +
-             '<span class="mark"></span><span class="name">' + f.name + "</span>" +
-             '<span class="frames">' + size + "</span>" +
-             '<span class="peak">' + peak + "</span>" +
+             '<span class="mark"></span><span class="name">' + esc(f.name) + "</span>" +
+             '<span class="frames">' + esc(size) + "</span>" +
+             '<span class="peak">' + esc(peak) + "</span>" +
              '<span class="bar"><i style="width:' + (bar * 100).toFixed(0) + '%"></i></span></div>';
     }).join("");
     $("shots").innerHTML = rows;
@@ -531,6 +544,7 @@
     state.index = index;
     var frame = state.frames[index];
     drawFrames();
+    evictCache();
     if (frame.buf && !force) { adopt(frame); return; }
     fetchFrame(frame);
   }
@@ -539,6 +553,9 @@
     if (!state.live) { log("no model loaded", "err"); return; }
     if (!ctx) { log("no WebGL2 with float render targets in this browser", "err"); return; }
     if (frame.loading) { return; }
+    if (inflight) { inflight.controller.abort(); inflight.frame.loading = false; }
+    var controller = new AbortController();
+    inflight = {controller: controller, frame: frame};
     frame.loading = true;
     drawFrames();
     busy(true);
@@ -546,6 +563,7 @@
     log("forward pass " + frame.name);
     fetch("/api/frame", {
       method: "POST",
+      signal: controller.signal,
       headers: {"Content-Type": "application/octet-stream",
                 "X-Rudra-Params": JSON.stringify(params())},
       body: frame.file
@@ -558,6 +576,7 @@
         return {header: JSON.parse(head), buf: buf};
       });
     }).then(function (d) {
+      if (inflight && inflight.controller === controller) { inflight = null; }
       frame.loading = false;
       frame.header = d.header;
       frame.buf = d.buf;
@@ -568,7 +587,11 @@
           (d.buf.byteLength / 1048576).toFixed(1) + " MB  total " +
           ((performance.now() - started) / 1000).toFixed(2) + " s");
     }).catch(function (e) {
-      frame.loading = false; busy(false); drawFrames();
+      if (inflight && inflight.controller === controller) { inflight = null; }
+      frame.loading = false;
+      // A superseded frame is not a failure: the user simply moved on.
+      if (e.name === "AbortError") { drawFrames(); return; }
+      busy(false); drawFrames();
       log("frame failed: " + e.message, "err");
     });
   }
@@ -586,6 +609,7 @@
 
   function closeAll() {
     stopPlay();
+    if (inflight) { inflight.controller.abort(); inflight = null; }
     state.frames = []; state.index = -1; state.header = null;
     hiMask = shMask = null;
     $("plate").hidden = true; $("empty").hidden = false;
@@ -645,9 +669,9 @@
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(
         function () { log("copied " + label + " to the clipboard"); },
-        function () { sheet(label, "<pre>" + text.replace(/[<&]/g, "") + "</pre>"); });
+        function () { sheet(label, "<pre>" + esc(text) + "</pre>"); });
     } else {
-      sheet(label, "<pre>" + text.replace(/[<&]/g, "") + "</pre>");
+      sheet(label, "<pre>" + esc(text) + "</pre>");
     }
   }
 
@@ -681,7 +705,7 @@
 
   /* ---- overlay sheet ---------------------------------------------------- */
   function sheet(title, html) {
-    $("overlaySheet").innerHTML = "<h3>" + title + "</h3>" + html +
+    $("overlaySheet").innerHTML = "<h3>" + esc(title) + "</h3>" + html +
       '<div class="close">Esc, or click anywhere, to close</div>';
     $("overlay").hidden = false;
   }
@@ -795,7 +819,8 @@
         ["Master", "ACES 2065-1 (AP0), ST 2065-4 chromaticities"],
         ["Built by", "FXTD Studios / Radiance Research"]
       ].map(function (r) {
-        return '<div class="row"><span class="k">' + r[0] + "</span><span>" + r[1] + "</span></div>";
+        return '<div class="row"><span class="k">' + esc(r[0]) + "</span><span>" +
+               esc(r[1]) + "</span></div>";
       }).join(""));
     }
   };

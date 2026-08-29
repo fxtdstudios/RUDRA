@@ -192,10 +192,11 @@ already handles. Both columns are gains in log-radiance PSNR over that baseline.
 | v4, step 58 000 (6× data) | +1.83 dB | −2.45 dB | −0.62 |
 | v4, step 78 000 | +1.74 dB | −0.18 dB | +1.56 |
 | **v5, step 81 000 — shipped** | **+1.80 dB** | **+0.02 dB** | **+1.80** |
+| v6, step 83 000 (4× capacity) | +1.91 dB | +0.23 dB | +1.91 |
 
-Peak highlight recovery has not moved in three runs. Around +1.8 dB is where
-this architecture sits on this corpus, and more data did not change that: v4 saw
-six times the footage for 0.03 dB.
+Peak highlight recovery has not moved in four runs. Around +1.8 dB is where
+this architecture sits on this corpus, and neither lever shifts it: v4 saw six
+times the footage for 0.03 dB, and v6 four times the parameters for 0.11.
 
 What moved is the price. v3b and v4 bought their highlight recovery by damaging
 well-graded input, by as much as 4.2 dB. v5 gets the same recovery for nothing.
@@ -238,12 +239,31 @@ is five channels: three of residual and two of mask logits. Half the weights
 sit in the middle block at quarter resolution. A checkpoint fits in a browser
 download and runs a 1600×900 frame in one untiled pass.
 
-Every run so far — v3, v3b, v4, v5 — used `--base-channels 32`. **Capacity has
-never been ablated.** The plateau above is read as a corpus ceiling, and v4 is
-real evidence for that (six times the footage, +0.03 dB), but "more data did not
-help" and "more capacity would not help" are different claims and only the first
-has been tested. `--base-channels 64` is 4.77 M parameters and one overnight
-run; until it exists the ceiling is an inference, not a measurement.
+**Capacity is not the constraint.** v6 ran the identical recipe and schedule at
+`--base-channels 64` — 4.77 M parameters against v5's 1.20 M — and reached
++1.906 composite against +1.798. A tenth of a dB for four times the model. The
+matched-step curves show where the capacity actually went:
+
+| hard gain, window | v5 (32ch) | v6 (64ch) |
+|---|---|---|
+| 18–22 k | +0.573 | +0.685 |
+| 36–40 k | +0.964 | +1.129 |
+| 56–60 k | +1.593 | +1.681 |
+| **76–81 k** | **+1.814** | **+1.803** |
+| 96–100 k | +1.809 | +1.720 |
+
+v6 learns faster through the middle, converges to the same place by 80 000
+steps, and decays slightly harder after. The extra parameters bought
+optimisation speed, not capability.
+
+And +0.108 dB is inside the noise of that statistic. Best composite is a maximum
+over 101 evaluations of a trajectory whose spread across 76–81 k is 0.18 dB on
+its own, so two runs of the same configuration would plausibly differ by as
+much. Treat the two models as equal.
+
+So the ceiling is the corpus — now measured across a 4× capacity range rather
+than inferred from a single width. v5 stays shipped: the same quality inside the
+noise, at a quarter the size and a quarter the inference cost.
 
 **Corpus.** 28 542 pairs across 976 physical scenes — 963 Poly Haven stills and
 13 video scenes. Whole scenes are held out; no scene straddles a split.
@@ -252,10 +272,9 @@ Reproduce with `python training/sweep_inference.py --checkpoint <ckpt> --manifes
 <manifest>`.
 
 > These are gains over RUDRA's own analytic baseline, not a comparison against
-> published inverse tone mapping work. CVVDP JOD numbers are not in yet,
-> highlight-mask headroom has not been re-measured on v5, and no model wider
-> than 32 base channels has been trained. Read them as internal progress, not
-> as a benchmark result.
+> published inverse tone mapping work. CVVDP JOD numbers are not in yet and
+> highlight-mask headroom has not been re-measured on v5. Read them as internal
+> progress, not as a benchmark result.
 
 **Getting numbers that are comparable to published work.** `rudra bench`
 scores paired directories in PU21-PSNR and CVVDP JOD — the only public
@@ -269,11 +288,21 @@ python -m rudra.delivery.cli bench <dir> --nits-scale 203
 python -m rudra.delivery.cli bench <dir> --nits-scale 203 --test-dir baseline
 ```
 
+The reference frames are the expensive half and do not depend on the
+checkpoint, so a second model reuses them rather than writing 429 more:
+
+```bash
+python training/export_bench_pairs.py --checkpoint <other> \
+    --manifest <manifest> --split test --condition clean --out <dir> \
+    --only-test --test-name v6
+python -m rudra.delivery.cli bench <dir> --nits-scale 203 --test-dir v6
+```
+
 That writes `ref/`, `test/` and `baseline/` trees of scene-linear EXRs over the
 429 held-out frames, and scores the model and the analytic baseline against one
-reference. `--condition hard` reuses the eval's seeded degradation, so the
-exported frames are the ones behind the `hard_*` numbers rather than a fresh
-draw. The reference is decoded without the network's `max_hdr` clamp: clamping
+reference. `--condition hard` reuses the eval's degradation model and seeding,
+so the condition is reproducible — though not pixel-identical to the eval,
+which degrades a 384-pixel crop where this degrades the whole frame. The reference is decoded without the network's `max_hdr` clamp: clamping
 it would score the model against a ground truth cropped to the model's own
 ceiling.
 
