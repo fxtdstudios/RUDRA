@@ -57,7 +57,7 @@ def main() -> None:
     device = torch.device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", {})
-    model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
+    model = SDR2HDRNet.from_config(config)
     model.load_state_dict(checkpoint.get("model", checkpoint), strict=True)
     model.to(device).eval()
     dataset = SDRHDRDataset(args.manifest, split=args.split, crop_size=args.crop_size,

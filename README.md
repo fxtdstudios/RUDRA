@@ -229,6 +229,30 @@ times the footage for 0.03 dB, and v6 four times the parameters for 0.11.
 > log1p-PSNR to PU21-PSNR for about **-2.5 dB**. None of them, alone or
 > together, turns -1.4 into +0.02. The selection effect does.
 >
+> **A second cause, found later the same day and larger than the first.** The
+> eval does not sample the validation split: `DataLoader(val, shuffle=False)`
+> with `evaluate_image(max_batches=N)` reads the alphabetically FIRST N
+> records. The conditioning-head run's eval (8 batches of 4) was therefore 32
+> records covering 11 scenes, every name between `abandoned_factory` and
+> `blau_river`, with 403 records and 87 scenes never measured. The v5 run's 256
+> records reached 86 of 97 scenes but still skewed bright: median reference
+> peak **836.6 nits against the split's own 547.6**, and 54.7% of frames below
+> 1 000 nits against 69.0%. Since RUDRA's error correlates with headroom
+> (+0.46), an eval slice biased towards bright scenes reports a clean gain near
+> zero while the benchmark measures -3.0 dB. Both causes are real and they
+> compound: a biased slice, then a maximum taken over its noise.
+>
+> The earlier reconciliation missed this because it tested crop-vs-full-frame
+> on TEST frames and found under 0.5 dB, which is true and beside the point --
+> the question was never the geometry, it was which records. Every geometry on
+> test frames reads between -2.4 and -4.0 dB, including the dataset's own
+> resize-then-crop at 256.
+>
+> `deterministic_eval_order()` replaces alphabetical position with a seeded
+> permutation, keeping the one property the old order had that mattered --
+> identical records in an identical order at every step, so scores stay
+> comparable within a run.
+>
 > **The fix, and what it would have shipped.** `best.pt` is now selected on the
 > trailing median of `--best-smoothing` evaluations (default 5) rather than a
 > single one, so a checkpoint only wins if the neighbourhood it sits in wins.
@@ -401,6 +425,39 @@ the concrete architectural change these numbers argue for.
 > each, which runs about 1.15 dB pessimistic on clean against the full 429
 > (it reads -4.15 dB at alpha=1 where the full set reads -3.00). The relative
 > ordering is what this table is for; the absolute figures will move.
+
+**The head, and how to train it.** `rudra.sdr2hdr.ConditionGate` predicts that
+scale: average- and max-pooled mid-encoder features (a specular highlight is a
+max, not a mean) concatenated with seven differentiable frame statistics --
+four for headroom, three for the condition the input arrived in. It is off by
+default, so every checkpoint written before it existed still loads with
+`strict=True`, and a fresh head emits exactly 1.0, so enabling it changes
+nothing until it trains.
+
+The residual is not what is broken -- the oracle wants 0.97 of it on
+high-headroom clean frames -- so the way to add the head to a checkpoint that
+already works is to train nothing else:
+
+```bash
+python training/train_sdr2hdr.py --mode image --manifest <manifest> \
+    --output-dir <dir>/sdr2hdr_gate_v7 \
+    --init-checkpoint <dir>/sdr2hdr_image_v5/shipped_v5_step81000.pt \
+    --gate-conditioning --freeze-except-gate \
+    --degradation-probability 0.5 --steps 8000 --lr 1e-3 --eval-every 500
+```
+
+`--degradation-probability 0.5` rather than the training default of 0.65: the
+head's whole job is telling clean input from degraded, and it should not be
+shown four degraded frames for every three clean ones while learning to.
+
+The scale is a property of the frame, so tiled inference computes it once from
+a downscaled whole frame and hands the same value to every tile -- otherwise a
+patch of sky inside a dim interior reads as a high-headroom frame and
+reconstructs hard, which is the failure the head exists to prevent
+reintroduced one tile at a time. `predict_fields` folds it into the residual it
+returns, so RUDRA Studio's GLSL composite stays a line-for-line port of
+`forward`'s tail and needs no change. Both are pinned by
+`tests/test_condition_gate_2026_08_29.py`.
 
 **Capacity confirms its own ablation.** v6 is better on clean (+0.25 dB, +0.05
 JOD) and worse on hard (-0.46 dB, -0.10 JOD) than v5. Four times the parameters

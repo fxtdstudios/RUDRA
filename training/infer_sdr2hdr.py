@@ -31,7 +31,7 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".mxf", ".webm"}
 def load_models(image_checkpoint: str, temporal_checkpoint: str | None, device: torch.device):
     checkpoint = torch.load(image_checkpoint, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", {})
-    image_model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
+    image_model = SDR2HDRNet.from_config(config)
     image_model.load_state_dict(checkpoint.get("model", checkpoint), strict=True)
     image_model.to(device).eval()
     temporal = None
@@ -93,12 +93,18 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     if sdr.shape[0] != 1:
         raise ValueError("predict_image expects one image at a time")
     _, _, height, width = sdr.shape
+    # The conditioning head reads whole-frame statistics, so its scale is
+    # computed once here and handed to every tile. Left to itself each tile
+    # would predict from its own window and a patch of sky inside a dim
+    # interior would reconstruct as if the whole frame were a sunset.
+    scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if sdr.is_cuda else contextlib.nullcontext()
         with amp:
             return model(sdr, preserve_outside=preserve_outside,
                          recovery_mode=recovery_mode,
-                         residual_strength=recovery_strength).hdr.float()
+                         residual_strength=recovery_strength,
+                         residual_scale=scale).hdr.float()
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
     result = torch.zeros((1, 3, height, width), device=sdr.device, dtype=torch.float32)
@@ -110,7 +116,8 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
             with amp:
                 prediction = model(tile, preserve_outside=preserve_outside,
                                    recovery_mode=recovery_mode,
-                                   residual_strength=recovery_strength).hdr.float()
+                                   residual_strength=recovery_strength,
+                                   residual_scale=scale).hdr.float()
             weight = _tile_weight(tile.shape[-2], tile.shape[-1], overlap, y, x,
                                   height, width, sdr.device)
             result[..., y:y + tile.shape[-2], x:x + tile.shape[-1]] += prediction * weight
@@ -143,14 +150,23 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
         raise ValueError("predict_fields expects one image at a time")
     _, _, height, width = sdr.shape
 
+    scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+
     def _run(tile: torch.Tensor):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda \
             else contextlib.nullcontext()
         with amp:
             out = model(tile, preserve_outside=False, recovery_mode="all",
-                        residual_strength=1.0)
-        return (out.log_residual.float(), out.highlight_mask.float(),
-                out.shadow_mask.float())
+                        residual_strength=1.0, residual_scale=scale)
+        residual = out.log_residual.float()
+        # The viewer composes from these three fields alone and knows nothing
+        # about a conditioning head, so the per-frame scale is folded into the
+        # residual here. The GLSL composite then stays a line-for-line port of
+        # forward()'s tail, and the Studio's strength slider remains a control
+        # on top of the model's judgement rather than a replacement for it.
+        if out.residual_scale is not None:
+            residual = residual * out.residual_scale.float()
+        return (residual, out.highlight_mask.float(), out.shadow_mask.float())
 
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         residual, highlight, shadow = _run(sdr)

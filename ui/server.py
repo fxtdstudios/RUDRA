@@ -99,7 +99,7 @@ def load_model(checkpoint: Path | None, device_name: str):
                       "device": device_name, "demo": True}
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     config = payload.get("config", {}) or {}
-    model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
+    model = SDR2HDRNet.from_config(config)
     model.load_state_dict(payload.get("model", payload), strict=True)
     device = torch.device(device_name)
     model.to(device).eval()

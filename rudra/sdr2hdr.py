@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -99,6 +100,88 @@ class ResidualBlock(nn.Module):
         return x + self.block(x)
 
 
+def frame_conditioning_stats(sdr: torch.Tensor, sdr_y: torch.Tensor) -> torch.Tensor:
+    """Seven per-frame scalars the pooled conv features represent badly.
+
+    Four describe headroom -- how much of the scene the SDR container could not
+    hold -- and three describe the condition the input arrived in. The 29 Aug
+    2026 measurement is why both halves are here: an oracle global residual
+    scale is bimodal in headroom on CLEAN input (median 0.125 below 1 000 nits,
+    0.969 above) and flat near full strength on DEGRADED input regardless of
+    headroom, because degradation destroys information the analytic baseline
+    cannot recover whatever the scene's range. A head that saw only headroom
+    would switch itself off on exactly the degraded low-range frames that need
+    it most.
+
+    Every statistic is differentiable: the clipping fractions are sigmoids
+    rather than thresholds, or no gradient would reach the head at all.
+    """
+    hi = torch.sigmoid((sdr_y - 0.98) * 200.0).mean(dim=(1, 2, 3))     # blown
+    lo = torch.sigmoid((0.02 - sdr_y) * 200.0).mean(dim=(1, 2, 3))     # crushed
+    mean = sdr_y.mean(dim=(1, 2, 3))
+    std = sdr_y.flatten(1).std(dim=1)
+
+    # Banding, JPEG blocking and a resampled tone curve all move luma's
+    # high-frequency energy; 4:2:0 shows up in chroma's, not luma's.
+    lap = (sdr_y[:, :, 1:-1, 1:-1] * 4.0
+           - sdr_y[:, :, :-2, 1:-1] - sdr_y[:, :, 2:, 1:-1]
+           - sdr_y[:, :, 1:-1, :-2] - sdr_y[:, :, 1:-1, 2:])
+    hf = lap.abs().mean(dim=(1, 2, 3))
+    chroma = sdr - sdr_y
+    chf = (chroma[..., 1:] - chroma[..., :-1]).abs().mean(dim=(1, 2, 3))
+
+    flat = sdr_y.flatten(1)
+    if flat.shape[1] > 1_000_000:            # torch.quantile has a size ceiling
+        flat = flat[:, :: flat.shape[1] // 1_000_000 + 1]
+    span = (torch.quantile(flat, 0.99, dim=1) - torch.quantile(flat, 0.50, dim=1))
+    return torch.stack([hi, lo, mean, std, hf, chf, span], dim=1)
+
+
+class ConditionGate(nn.Module):
+    """One residual scale per frame, predicted from headroom and degradation.
+
+    The per-pixel priors below decide WHERE to reconstruct; nothing in the
+    network decided HOW MUCH, for the frame as a whole. That is the defect the
+    29 Aug 2026 benchmark found: on clean input v5 loses 3.0 dB to its own
+    analytic baseline, concentrated entirely in low-dynamic-range frames (the
+    60 worst average -10.8 dB at a median reference peak of 238 nits, the 60
+    best +3.4 dB at 19 590 nits), because a 238-nit studio interior gets the
+    same treatment as a 20 000-nit sunset.
+
+    An oracle scale is worth +5.84 dB on clean and +0.29 dB on hard AT THE SAME
+    TIME. No constant can do it: clean wants ~0.125 and hard wants ~1.1, and the
+    constant that fixes clean throws away 85% of the hard gain. So the scale has
+    to be predicted per frame, which is all this module does.
+
+    A fresh head emits exactly 1.0, so enabling it changes nothing until it is
+    trained -- the final layer is zeroed and its bias set so that
+    sigmoid(bias) * alpha_max == 1.
+    """
+
+    def __init__(self, channels: int, hidden: int = 64, alpha_max: float = 1.25,
+                 stats: int = 7):
+        super().__init__()
+        self.alpha_max = float(alpha_max)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels * 2 + stats, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, 1),
+        )
+        last = self.mlp[-1]
+        nn.init.zeros_(last.weight)
+        nn.init.constant_(last.bias, math.log(1.0 / (self.alpha_max - 1.0)))
+
+    def forward(self, features: torch.Tensor, sdr: torch.Tensor,
+                sdr_y: torch.Tensor) -> torch.Tensor:
+        # Average pooling alone would miss the thing that matters most: a
+        # specular highlight is a max, not a mean, and it is a few pixels wide.
+        pooled = torch.cat((features.mean(dim=(2, 3)),
+                            features.amax(dim=(2, 3))), dim=1)
+        stats = frame_conditioning_stats(sdr, sdr_y).to(pooled.dtype)
+        alpha = torch.sigmoid(self.mlp(torch.cat((pooled, stats), dim=1)))
+        return (alpha * self.alpha_max).view(-1, 1, 1, 1)
+
+
 @dataclass
 class SDR2HDROutput:
     hdr: torch.Tensor
@@ -108,14 +191,22 @@ class SDR2HDROutput:
     shadow_mask: torch.Tensor
     highlight_logits: torch.Tensor
     shadow_logits: torch.Tensor
+    # (B,1,1,1) when the conditioning gate is enabled, else None. Worth logging:
+    # it is the number the 29 Aug measurement says the model was missing.
+    residual_scale: torch.Tensor | None = None
 
 
 class SDR2HDRNet(nn.Module):
     """Compact U-Net for direct SDR pixel to HDR radiance recovery."""
 
-    def __init__(self, base_channels: int = 32, log_scale: float = 16.0, max_hdr: float = 4.0):
+    def __init__(self, base_channels: int = 32, log_scale: float = 16.0, max_hdr: float = 4.0,
+                 gate_conditioning: bool = False):
         super().__init__()
         c = base_channels
+        # Off by default so every checkpoint written before 29 Aug 2026 still
+        # loads with strict=True: when it is off no parameters are created and
+        # the state dict is byte-identical to the old one.
+        self.gate_conditioning = bool(gate_conditioning)
         self.log_scale = float(log_scale)
         self.max_hdr = float(max_hdr)
         self.stem = nn.Conv2d(6, c, 3, padding=1)
@@ -131,6 +222,61 @@ class SDR2HDRNet(nn.Module):
         self.head = nn.Conv2d(c, 5, 3, padding=1)
         nn.init.zeros_(self.head.weight)
         nn.init.zeros_(self.head.bias)
+        self.gate = ConditionGate(c * 4) if self.gate_conditioning else None
+
+    @classmethod
+    def from_config(cls, config: dict | None, **overrides) -> "SDR2HDRNet":
+        """Build the architecture a checkpoint's own config describes.
+
+        Five call sites used to spell `SDR2HDRNet(base_channels=...)` by hand,
+        so any new architectural flag had to be remembered five times or a
+        strict load would fail somewhere far from the change. It is one place
+        now.
+        """
+        config = config or {}
+        kwargs = {
+            "base_channels": int(config.get("base_channels", 32)),
+            "gate_conditioning": bool(config.get("gate_conditioning", False)),
+        }
+        for key in ("log_scale", "max_hdr"):
+            if config.get(key) is not None:
+                kwargs[key] = float(config[key])
+        kwargs.update(overrides)
+        return cls(**kwargs)
+
+    def encode(self, sdr: torch.Tensor, baseline: torch.Tensor):
+        x = torch.cat((sdr, baseline), dim=1)
+        e1 = self.enc1(self.stem(x))
+        e2 = self.enc2(self.down1(e1))
+        return e1, e2, self.mid(self.down2(e2))
+
+    @torch.no_grad()
+    def predict_residual_scale(self, sdr: torch.Tensor, max_side: int = 512) -> torch.Tensor | None:
+        """The per-frame scale, computed once, from the WHOLE frame.
+
+        Tiled inference would otherwise hand each tile its own scale, computed
+        from that tile's statistics -- and the scale is a property of the
+        frame, not of a 512-pixel window. A tile of sky inside a dim interior
+        would read as a high-headroom frame and reconstruct hard, which is the
+        exact failure the head exists to prevent, reintroduced one tile at a
+        time. Callers that tile must compute this once and pass it to every
+        tile as ``residual_scale``.
+
+        Downscaling first is safe and deliberate: every statistic the head
+        reads is a pooled or fractional quantity, and it makes the extra pass
+        cost a rounding error against the tiles themselves.
+        """
+        if self.gate is None:
+            return None
+        sdr = sdr.float().clamp(0.0, 1.0)
+        longest = max(sdr.shape[-2:])
+        if longest > max_side:
+            scale = max_side / longest
+            size = (max(1, round(sdr.shape[-2] * scale)),
+                    max(1, round(sdr.shape[-1] * scale)))
+            sdr = F.interpolate(sdr, size=size, mode="area")
+        _, _, m = self.encode(sdr, sdr_to_baseline_hdr(sdr))
+        return self.gate(m, sdr, luminance(sdr))
 
     def forward(
         self,
@@ -138,15 +284,13 @@ class SDR2HDRNet(nn.Module):
         preserve_outside: bool = False,
         recovery_mode: str = "all",
         residual_strength: float | torch.Tensor = 1.0,
+        residual_scale: float | torch.Tensor | None = None,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         sdr = sdr.float().clamp(0.0, 1.0)
         baseline = sdr_to_baseline_hdr(sdr)
-        x = torch.cat((sdr, baseline), dim=1)
-        e1 = self.enc1(self.stem(x))
-        e2 = self.enc2(self.down1(e1))
-        m = self.mid(self.down2(e2))
+        e1, e2, m = self.encode(sdr, baseline)
         u2 = F.interpolate(m, size=e2.shape[-2:], mode="bilinear", align_corners=False)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
         u1 = F.interpolate(u2, size=e1.shape[-2:], mode="bilinear", align_corners=False)
@@ -188,6 +332,18 @@ class SDR2HDRNet(nn.Module):
             residual_gate = residual_gate * strength.clamp(0.0, 2.0)
         else:
             residual_gate = residual_gate * float(residual_strength)
+        # The learned per-frame scale multiplies whatever the caller asked for,
+        # so the Studio's strength slider and the artist mask stay a control ON
+        # TOP of the model's own judgement rather than a replacement for it.
+        if self.gate is not None:
+            if residual_scale is None:
+                residual_scale = self.gate(m, sdr, sdr_y)
+            elif not isinstance(residual_scale, torch.Tensor):
+                residual_scale = torch.full((sdr.shape[0], 1, 1, 1), float(residual_scale),
+                                            device=sdr.device, dtype=sdr.dtype)
+            residual_gate = residual_gate * residual_scale.to(sdr.device, sdr.dtype)
+        else:
+            residual_scale = None
         pred_log = (base_log + residual * residual_gate).clamp(0.0, torch.log1p(torch.tensor(
             self.max_hdr * self.log_scale, device=sdr.device, dtype=sdr.dtype
         )))
@@ -197,7 +353,7 @@ class SDR2HDRNet(nn.Module):
             pred = baseline + recovery * (pred - baseline)
         return SDR2HDROutput(
             pred, baseline, residual, highlight, shadow,
-            highlight_logits, shadow_logits,
+            highlight_logits, shadow_logits, residual_scale,
         )
 
 

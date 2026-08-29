@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
@@ -71,7 +71,7 @@ def load_image_checkpoint(path: str | Path, device: torch.device) -> tuple[SDR2H
         )
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     config = checkpoint.get("config", {})
-    model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
+    model = SDR2HDRNet.from_config(config)
     state = checkpoint.get("model", checkpoint)
     model.load_state_dict(state, strict=True)
     return model.to(device), checkpoint
@@ -222,6 +222,35 @@ def evaluate_temporal(image_model: SDR2HDRNet, temporal: TemporalHDRRefiner,
     return {key: value / max(count, 1) for key, value in sums.items()}
 
 
+def deterministic_eval_order(size: int, seed: int = 20260829) -> list[int]:
+    """A fixed, representative order for the validation set.
+
+    `DataLoader(val, shuffle=False)` plus `evaluate_image(max_batches=N)` does
+    not sample the validation split -- it reads the FRONT of it. On 29 Aug 2026
+    the gate run's eval (8 batches of 4) was therefore 32 records covering 11
+    scenes, every one of them alphabetically between "abandoned_factory" and
+    "blau_river", with 403 records and 87 scenes never evaluated at all. The v5
+    run's 256 records reached 86 of 97 scenes but still skewed high: median
+    reference peak 836.6 nits against the split's own 547.6, and 54.7% of
+    frames below 1 000 nits against 69.0%.
+
+    That matters because RUDRA's error correlates with headroom (+0.46 against
+    log2 peak nits): an eval slice biased towards bright scenes reports a clean
+    gain near zero while the held-out benchmark measures -3.0 dB. It is why the
+    conditioning head trained on 29 Aug learned nothing -- at its eval slice
+    there was no defect to fix, so staying at scale 1.0 was correct.
+
+    A seeded permutation keeps every property the old order had that mattered
+    -- identical records in an identical order at every step, so scores are
+    comparable across a run -- and drops the one that did not: alphabetical
+    position deciding what gets measured.
+    """
+    import random
+    order = list(range(size))
+    random.Random(seed).shuffle(order)
+    return order
+
+
 def build_loaders(args: argparse.Namespace):
     common = dict(crop_size=args.crop_size, max_items=args.max_items)
     if args.mode == "image":
@@ -268,12 +297,18 @@ def build_loaders(args: argparse.Namespace):
             num_samples=len(records), replacement=True,
             generator=torch.Generator().manual_seed(args.seed),
         )
+    # The clean and hard loaders MUST get the identical order: the two are the
+    # same records under two conditions, and clean_gain minus hard_gain is only
+    # meaningful if they describe the same frames.
+    order = deterministic_eval_order(len(val))
+    val_eval = Subset(val, order)
+    hard_eval = Subset(val_hard, order[:len(val_hard)]) if args.mode == "image" else None
     return (
         DataLoader(train, shuffle=sampler is None, sampler=sampler,
                    drop_last=len(train) >= args.batch_size, **loader_args),
-        DataLoader(val, shuffle=False, drop_last=False, **loader_args),
-        (DataLoader(val_hard, shuffle=False, drop_last=False, **loader_args)
-         if args.mode == "image" else None),
+        DataLoader(val_eval, shuffle=False, drop_last=False, **loader_args),
+        (DataLoader(hard_eval, shuffle=False, drop_last=False, **loader_args)
+         if hard_eval is not None else None),
     )
 
 
@@ -285,7 +320,9 @@ def train(args: argparse.Namespace) -> Path:
     train_loader, val_loader, val_hard_loader = build_loaders(args)
     image_model: SDR2HDRNet | None = None
     if args.mode == "image":
-        model: torch.nn.Module = SDR2HDRNet(base_channels=args.base_channels).to(device)
+        model: torch.nn.Module = SDR2HDRNet(
+            base_channels=args.base_channels,
+            gate_conditioning=args.gate_conditioning).to(device)
     else:
         if not args.image_checkpoint:
             raise ValueError("--image-checkpoint is required for temporal training")
@@ -293,7 +330,19 @@ def train(args: argparse.Namespace) -> Path:
         image_model.eval().requires_grad_(False)
         model = TemporalHDRRefiner(channels=args.temporal_channels).to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    if args.freeze_except_gate:
+        if getattr(model, "gate", None) is None:
+            raise ValueError("--freeze-except-gate needs --gate-conditioning")
+        trainable = 0
+        for name, parameter in model.named_parameters():
+            parameter.requires_grad_(name.startswith("gate."))
+            if parameter.requires_grad:
+                trainable += parameter.numel()
+        print(f"[freeze] training the conditioning head only: {trainable:,} parameters")
+
+    optimizer = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad],
+        lr=args.lr, weight_decay=args.weight_decay)
     optimizer_steps = max(math.ceil(args.steps / args.grad_accum), 1)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=optimizer_steps, eta_min=args.lr * 0.05)
     start_step, best = 0, math.inf
@@ -304,7 +353,22 @@ def train(args: argparse.Namespace) -> Path:
         raise ValueError("--resume and --init-checkpoint are mutually exclusive")
     if args.init_checkpoint:
         checkpoint = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False)
-        model.load_state_dict(checkpoint.get("model", checkpoint), strict=True)
+        missing, unexpected = model.load_state_dict(
+            checkpoint.get("model", checkpoint), strict=False)
+        # Adding the conditioning head to a checkpoint that predates it is the
+        # whole point of --gate-conditioning + --init-checkpoint, so gate.*
+        # keys are allowed to be missing. Nothing else is: a silently
+        # half-loaded backbone would train from noise and look like a bad idea
+        # rather than a bad load.
+        stray = [k for k in missing if not k.startswith("gate.")]
+        if stray or unexpected:
+            raise RuntimeError(
+                f"--init-checkpoint {args.init_checkpoint} does not match this "
+                f"architecture: missing {stray or '[]'}, unexpected {list(unexpected) or '[]'}")
+        if missing:
+            print(f"[init] {len(missing)} fresh gate parameter tensors; the rest loaded "
+                  f"from {args.init_checkpoint}")
+
     if args.resume:
         checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
         model.load_state_dict(checkpoint["model"])
@@ -512,6 +576,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temporal-weight", type=float, default=0.5)
     parser.add_argument("--shadow-chroma-weight", type=float, default=0.15)
     parser.add_argument("--shadow-smoothness-weight", type=float, default=0.02)
+    parser.add_argument("--gate-conditioning", action="store_true",
+                        help="Add the per-frame residual-scale head (rudra.sdr2hdr."
+                             "ConditionGate). The per-pixel priors decide WHERE to "
+                             "reconstruct and nothing decided HOW MUCH: on clean input "
+                             "v5 loses 3.0 dB to its own analytic baseline, all of it in "
+                             "low-dynamic-range frames. An oracle per-frame scale is "
+                             "worth +5.84 dB clean and +0.29 dB hard at once, and no "
+                             "constant can do it. A fresh head emits exactly 1.0, so "
+                             "enabling this changes nothing until it trains.")
+    parser.add_argument("--freeze-except-gate", action="store_true",
+                        help="Train only the conditioning head, everything else frozen. "
+                             "This is how to add the head to a checkpoint that already "
+                             "works: the residual is not the problem (the oracle wants "
+                             "0.97 of it on high-headroom clean frames), the missing "
+                             "piece is knowing when to apply it. Few parameters, fast, "
+                             "and it cannot damage what already works. Use with "
+                             "--init-checkpoint and --gate-conditioning.")
     parser.add_argument("--best-smoothing", type=int, default=5,
                         help="best.pt is selected on the trailing median of this many "
                              "evaluations instead of a single one. The eval set is "

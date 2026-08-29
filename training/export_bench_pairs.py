@@ -106,7 +106,7 @@ def degrade_like_eval(sdr: torch.Tensor, index: int) -> torch.Tensor:
 def load_model(checkpoint: Path, device: torch.device) -> SDR2HDRNet:
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     config = payload.get("config", {}) or {}
-    model = SDR2HDRNet(base_channels=int(config.get("base_channels", 32)))
+    model = SDR2HDRNet.from_config(config)
     model.load_state_dict(payload.get("model", payload), strict=True)
     step = payload.get("step")
     print(f"   checkpoint : {checkpoint}"
