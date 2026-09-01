@@ -24,10 +24,27 @@ param(
     [string]$Data   = "E:\RUDRA_v3_20260822",
     [string]$Python = "python",
     [int]   $Limit  = 0,
+    [ValidateSet("all","highlights","shadows","off")][string]$RecoveryMode = "all",
+    [double]$RecoveryStrength = 1.0,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+# Native stderr must never kill this script. $ErrorActionPreference = "Stop"
+# turns a NativeCommandError -- which is what PowerShell makes of ANY line a
+# native command writes to stderr -- into a TERMINATING error, so a single
+# benign warning ends the run. CVVDP emits exactly such a warning ("the mean
+# color value is less than 1") on dark frames, and on 1 Sep 2026 it stopped a
+# benchmark mid-scoring that was working perfectly. Exit codes are what decide
+# success here, and they are checked explicitly after every call.
+function Invoke-Tool([string]$exe, [string[]]$argv, [string]$log) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try   { & $exe @argv 2>&1 | Tee-Object -FilePath $log }
+    finally { $ErrorActionPreference = $previous }
+}
+
 
 if ($Name -notmatch '^[A-Za-z0-9_.-]+$') { throw "-Name must be a plain directory name, got '$Name'" }
 foreach ($reserved in @("ref", "test", "baseline")) {
@@ -83,11 +100,13 @@ try {
             Say ("-- export {0}" -f $c.Cond) Green
             $a = @($exporter, "--checkpoint", $Checkpoint, "--manifest", $manifest,
                    "--out", $c.Root, "--split", "test", "--condition", $c.Cond,
-                   "--test-name", $Name, "--only-test")
+                   "--test-name", $Name, "--only-test",
+                   "--recovery-mode", $RecoveryMode,
+                   "--recovery-strength", "$RecoveryStrength")
             if ($Limit -gt 0) { $a += @("--limit", "$Limit") }
             $log = Join-Path $logs ("export_" + $c.Cond + "_" + $Name + ".log")
             $t0 = Get-Date
-            & $Python @a 2>&1 | Tee-Object -FilePath $log
+            Invoke-Tool $Python $a $log
             if ($LASTEXITCODE -ne 0) { throw "export $($c.Cond) failed (exit $LASTEXITCODE); see $log" }
             Say ("   done in {0:hh\:mm\:ss}" -f ((Get-Date) - $t0)) DarkGray
         }
@@ -101,7 +120,7 @@ try {
                    "--nits-scale", "203", "--test-dir", $Name, "--output", $json)
             $log = Join-Path $logs ("bench_" + $c.Cond + "_" + $Name + ".log")
             $t0 = Get-Date
-            & $Python @a 2>&1 | Tee-Object -FilePath $log
+            Invoke-Tool $Python $a $log
             if ($LASTEXITCODE -ne 0) { throw "bench $($c.Cond) failed (exit $LASTEXITCODE); see $log" }
             Say ("   done in {0:hh\:mm\:ss}" -f ((Get-Date) - $t0)) DarkGray
         }

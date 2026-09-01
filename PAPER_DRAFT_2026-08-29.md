@@ -281,6 +281,46 @@ We record that this passage has been corrected twice against fresh measurement.
 The first draft claimed the model invents highlights; the second claimed the
 penalty was tail-carried. Both were wrong, and both were plausible.
 
+### 6.1 The shadow arm, ablated
+
+The hypothesis is directly testable: disable the shadow prior and rescore the
+same 429 frames. `--recovery-mode highlights` does exactly that.
+
+| configuration | clean | hard |
+|---|---:|---:|
+| shadow arm **on** (shipped) | **−3.00 dB** / −0.046 JOD | **+1.43 dB** / +0.443 JOD |
+| shadow arm **off** | **+0.51 dB** / −0.017 JOD | +0.33 dB / +0.134 JOD |
+
+**Confirmed, and it is a trade rather than a free win.** Turning the shadow arm
+off moves clean by **+3.51 dB** — the regression does not merely shrink, it
+inverts, and the model now *beats* the analytic baseline on clean input by
+0.51 dB. It costs **1.10 dB** on degraded input. So the shadow path is the whole
+of the clean regression, and simultaneously carries most of the degraded-input
+gain: crushed shadows are exactly what a bad tone curve produces and exactly
+what a well-graded frame does not have.
+
+**This reframes the gate problem, and makes it tractable.** §7 asks a hard
+question — predict a continuous per-frame scale, of which only 21% of the
+variance is explained by the clean/degraded distinction. The shadow arm asks an
+easy one: it is a *binary* decision, and its correct setting is *exactly* the
+clean/degraded axis. That axis is the part that is partially detectable — a
+frame-grouped cross-validated classifier on the same features reaches **75.5%**
+(§7.2), against 3% of the variance explained for the continuous target.
+
+At that measured accuracy, a switch on the shadow arm alone is worth:
+
+| | clean | hard |
+|---|---:|---:|
+| shipped | −3.00 dB | +1.43 dB |
+| 75.5%-accurate arm switch | **−0.35 dB** | **+1.16 dB** |
+
+**+2.65 dB of clean recovered for 0.27 dB of hard**, from a component we have
+already measured as buildable. This is the concrete recommendation this paper
+ends with, and it is the one thing here we have not yet trained. The estimate
+assumes classifier errors are independent of frame difficulty, which is
+optimistic; the honest reading is that it is an upper bound on a switch of that
+accuracy, not a promise.
+
 ## 7. What an adaptive gate is worth, and why it cannot be had
 
 ### 7.1 The opportunity

@@ -139,6 +139,22 @@ def main() -> int:
                              "baseline/ an earlier export already produced")
     parser.add_argument("--no-baseline", action="store_true",
                         help="skip the analytic baseline tree")
+    parser.add_argument("--recovery-mode", default="all",
+                        choices=("all", "highlights", "shadows", "off"),
+                        help="Which arm of the per-pixel gate is allowed to fire. The "
+                             "default 'all' is what ships. 'highlights' disables the "
+                             "SHADOW arm, which is the ablation the 1 Sep 2026 error "
+                             "analysis calls for: on clean frames below 400 nits the "
+                             "worst 1%% of pixels sit at a median true luminance of 4 "
+                             "nits against 21 frame-wide, so the damage looks like the "
+                             "shadow prior firing on content that needs no "
+                             "reconstruction. If that is right, --recovery-mode "
+                             "highlights should recover most of the clean deficit while "
+                             "leaving the hard gain intact.")
+    parser.add_argument("--recovery-strength", type=float, default=1.0,
+                        help="Global scale on the gate. The oracle sweep wanted ~0.125 on "
+                             "clean and ~1.1 on hard; this exposes that dial to the "
+                             "benchmark so a constant can be scored honestly.")
     parser.add_argument("--preserve-outside", action="store_true", default=True)
     parser.add_argument("--raw", dest="preserve_outside", action="store_false",
                         help="export the unblended prediction")
@@ -205,7 +221,8 @@ def main() -> int:
         def predict(tile_size: int) -> torch.Tensor:
             return predict_image(model, sdr, preserve_outside=args.preserve_outside,
                                  tile_size=tile_size, overlap=args.tile_overlap,
-                                 recovery_mode="all", recovery_strength=1.0)
+                                 recovery_mode=args.recovery_mode,
+                                 recovery_strength=args.recovery_strength)
 
         try:
             hdr = predict(args.tile_size)
@@ -241,6 +258,8 @@ def main() -> int:
         "split": args.split, "condition": args.condition,
         "test_name": args.test_name,
         "preserve_outside": bool(args.preserve_outside),
+        "recovery_mode": args.recovery_mode,
+        "recovery_strength": args.recovery_strength,
         "frames": written, "skipped": skipped,
         "units": "scene-linear, diffuse white = 1.0",
         "nits_scale_for_bench": DIFFUSE_WHITE_NITS,

@@ -27,6 +27,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Native stderr must never kill this script. $ErrorActionPreference = "Stop"
+# turns a NativeCommandError -- which is what PowerShell makes of ANY line a
+# native command writes to stderr -- into a TERMINATING error, so a single
+# benign warning ends the run. CVVDP emits exactly such a warning ("the mean
+# color value is less than 1") on dark frames, and on 1 Sep 2026 it stopped a
+# benchmark mid-scoring that was working perfectly. Exit codes are what decide
+# success here, and they are checked explicitly after every call.
+function Invoke-Tool([string]$exe, [string[]]$argv, [string]$log) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try   { & $exe @argv 2>&1 | Tee-Object -FilePath $log }
+    finally { $ErrorActionPreference = $previous }
+}
+
+
 $manifest = Join-Path $Data "sdr_hdr_manifest.jsonl"
 $ckptV5   = Join-Path $Data "checkpoints\sdr2hdr_image_v5\shipped_v5_step81000.pt"
 $ckptV6   = Join-Path $Data "checkpoints\sdr2hdr_image_v6_c64\best.pt"
@@ -101,7 +116,7 @@ try {
 
         $log = Join-Path $logs ("export_" + $e.Cond + "_" + $e.Tree + ".log")
         $started = Get-Date
-        & $Python @a 2>&1 | Tee-Object -FilePath $log
+        Invoke-Tool $Python $a $log
         if ($LASTEXITCODE -ne 0) { throw "export $($e.Name) failed (exit $LASTEXITCODE); see $log" }
         Say ("   done in {0:hh\:mm\:ss}" -f ((Get-Date) - $started)) DarkGray
     }
@@ -131,7 +146,7 @@ try {
         )
         $log = Join-Path $logs ("bench_" + $s.Cond + "_" + $s.Tree + ".log")
         $started = Get-Date
-        & $Python @a 2>&1 | Tee-Object -FilePath $log
+        Invoke-Tool $Python $a $log
         if ($LASTEXITCODE -ne 0) { throw "bench $($s.Cond)/$($s.Tree) failed (exit $LASTEXITCODE); see $log" }
         Say ("   done in {0:hh\:mm\:ss}" -f ((Get-Date) - $started)) DarkGray
     }
