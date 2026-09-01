@@ -22,7 +22,8 @@ low-dynamic-range frames: the 60 worst average **−10.76 dB** at a median
 ground-truth peak of **238 nits**, the 60 best **+3.41 dB** at **19,590 nits**,
 with correlation **+0.46** between gain and `log2(peak_nits)`. The model has no
 representation of how much headroom a frame has, and so cannot decide to do
-nothing.
+nothing. The penalty is carried by the tail of the error distribution rather
+than its bulk (§6), which is itself a caution about the metric.
 
 We then measure what fixing that would be worth, and whether it can be fixed. An
 oracle per-frame scale on the residual is worth **+5.84 dB on clean and +0.29 dB
@@ -54,16 +55,59 @@ What follows is the system that exists, measured with the metrics that exist.
 
 ---
 
-## 2. Method
+## 2. Related work
 
-### 2.1 Storage and units
+> **Draft note.** Citation slots are marked `[CITE]` and are deliberately
+> unfilled. This section names the families of work this result sits among; it
+> does not attribute numbers or claims to specific papers, because those
+> attributions have not been verified against the sources. Filling them is a
+> prerequisite for submission, not an optional polish. The failure mode this
+> replaces — placeholder tables presented as measurements — is documented in
+> `PAPER_ERRATA.md` and is the reason for the caution.
+
+**Single-image inverse tone mapping.** The dominant framing learns a mapping
+from an 8-bit frame to a higher-range one, typically with an encoder-decoder and
+a loss in a perceptual or log domain, and typically evaluated on synthetically
+clipped data. `[CITE]` Our architecture is deliberately smaller than this line
+of work (1.2 M parameters) and is a *residual on an analytic inverse tone map*
+rather than a direct predictor, which is what makes "does the network beat doing
+nothing?" a question we can ask at every step of training.
+
+**Highlight and clipped-region reconstruction.** A related family treats the
+problem as inpainting the saturated regions specifically, rather than remapping
+the whole frame. `[CITE]` Our highlight and shadow masks serve the same purpose,
+but are predicted jointly with the residual and gated by a luminance prior
+rather than by a detected saturation mask. §6 is a direct criticism of that
+choice.
+
+**Evaluation of HDR reconstruction.** PU21-PSNR `[CITE]` and ColorVideoVDP
+`[CITE]` are the two public measuring sticks we use. §5 reports a case where
+they disagree by two orders of magnitude in magnitude on the same frames, and §5
+shows the PU21 penalty is tail-carried; we are not aware of that disagreement
+being characterised for this task, and it is a contribution of this paper
+independent of the model.
+
+**Training data for HDR.** The scarcity of paired SDR/HDR footage shapes every
+result here `[CITE]`; §4 documents a distribution shift between our own training
+and held-out splits that we did not design and that a reader should weigh.
+
+**What we could not compare against.** No published method is evaluated on our
+split. `rudra bench --test-dir <method>` scores any third-party output against
+the same reference; that comparison is the single most valuable addition to this
+paper and its absence is stated again in §9.
+
+---
+
+## 3. Method
+
+### 3.1 Storage and units
 
 HDR targets are stored in `log2_extended`: 0.005 to 1,000,000 nits at 2,377
 codes per stop. Network units are **nits / 10,000**, so 1.0 is 10,000 nits and
 diffuse white (BT.2408, 203 nits) is 0.0203. The network clamps its output at
 `max_hdr = 4.0` (40,000 nits).
 
-### 2.2 Architecture
+### 3.2 Architecture
 
 A compact U-Net (`rudra/sdr2hdr.py`, **1,196,197 parameters**, 4.6 MiB float32)
 predicts three fields from the SDR frame and its analytic inverse-ACES baseline:
@@ -80,7 +124,7 @@ the SDR mapping non-invertible, and the physically-grounded analytic baseline is
 preserved through ordinary midtones. Note for §5: this gate sees **one pixel's
 brightness and nothing else**.
 
-### 2.3 Censored observations
+### 3.3 Censored observations
 
 A pixel sitting on a source's delivery ceiling means "≥ ceiling", not
 "= ceiling"; plain L1 against those pixels teaches the model to cap highlights.
@@ -91,7 +135,29 @@ effect on this corpus in practice: `censored_fraction` averages **0.0003**.
 
 ---
 
-## 3. Corpus, splits, and a distribution shift we did not intend
+### 3.4 Training setup
+
+| | v5 (shipped) | v6 (capacity ablation) |
+|---|---|---|
+| base channels | 32 | 64 |
+| parameters | 1,196,197 | 4,772,485 |
+| crop | 384 | 384 |
+| batch × grad-accum | 2 × 2 | 2 × 2 |
+| optimiser | AdamW, lr 2e-4, wd 1e-4, cosine to 5% | same |
+| gradient clip | 1.0 | same |
+| degradation probability | 0.65 | same |
+| scene-balanced sampling | yes, 40% video mass | same |
+| steps | 100,000 | 100,000 |
+| eval | every 1,000 steps, 256 held-out crops, both conditions | same |
+| selection | `composite_gain = hard_gain + min(0, clean_gain)` | same |
+| hardware | one NVIDIA RTX 4080 SUPER | same |
+| seed | 20260715 | 20260715 |
+
+The corpus manifest is pinned by SHA-256 in every checkpoint's `config.json`, so
+a run can be tied to the exact record set it saw.
+
+
+## 4. Corpus, splits, and a distribution shift we did not intend
 
 27,678 training / 435 validation / 429 test records; val and test are 97 scenes
 each at 1280×720. Sampling is scene-balanced with a 40% video mass.
@@ -104,13 +170,13 @@ The held-out splits are **not** drawn from the training distribution:
 | val | 548 nits | 69.0% | 38.2% | 33.8% |
 | test | 546 nits | 58.0% | **45.2%** | 32.9% |
 
-The band in which the model fails (§5) is **45.2% of the test split and 27.2% of
+The band in which the model fails (§6) is **45.2% of the test split and 27.2% of
 what the sampler draws**. We report this because it is a confound in our own
 results, and because §6 shows it is not the binding constraint.
 
 ---
 
-## 4. Results
+## 5. Results
 
 `training/export_bench_pairs.py` renders each held-out record at native
 resolution into scene-linear EXR trees; `rudra bench --nits-scale 203` scores
@@ -149,7 +215,7 @@ difference. What the model adds to well-graded input is highlight energy that
 PU21-PSNR punishes and no viewer sees. *The clean PU21 row should never be
 reported without the JOD beside it.*
 
-### 4.1 Capacity is not the constraint
+### 5.1 Capacity is not the constraint
 
 v6 quadruples width to 4.77 M parameters. It is better on clean (+0.25 dB,
 +0.05 JOD) and worse on hard (−0.46 dB, −0.10 JOD) than v5 — movement in both
@@ -157,7 +223,7 @@ directions smaller than the spread between conditions.
 
 ---
 
-## 5. The failure mode has a name
+## 6. The failure mode has a name
 
 The clean regression is concentrated, not diffuse. Splitting clean frames by the
 headroom the ground truth actually has:
@@ -175,17 +241,32 @@ roughly 10,000 nits; on degraded input it is flat and positive at every
 headroom. The model's error is a function of the scene, and only when the input
 arrives clean.
 
-Correlation between `log2(peak_nits)` and gain: **+0.46**. Where the reference
-barely exceeds diffuse white the model invents highlights that are not there;
-where the reference genuinely holds 20,000 nits, it finds them. The per-pixel
-luminance gate of §2.2 cannot distinguish a 238-nit studio interior from a
+Correlation between `log2(peak_nits)` and gain: **+0.46**. The per-pixel
+luminance gate of §3.2 cannot distinguish a 238-nit studio interior from a
 20,000-nit sunset, because it never sees the frame.
+
+**What the error actually is, and a caution about the metric.** On a 26-frame
+subset we measured the per-pixel `log2` luminance error directly. Below 400
+nits the model's *signed* error is **+0.099 stops** — it does place more light
+in the scene than the reference contains — but its **mean absolute** error is
+**0.151 against the baseline's 0.226**, i.e. *lower*. Above 400 nits the
+relationship inverts (0.033 against 0.025). So the 10.76 dB PU21-PSNR penalty on
+low-headroom frames is **not** a uniformly worse reconstruction: the bulk of the
+distribution is tighter than the baseline's, and the penalty is carried by a
+tail. PU21-PSNR is a squared error in a perceptually-uniform space and is
+correspondingly tail-sensitive; CVVDP, which is not, reports −0.046 JOD.
+
+We flag this rather than resolve it. The sample is 26 frames, and characterising
+the tail properly — which pixels, at what luminance, under which content — is
+the obvious next measurement. It does not change the headline result, and it
+sharpens the caution in §5: on this problem the choice of metric decides the
+sign of the answer.
 
 ---
 
-## 6. What an adaptive gate is worth, and why it cannot be had
+## 7. What an adaptive gate is worth, and why it cannot be had
 
-### 6.1 The opportunity
+### 7.1 The opportunity
 
 Give the composite a single global scale `α` on the residual and let an oracle
 choose it per frame (27 held-out scenes, PU21 gain over the analytic baseline):
@@ -221,7 +302,7 @@ strength regardless, because degradation destroys information the baseline
 cannot recover whatever the scene's range. A gate would need to see **headroom
 and condition together**.
 
-### 6.2 The ceiling
+### 7.2 The ceiling
 
 We built that gate — a pooled-feature head predicting α (`ConditionGate`,
 21,121 parameters) — and trained it three times: twice through the
@@ -254,17 +335,17 @@ or a 20,000-nit sun. **That is the information limit of single-image inverse
 tone mapping, not a feature-engineering gap.** The +5.84 dB an oracle gate is
 worth is mostly unreachable from the input.
 
-### 6.3 Three levers, one bound
+### 7.3 Three levers, one bound
 
 | lever varied | change | effect on the bound |
 |---|---|---|
-| capacity | 1.20 M → 4.77 M parameters | ±0.5 dB, sign varies (§4.1) |
+| capacity | 1.20 M → 4.77 M parameters | ±0.5 dB, sign varies (§5.1) |
 | corpus | 6× footage (v4) | +0.03 dB |
 | objective | censored loss; oracle supervision | no movement in α |
 
 ---
 
-## 7. Evaluation methodology: three defects we found in our own harness
+## 8. Evaluation methodology: three defects we found in our own harness
 
 We report these because each silently corrupted a result we believed, and each
 is a mistake any comparable pipeline can make.
@@ -297,13 +378,13 @@ against itself. Master EXR output was never affected.
 
 ---
 
-## 8. Limitations
+## 9. Limitations
 
 - **Held-out size.** 429 test frames over 97 scenes. §6's oracle and ceiling
   analyses use 27 and 51 frames respectively, one per scene; that sample runs
   ≈1.15 dB pessimistic on clean against the full set (−4.15 dB at α=1 where the
   full 429 read −3.00). Ordering is reliable, absolute values will move.
-- **Train/test distribution shift** (§3) is a confound in the clean result. §6.2
+- **Train/test distribution shift** (§4) is a confound in the clean result. §7.2
   argues it is not the binding constraint, but we have not retrained under a
   matched sampler to prove it.
 - **The oracle is an upper bound.** It reads the ground truth.
@@ -315,11 +396,15 @@ against itself. Master EXR output was never affected.
 - **No comparison to published inverse tone mapping methods.** Every number here
   is against our own analytic baseline. `rudra bench --test-dir <method>` scores
   any third-party output against the same reference, and that comparison is the
-  obvious next step.
+  obvious next step. This is the paper's largest gap and we do not minimise it.
+- **The related-work section carries unfilled `[CITE]` markers** and must not be
+  submitted in that state (§2).
+- **The tail-versus-bulk result in §6 rests on 26 frames** and is reported as an
+  observation, not a characterisation.
 
 ---
 
-## 9. Reproducibility
+## 10. Reproducibility
 
 ```bash
 # the full benchmark: four exports, six scorings, resumable
@@ -341,7 +426,7 @@ Weights, pairs and HDR sources are not committed; `training/` regenerates them.
 
 ---
 
-## 10. Conclusion
+## 11. Conclusion
 
 A 1.2 M-parameter residual on an analytic inverse tone map is worth **+1.43 dB
 and +0.44 JOD on degraded input, on 81% of held-out frames** — and on clean
