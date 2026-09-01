@@ -480,10 +480,41 @@ head:
   not the culprit: `censored_fraction` averages **0.0003**.
 
 Freezing a backbone and training a head against the loss that produced the
-defect cannot remove the defect, because that loss does not contain it. The
-next attempt should supervise alpha directly against the oracle -- it is one
-scalar per frame, computable at training time by a line search over the same
-composite, and it is defined by the metric the model is actually judged on.
+defect cannot remove the defect, because that loss does not contain it. So the
+scale is supervised directly instead: `training/gate_oracle.py` finds it by a
+line search over the same composite, and `training/train_gate.py` regresses the
+head onto it, on whole frames rather than the 384-pixel crops the ordinary
+training step was feeding a whole-frame judgement.
+
+**The target is real; the input is not sufficient.** On held-out frames the
+oracle wants alpha **0.10 on clean input and 0.83 on degraded**, and shipping
+alpha=1 costs **-4.71 dB** where the oracle gets **+0.12 dB**. The head learns
+to move -- and lands on the average of the two, predicting 0.838 clean against
+0.834 hard. It cannot separate the conditions, because the evidence is not in
+what it is given:
+
+| separating clean from degraded | separation | single-threshold accuracy |
+| --- | ---: | ---: |
+| chroma high-frequency energy, native resolution | 1.13 sd | -- |
+| chroma phase (the 4:2:0 tell) | 0.89 sd | 67% |
+| 8x8 blockiness (the JPEG tell) | 0.43 sd | 61% |
+| luma high-frequency energy | 0.19 sd | -- |
+| banding, occupied luma levels | 0.00 sd | 57% |
+
+One measured fix landed from this: the statistics are now read at NATIVE
+resolution while the pooled features still come from the downscaled view.
+Chroma high-frequency energy separates at 1.13 sd natively and 0.60 sd -- with
+the sign inverted -- in the 512-pixel view, because an area resize is a low-pass
+filter over exactly the artefacts that mark a degraded input. Luma
+high-frequency energy falls from 0.19 sd to 0.01 the same way.
+
+But 67% is not enough to gate on, and hand-crafted global statistics look like
+the wrong instrument: the condition half of this problem is a texture
+classification, and pooled means and maxima of a reconstruction backbone's
+mid-layer discard exactly the spatial structure that would carry it. The next
+design step is a small dedicated convolutional stem over native-resolution
+pixels, learning its own condition features, rather than a ninth hand-written
+statistic.
 
 The scale is a property of the frame, so tiled inference computes it once from
 a downscaled whole frame and hands the same value to every tile -- otherwise a

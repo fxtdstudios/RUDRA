@@ -269,13 +269,23 @@ class SDR2HDRNet(nn.Module):
         if self.gate is None:
             return None
         sdr = sdr.float().clamp(0.0, 1.0)
+        view = sdr
         longest = max(sdr.shape[-2:])
         if longest > max_side:
             scale = max_side / longest
             size = (max(1, round(sdr.shape[-2] * scale)),
                     max(1, round(sdr.shape[-1] * scale)))
-            sdr = F.interpolate(sdr, size=size, mode="area")
-        _, _, m = self.encode(sdr, sdr_to_baseline_hdr(sdr))
+            view = F.interpolate(sdr, size=size, mode="area")
+        _, _, m = self.encode(view, sdr_to_baseline_hdr(view))
+        # Pooled features come from the downscaled view -- alpha is a whole-frame
+        # judgement and that is what makes the encode affordable. The statistics
+        # come from the NATIVE frame, because the evidence that an input arrived
+        # degraded lives at the pixel scale and an area resize is a low-pass
+        # filter over it. Measured on 27 held-out frames on 29 Aug 2026: chroma
+        # high-frequency energy separates clean from degraded at 1.13 sd at
+        # native resolution and 0.60 sd -- with the sign inverted -- in the
+        # 512-pixel view. Same reason luma high-frequency energy falls from
+        # 0.19 sd to 0.01.
         return self.gate(m, sdr, luminance(sdr))
 
     def forward(
