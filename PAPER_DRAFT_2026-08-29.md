@@ -136,6 +136,13 @@ Per-frame, v5 against the baseline:
 | hard | **+1.427 dB** | +0.609 | **346 / 429 (81%)** | **+0.443** | +0.134 |
 | clean | −2.999 dB | −2.131 | 115 / 429 (27%) | **−0.046** | −0.040 |
 
+![Per-frame gain distributions under both metrics](docs/figures/fig3_metric_disagreement.png)
+
+**Figure 1.** Per-frame gain over the analytic baseline, 429 held-out frames.
+Vertical rules mark the means. The clean distribution is broad and left-shifted
+in PU21-PSNR and collapses onto zero in CVVDP: the same frames, the same models,
+two metrics that disagree in magnitude by two orders of magnitude.
+
 **The metrics disagree by two orders of magnitude on clean input.** A 3.0 dB
 PU21-PSNR loss corresponds to −0.046 JOD, far below a just-noticeable
 difference. What the model adds to well-graded input is highlight energy that
@@ -160,6 +167,14 @@ headroom the ground truth actually has:
 | 60 worst | **−10.76 dB** | 238 nits |
 | 60 best | **+3.41 dB** | 19,590 nits |
 
+![Gain against ground-truth peak luminance](docs/figures/fig1_gain_vs_headroom.png)
+
+**Figure 2.** Per-frame gain against the headroom the ground truth actually has,
+log x-axis, with binned medians. On clean input the trend rises through zero at
+roughly 10,000 nits; on degraded input it is flat and positive at every
+headroom. The model's error is a function of the scene, and only when the input
+arrives clean.
+
 Correlation between `log2(peak_nits)` and gain: **+0.46**. Where the reference
 barely exceeds diffuse white the model invents highlights that are not there;
 where the reference genuinely holds 20,000 nits, it finds them. The per-pixel
@@ -180,6 +195,13 @@ choose it per frame (27 held-out scenes, PU21 gain over the analytic baseline):
 | 1.0 — as shipped | **−4.15** | +1.08 |
 | 0.125 — best single constant | +0.83 | **+0.17** |
 | per-frame oracle | **+1.69** | **+1.37** |
+
+![The alpha sweep, clean and degraded](docs/figures/fig2_alpha_sweep.png)
+
+**Figure 3.** Mean gain as a function of a global scale α on the learned
+residual. The curves cross: every α that helps one condition hurts the other,
+and the shipped α = 1 is near-optimal for degraded input and near-worst for
+clean.
 
 The conditions want opposite settings: clean improves monotonically as α falls
 to ≈0.125, hard as it rises to ≈1.1. **No constant serves both** — the constant
