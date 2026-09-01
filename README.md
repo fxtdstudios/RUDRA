@@ -508,13 +508,35 @@ the sign inverted -- in the 512-pixel view, because an area resize is a low-pass
 filter over exactly the artefacts that mark a degraded input. Luma
 high-frequency energy falls from 0.19 sd to 0.01 the same way.
 
-But 67% is not enough to gate on, and hand-crafted global statistics look like
-the wrong instrument: the condition half of this problem is a texture
-classification, and pooled means and maxima of a reconstruction backbone's
-mid-layer discard exactly the spatial structure that would carry it. The next
-design step is a small dedicated convolutional stem over native-resolution
-pixels, learning its own condition features, rather than a ninth hand-written
-statistic.
+**And the gate is not worth building further.** Before a fourth attempt, the
+ceiling was measured directly: 51 held-out frames, each clean and degraded
+(102 samples), the exact features the head is given, a linear readout,
+cross-validated by FRAME so a clean/degraded pair can never straddle the split.
+
+| knowing | MAE on oracle alpha | R2 |
+| --- | ---: | ---: |
+| nothing (predict the mean) | 0.501 | 0.000 |
+| the features, via a linear readout | 0.487 | **+0.031** |
+| the condition, **perfectly** | 0.409 | **+0.213** |
+| the oracle itself | 0.000 | 1.000 |
+
+Two numbers end the line of work. The features the head is given explain **3%**
+of the variance in the target. And **79% of that variance is WITHIN a
+condition, only 21% between** -- clean alpha has mean 0.436 and standard
+deviation 0.471, degraded 0.925 and 0.469 -- so a perfect clean-versus-degraded
+classifier, which is all a convolutional condition stem could buy, caps out at
+R2 0.213. The remaining 79% is per-frame: whether *this* frame's clipped region
+was a 200-nit lamp or a 20 000-nit sun. 55% of frames want alpha at one end of
+the grid or the other, so it is close to a binary decision, and it is one an
+8-bit SDR frame does not carry the evidence to make.
+
+That is not a feature-engineering gap. It is the information limit of
+single-image inverse tone mapping, measured rather than asserted, and it is the
+more useful result: the +5.84 dB an oracle gate is worth is mostly
+**unreachable from the input**, and any paper claiming otherwise owes this
+decomposition. The gate code stays -- it is tested, it is correct, and
+`ConditionGate` emits exactly 1.0 untrained, so nothing depends on it -- but no
+further capacity is going into it.
 
 The scale is a property of the frame, so tiled inference computes it once from
 a downscaled whole frame and hands the same value to every tile -- otherwise a
