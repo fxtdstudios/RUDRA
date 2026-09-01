@@ -450,6 +450,41 @@ python training/train_sdr2hdr.py --mode image --manifest <manifest> \
 head's whole job is telling clean input from degraded, and it should not be
 shown four degraded frames for every three clean ones while learning to.
 
+**It did not work, and the reason is the objective.** Two runs of 8 000 steps,
+`gate_v7` and `gate_v8`. The first had an unrepresentative eval (the front-of-
+split bug above) and was flat. The second ran with the fixed eval -- which now
+reports `clean_gain -0.220` at step 0 rather than `+0.614`, so it is finally
+measuring a representative slice -- and was flat too: clean drifted -0.220 to
+-0.328, hard held at +2.23, and `best.pt` was never updated from its step-0
+save. Asked directly what it emits on held-out frames, the trained head gives
+alpha in **[1.0125, 1.0802]**, correlation with `log2(peak_nits)` of **-0.037**.
+On the six lowest-headroom frames (102-149 nits), where the oracle wanted
+**0.125**, it emits **1.02-1.07**. It learned a uniform 4% nudge upward and
+nothing else.
+
+Three things put the defect outside the head's reach, and none of them is the
+head:
+
+- **Distribution.** The band the failure lives in -- below 400 nits, near
+  diffuse white -- is **45.2%** of the test split and **38.2%** of val, but only
+  **27.2%** of what the scene-balanced sampler actually draws from train
+  (weighted median peak 1 713 nits against test's 546). The model is judged on a
+  distribution it is not trained on.
+- **Metric.** The training loss is a censored log-domain L1 on 384-pixel crops
+  of downscaled frames; the benchmark is PU21-PSNR on full native frames against
+  an unclamped reference. Inventing an order of magnitude of luminance is
+  enormous in the second and mild in the first.
+- **Signal.** `log_l1` averages **0.037** of a total of **0.141**, while `mask`
+  (0.293) and `highlight` (0.165) dominate -- and with the backbone frozen those
+  two are constant, so the head is left steering on the small term. Censoring is
+  not the culprit: `censored_fraction` averages **0.0003**.
+
+Freezing a backbone and training a head against the loss that produced the
+defect cannot remove the defect, because that loss does not contain it. The
+next attempt should supervise alpha directly against the oracle -- it is one
+scalar per frame, computable at training time by a line search over the same
+composite, and it is defined by the metric the model is actually judged on.
+
 The scale is a property of the frame, so tiled inference computes it once from
 a downscaled whole frame and hands the same value to every tile -- otherwise a
 patch of sky inside a dim interior reads as a high-headroom frame and
