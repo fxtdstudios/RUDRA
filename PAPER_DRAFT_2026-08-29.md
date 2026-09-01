@@ -245,24 +245,41 @@ Correlation between `log2(peak_nits)` and gain: **+0.46**. The per-pixel
 luminance gate of §3.2 cannot distinguish a 238-nit studio interior from a
 20,000-nit sunset, because it never sees the frame.
 
-**What the error actually is, and a caution about the metric.** On a 26-frame
-subset we measured the per-pixel `log2` luminance error directly. Below 400
-nits the model's *signed* error is **+0.099 stops** — it does place more light
-in the scene than the reference contains — but its **mean absolute** error is
-**0.151 against the baseline's 0.226**, i.e. *lower*. Above 400 nits the
-relationship inverts (0.033 against 0.025). So the 10.76 dB PU21-PSNR penalty on
-low-headroom frames is **not** a uniformly worse reconstruction: the bulk of the
-distribution is tighter than the baseline's, and the penalty is carried by a
-tail. PU21-PSNR is a squared error in a perceptually-uniform space and is
-correspondingly tail-sensitive; CVVDP, which is not, reports −0.046 JOD.
+**What the error actually is: shadows, and only partly a tail.** On 51 clean
+held-out frames we computed the per-pixel PU21 squared error for both the model
+and the baseline, then recomputed each PSNR with the worst pixels progressively
+discarded. If the penalty were carried by a few bad pixels the gap would close.
 
-We flag this rather than resolve it. The sample is 26 frames, and characterising
-the tail properly — which pixels, at what luminance, under which content — is
-the obvious next measurement. It does not change the headline result, and it
-sharpens the caution in §5: on this problem the choice of metric decides the
-sign of the answer.
+| discard worst | baseline | RUDRA | gap |
+|---|---:|---:|---:|
+| — | 54.40 | 48.84 | **−5.55 dB** |
+| 0.1% | 54.70 | 49.40 | −5.30 |
+| 1% | 55.36 | 51.14 | −4.23 |
+| 10% | 57.58 | 54.34 | **−3.23 dB** |
 
----
+*Frames below 400 nits, n = 25.* The gap **narrows but does not close**:
+discarding a tenth of every frame removes 2.3 dB of the 5.55 and leaves 3.2. So
+the penalty is **partly** tail-carried and mostly broad — the worst 1% of pixels
+do carry **32%** of the model's total squared error, but the bulk of the
+distribution is genuinely worse too.
+
+**And the damage is in the shadows, not the highlights.** At the worst 1% of
+pixels the *true* luminance has median **4 nits**, against **21 nits**
+frame-wide — those pixels are darker than typical, not brighter. Only **46%** of
+them are over-predicted; the rest are under. On frames at or above 400 nits the
+model and the baseline are level (−0.03 dB) and the worst pixels move to the
+bright end instead (median 560 nits against 57 frame-wide).
+
+This relocates the failure. §3.2's gate has two arms, a highlight prior and a
+shadow prior, and on a low-dynamic-range scene the shadow arm fires on content
+that needs no reconstruction at all. The headroom correlation of +0.46 is real,
+but the mechanism behind it is the **shadow** path, not invented highlights —
+which is a specific, testable target that the oracle experiments of §7, being a
+single global scale, could not have isolated.
+
+We record that this passage has been corrected twice against fresh measurement.
+The first draft claimed the model invents highlights; the second claimed the
+penalty was tail-carried. Both were wrong, and both were plausible.
 
 ## 7. What an adaptive gate is worth, and why it cannot be had
 
@@ -399,8 +416,9 @@ against itself. Master EXR output was never affected.
   obvious next step. This is the paper's largest gap and we do not minimise it.
 - **The related-work section carries unfilled `[CITE]` markers** and must not be
   submitted in that state (§2).
-- **The tail-versus-bulk result in §6 rests on 26 frames** and is reported as an
-  observation, not a characterisation.
+- **The shadow-versus-highlight result in §6 rests on 51 frames** at one
+  degradation setting, and the shadow-arm hypothesis it suggests is untested:
+  we have not ablated the shadow prior to confirm it.
 
 ---
 
