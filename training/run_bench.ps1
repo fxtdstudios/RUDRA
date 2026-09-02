@@ -37,7 +37,11 @@ $ErrorActionPreference = "Stop"
 function Invoke-Tool([string]$exe, [string[]]$argv, [string]$log) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try   { & $exe @argv 2>&1 | Tee-Object -FilePath $log }
+    # ForEach-Object { "$_" } casts each merged stderr object to a plain string
+    # BEFORE PowerShell renders it. Without the cast the first stderr line comes
+    # through as an ErrorRecord and prints with the full red NativeCommandError
+    # decoration -- a benign CVVDP warning that looks exactly like a crash.
+    try   { & $exe @argv 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log }
     finally { $ErrorActionPreference = $previous }
 }
 

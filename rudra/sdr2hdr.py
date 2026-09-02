@@ -182,6 +182,56 @@ class ConditionGate(nn.Module):
         return (alpha * self.alpha_max).view(-1, 1, 1, 1)
 
 
+class ShadowGate(nn.Module):
+    """One number per frame: how much of the shadow prior to let through.
+
+    Measured on 429 held-out frames, 1 Sep 2026. Disabling the shadow arm
+    entirely (`--recovery-mode highlights`) moves clean input by **+3.51 dB** --
+    the regression against the analytic baseline does not shrink, it inverts to
+    +0.51 dB -- and costs **1.10 dB** on degraded input. The shadow path is the
+    whole of the clean regression and most of the degraded-input gain at the
+    same time, because crushed shadows are what a bad tone curve produces and
+    what a well-graded frame does not have.
+
+    That makes this a far easier problem than the continuous residual scale of
+    `ConditionGate`. It is BINARY, and its correct setting is exactly the
+    clean-versus-degraded axis -- the one thing about a frame that is partially
+    detectable (75.5% under frame-grouped cross-validation, against 3% of the
+    variance explained for the continuous target). At that accuracy a switch is
+    worth +2.65 dB on clean for 0.27 dB on hard.
+
+    Output 1.0 reproduces `recovery_mode="all"` exactly and 0.0 reproduces
+    `recovery_mode="highlights"` exactly, so the two ends of this dial are the
+    two configurations that were measured.
+
+    An untrained head emits **sigmoid(4) = 0.982**, not 1.0 -- so enabling this
+    flag on a shipped checkpoint changes the composite by under 1% before any
+    training. That is deliberate. A bias large enough to make the output exactly
+    1.0 would put the sigmoid where its derivative is ~1e-6, and a head that
+    cannot receive gradient at initialisation is the failure that cost two
+    8,000-step runs on the residual-scale gate. 0.982 keeps sigmoid' at 0.018,
+    which is trainable. tests/test_shadow_gate_2026_09_01.py pins both the
+    weight and the 1% bound.
+    """
+
+    def __init__(self, channels: int, hidden: int = 64, stats: int = 7):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(channels * 2 + stats, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, 1),
+        )
+        last = self.mlp[-1]
+        nn.init.zeros_(last.weight)
+        nn.init.constant_(last.bias, 4.0)      # sigmoid(4) = 0.982, effectively "on"
+
+    def forward(self, features: torch.Tensor, sdr: torch.Tensor,
+                sdr_y: torch.Tensor) -> torch.Tensor:
+        pooled = torch.cat((features.mean(dim=(2, 3)), features.amax(dim=(2, 3))), dim=1)
+        stats = frame_conditioning_stats(sdr, sdr_y).to(pooled.dtype)
+        return torch.sigmoid(self.mlp(torch.cat((pooled, stats), dim=1))).view(-1, 1, 1, 1)
+
+
 @dataclass
 class SDR2HDROutput:
     hdr: torch.Tensor
@@ -194,19 +244,24 @@ class SDR2HDROutput:
     # (B,1,1,1) when the conditioning gate is enabled, else None. Worth logging:
     # it is the number the 29 Aug measurement says the model was missing.
     residual_scale: torch.Tensor | None = None
+    # (B,1,1,1) when the shadow gate is enabled. 1.0 == recovery_mode "all",
+    # 0.0 == recovery_mode "highlights"; the two measured endpoints.
+    shadow_weight: torch.Tensor | None = None
 
 
 class SDR2HDRNet(nn.Module):
     """Compact U-Net for direct SDR pixel to HDR radiance recovery."""
 
     def __init__(self, base_channels: int = 32, log_scale: float = 16.0, max_hdr: float = 4.0,
-                 gate_conditioning: bool = False):
+                 gate_conditioning: bool = False,
+                 shadow_conditioning: bool = False):
         super().__init__()
         c = base_channels
         # Off by default so every checkpoint written before 29 Aug 2026 still
         # loads with strict=True: when it is off no parameters are created and
         # the state dict is byte-identical to the old one.
         self.gate_conditioning = bool(gate_conditioning)
+        self.shadow_conditioning = bool(shadow_conditioning)
         self.log_scale = float(log_scale)
         self.max_hdr = float(max_hdr)
         self.stem = nn.Conv2d(6, c, 3, padding=1)
@@ -223,6 +278,7 @@ class SDR2HDRNet(nn.Module):
         nn.init.zeros_(self.head.weight)
         nn.init.zeros_(self.head.bias)
         self.gate = ConditionGate(c * 4) if self.gate_conditioning else None
+        self.shadow_gate = ShadowGate(c * 4) if self.shadow_conditioning else None
 
     @classmethod
     def from_config(cls, config: dict | None, **overrides) -> "SDR2HDRNet":
@@ -237,6 +293,7 @@ class SDR2HDRNet(nn.Module):
         kwargs = {
             "base_channels": int(config.get("base_channels", 32)),
             "gate_conditioning": bool(config.get("gate_conditioning", False)),
+            "shadow_conditioning": bool(config.get("shadow_conditioning", False)),
         }
         for key in ("log_scale", "max_hdr"):
             if config.get(key) is not None:
@@ -249,6 +306,27 @@ class SDR2HDRNet(nn.Module):
         e1 = self.enc1(self.stem(x))
         e2 = self.enc2(self.down1(e1))
         return e1, e2, self.mid(self.down2(e2))
+
+    @torch.no_grad()
+    def predict_shadow_weight(self, sdr: torch.Tensor, max_side: int = 512) -> torch.Tensor | None:
+        """The per-frame shadow weight, from the whole frame, computed once.
+
+        Same contract as predict_residual_scale: pooled features from a
+        downscaled view because the judgement is global, statistics from the
+        NATIVE frame because the evidence that an input arrived degraded lives
+        at the pixel scale and an area resize is a low-pass filter over it.
+        """
+        if self.shadow_gate is None:
+            return None
+        sdr = sdr.float().clamp(0.0, 1.0)
+        view = sdr
+        longest = max(sdr.shape[-2:])
+        if longest > max_side:
+            scale = max_side / longest
+            view = F.interpolate(sdr, size=(max(1, round(sdr.shape[-2] * scale)),
+                                            max(1, round(sdr.shape[-1] * scale))), mode="area")
+        _, _, m = self.encode(view, sdr_to_baseline_hdr(view))
+        return self.shadow_gate(m, sdr, luminance(sdr))
 
     @torch.no_grad()
     def predict_residual_scale(self, sdr: torch.Tensor, max_side: int = 512) -> torch.Tensor | None:
@@ -295,6 +373,7 @@ class SDR2HDRNet(nn.Module):
         recovery_mode: str = "all",
         residual_strength: float | torch.Tensor = 1.0,
         residual_scale: float | torch.Tensor | None = None,
+        shadow_weight: float | torch.Tensor | None = None,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
@@ -319,6 +398,17 @@ class SDR2HDRNet(nn.Module):
         # Preserve the physically strong inverse-tone-map baseline through
         # ordinary midtones. Most learned capacity is applied where clipping or
         # crushed shadows made the SDR mapping non-invertible.
+        if self.shadow_gate is not None and shadow_weight is None:
+            shadow_weight = self.shadow_gate(m, sdr, sdr_y)
+        if shadow_weight is not None and not isinstance(shadow_weight, torch.Tensor):
+            shadow_weight = torch.full((sdr.shape[0], 1, 1, 1), float(shadow_weight),
+                                       device=sdr.device, dtype=sdr.dtype)
+        if shadow_weight is not None:
+            # Only the residual GATE is weighted, never the learned masks that
+            # drive preserve_outside -- because that is exactly what
+            # `--recovery-mode highlights` did, and the two ends of this dial
+            # have to be the two configurations that were measured.
+            shadow_prior = shadow_prior * shadow_weight.to(sdr.device, sdr.dtype)
         if recovery_mode == "all":
             residual_gate = torch.maximum(highlight_prior, shadow_prior)
         elif recovery_mode == "highlights":
@@ -363,7 +453,7 @@ class SDR2HDRNet(nn.Module):
             pred = baseline + recovery * (pred - baseline)
         return SDR2HDROutput(
             pred, baseline, residual, highlight, shadow,
-            highlight_logits, shadow_logits, residual_scale,
+            highlight_logits, shadow_logits, residual_scale, shadow_weight,
         )
 
 

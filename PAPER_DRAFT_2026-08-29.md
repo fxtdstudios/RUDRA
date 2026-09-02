@@ -1,4 +1,6 @@
-# Learned Inverse Tone Mapping Is Bounded by the Input, Not the Model
+# What an 8-Bit Frame Can and Cannot Say About the Scene Behind It
+
+*Bounds for inverse tone mapping, and a gate that reaches one of them.*
 
 **Draft, 29 August 2026.** Supersedes the §6/§7.1 tables flagged as blocking in
 `PAPER_ERRATA.md`. Every number below is measured, and the command that produced
@@ -35,10 +37,22 @@ than between**, so even a perfect clean-versus-degraded classifier caps at
 R² 0.213. The remaining 79% asks whether a clipped region was a 200-nit lamp or
 a 20,000-nit sun — a question an 8-bit frame does not answer.
 
-Our contribution is therefore not a better inverse tone mapper. It is a measured
-account of where the ceiling sits and why: **the achievable gain is bounded by
-the information in the SDR input, not by model capacity, corpus size, or
-training objective**, each of which we vary and none of which moves the bound.
+**But that bound is a property of the question, not of the problem.** Posed as a
+continuous per-frame scale it is unreachable. Posed as a *binary* decision on
+the one axis that is detectable — is this input clean or degraded? — it is
+reachable, and we build it. A 21,121-parameter gate on the shadow arm of the
+reconstruction, supervised on a label we generate ourselves, moves clean input
+by **+3.06 dB and +0.159 JOD** over the shipped model while giving up **0.19 dB
+and 0.054 JOD** on degraded input. It is the only configuration we scored that
+is positive on all four measures, and its clean CVVDP score beats every fixed
+alternative including both ends of the ablation it interpolates.
+
+Our contribution is therefore two measurements and one component: an account of
+where the ceiling sits and why — **the achievable gain is bounded by the
+information in the SDR input, not by model capacity, corpus size, or training
+objective**, each of which we vary and none of which moves it — and a
+demonstration that decomposing the problem along the detectable axis recovers
+most of what the bound appeared to forbid.
 
 ---
 
@@ -190,10 +204,12 @@ cropped to its own limits. `hard` applies a seeded camera/codec degradation.
 |---|---|---:|---:|
 | clean | analytic baseline | **45.99** | 9.448 |
 | clean | v5 (32 ch, step 81,000) | 42.99 | 9.402 |
-| clean | v6 (64 ch) | 43.24 | **9.452** |
+| clean | v6 (64 ch) | 43.24 | 9.452 |
+| clean | **v5 + shadow gate (§6.2)** | **46.06** | **9.561** |
 | hard | analytic baseline | 25.92 | 7.362 |
 | hard | **v5** | **27.34** | **7.805** |
 | hard | v6 | 26.88 | 7.706 |
+| hard | **v5 + shadow gate** | 27.15 | 7.751 |
 
 Per-frame, v5 against the baseline:
 
@@ -314,12 +330,45 @@ At that measured accuracy, a switch on the shadow arm alone is worth:
 | shipped | −3.00 dB | +1.43 dB |
 | 75.5%-accurate arm switch | **−0.35 dB** | **+1.16 dB** |
 
-**+2.65 dB of clean recovered for 0.27 dB of hard**, from a component we have
-already measured as buildable. This is the concrete recommendation this paper
-ends with, and it is the one thing here we have not yet trained. The estimate
-assumes classifier errors are independent of frame difficulty, which is
-optimistic; the honest reading is that it is an upper bound on a switch of that
-accuracy, not a promise.
+**+2.65 dB of clean recovered for 0.27 dB of hard.** That was the prediction.
+
+### 6.2 The gate, trained
+
+`ShadowGate` is 21,121 parameters on the frozen v5 backbone, predicting one
+weight per frame on the shadow prior. Weight 1.0 reproduces `recovery_mode="all"`
+exactly and 0.0 reproduces `recovery_mode="highlights"` exactly, so it
+interpolates between the two configurations of §6.1 and nothing else. It is
+supervised by binary cross-entropy against the degradation label — and unlike
+the residual scale of §7, that target needs no oracle: at training time we know
+whether we degraded the frame.
+
+| method | clean dB | clean JOD | hard dB | hard JOD |
+|---|---:|---:|---:|---:|
+| v5, as shipped | −3.00 | −0.046 | **+1.43** | **+0.443** |
+| v5, shadow arm off | +0.51 | −0.017 | +0.33 | +0.134 |
+| v6, 4× capacity | −2.75 | +0.004 | +0.96 | +0.344 |
+| **v5 + shadow gate** | **+0.07** | **+0.113** | **+1.24** | **+0.389** |
+
+*Gain over the analytic baseline, 429 held-out frames.*
+
+**It beat the prediction on both axes.** Predicted −0.35 dB clean and +1.16 dB
+hard; delivered **+0.07 and +1.24**. Against the shipped model that is
+**+3.06 dB and +0.159 JOD on clean for 0.19 dB and 0.054 JOD on hard** — it
+retains **87%** of the degraded-input gain on both metrics while turning the
+clean regression into a small win.
+
+Two things are worth stating precisely. First, **it is the only configuration we
+scored that is positive on all four measures**; every other row buys one column
+with another. Second, its clean CVVDP of **9.561 beats both ends of the
+ablation it interpolates** (9.402 all-on, 9.431 all-off) and every fixed
+alternative including the 4× capacity model. A hard switch could not do that. The
+gate is emitting intermediate weights and finding per-frame settings that
+neither extreme reaches, which is more than the binary framing that motivated it
+predicted.
+
+We flag the obvious caution: this is one training run, selected on validation
+accuracy, scored once. The +0.07 dB clean margin over the baseline is small
+enough to be within run-to-run variance, though the +0.113 JOD is not.
 
 ## 7. What an adaptive gate is worth, and why it cannot be had
 
@@ -456,9 +505,14 @@ against itself. Master EXR output was never affected.
   obvious next step. This is the paper's largest gap and we do not minimise it.
 - **The related-work section carries unfilled `[CITE]` markers** and must not be
   submitted in that state (§2).
-- **The shadow-versus-highlight result in §6 rests on 51 frames** at one
-  degradation setting, and the shadow-arm hypothesis it suggests is untested:
-  we have not ablated the shadow prior to confirm it.
+- **The shadow gate is a single training run**, selected on validation accuracy
+  and scored once. Its +0.07 dB clean margin over the baseline is within
+  plausible run-to-run variance; the +0.113 JOD is the more robust claim. No
+  seed sweep was run.
+- **The gate is not in the viewer.** RUDRA Studio still composites with the
+  shadow arm always on, so a gate-conditioned checkpoint renders there as if it
+  were v5. The fix is one scalar in the frame header and one multiply in the
+  shader; it is not done.
 
 ---
 
@@ -487,12 +541,30 @@ Weights, pairs and HDR sources are not committed; `training/` regenerates them.
 ## 11. Conclusion
 
 A 1.2 M-parameter residual on an analytic inverse tone map is worth **+1.43 dB
-and +0.44 JOD on degraded input, on 81% of held-out frames** — and on clean
-input it is a 3 dB PSNR regression that is perceptually invisible at −0.046 JOD.
-Its one clear defect is that it does not know when to do nothing, and we measure
-that an oracle fixing it would be worth 5.84 dB, that no constant can, and that
-97% of the signal needed to predict it is absent from the input.
+and +0.44 JOD on degraded input, on 81% of held-out frames**, and costs 3.0 dB
+of PU21-PSNR on clean input for a perceptually invisible −0.046 JOD. Its defect
+is that it does not know when to do nothing.
 
-Capacity, corpus and objective each moved the result by less than the noise. The
-binding constraint on single-image inverse tone mapping, at least here, is what
-an 8-bit frame can tell you about the scene that produced it.
+We measured what fixing that is worth — an oracle per-frame scale is +5.84 dB on
+clean — and then measured that **97% of the signal needed to predict that scale
+is absent from an 8-bit frame**: a linear readout of the available features
+explains 3% of its variance, and 79% of the variance is within a condition
+rather than between, so even a perfect clean-versus-degraded classifier caps at
+R² 0.213. Capacity, corpus and objective were each varied by a factor of four to
+six; none moved the bound.
+
+**The bound was a property of the question.** Asked for a continuous scale, the
+input cannot answer. Asked a binary question on the axis that *is* detectable —
+did this frame arrive clean or degraded? — it can. Locating the failure in the
+shadow arm rather than the highlights made that decomposition available, and a
+21,121-parameter gate on that arm delivers **+3.06 dB and +0.159 JOD on clean
+for 0.19 dB and 0.054 JOD on hard**, the only configuration we scored that is
+positive on all four measures, with a clean CVVDP that beats both ends of the
+ablation it interpolates.
+
+The lesson we would carry to the next problem is not about tone mapping. Three
+of the four things that cost us most this cycle were measurement defects, not
+model defects: selection on the maximum of a noisy series, an evaluation that
+read the alphabetical front of its split, and a viewer that presented every
+frame upside down beneath tests that only ever compared float buffers. The
+bound was real. So were the ways we nearly failed to see it.
