@@ -1,0 +1,124 @@
+% RUDRA -- single-image SDR to HDR: bounds and a gate.
+% Build:  latexmk -pdf main.tex     (or: pdflatex main; pdflatex main)
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,textcomp}
+\usepackage{booktabs,longtable,array,multirow}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyvrb}
+\usepackage{upquote}
+
+\graphicspath{{../docs/figures/}{./figures/}}
+
+% pandoc scaffolding
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setlength{\emergencystretch}{3em}
+\providecommand{\passthrough}[1]{#1}
+
+% unicode the paper actually uses
+\DeclareUnicodeCharacter{2212}{\ensuremath{-}}
+\DeclareUnicodeCharacter{00D7}{\ensuremath{\times}}
+\DeclareUnicodeCharacter{2248}{\ensuremath{\approx}}
+\DeclareUnicodeCharacter{2264}{\ensuremath{\leq}}
+\DeclareUnicodeCharacter{2265}{\ensuremath{\geq}}
+\DeclareUnicodeCharacter{00B2}{\ensuremath{^2}}
+\DeclareUnicodeCharacter{03B1}{\ensuremath{\alpha}}
+\DeclareUnicodeCharacter{03C3}{\ensuremath{\sigma}}
+\DeclareUnicodeCharacter{03BC}{\ensuremath{\mu}}
+\DeclareUnicodeCharacter{00B7}{\ensuremath{\cdot}}
+\DeclareUnicodeCharacter{2192}{\ensuremath{\rightarrow}}
+\DeclareUnicodeCharacter{00A0}{~}
+\DeclareUnicodeCharacter{0394}{\ensuremath{\Delta}}
+\DeclareUnicodeCharacter{00A7}{\S}
+\DeclareUnicodeCharacter{00B1}{\ensuremath{\pm}}
+
+\title{What an 8-Bit Frame Can and Cannot Say About the Scene Behind It\\[0.4em]
+\large Bounds for inverse tone mapping, and a gate that reaches one of them}
+
+\author{FXTD Studios}
+\date{29 August 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\input{_abstract.tex}
+\end{abstract}
+
+\input{_body.tex}
+
+\begin{thebibliography}{9}
+
+\bibitem{eilertsen2017}
+G.~Eilertsen, J.~Kronander, G.~Denes, R.~K. Mantiuk, and J.~Unger.
+\newblock HDR image reconstruction from a single exposure using deep CNNs.
+\newblock \emph{ACM Transactions on Graphics}, 36(6), 2017 (SIGGRAPH Asia).
+\newblock \href{https://doi.org/10.1145/3130800.3130816}{doi:10.1145/3130800.3130816}. arXiv:1710.07480.
+
+\bibitem{marnerides2018}
+D.~Marnerides, T.~Bashford-Rogers, J.~Hatchett, and K.~Debattista.
+\newblock ExpandNet: A deep convolutional neural network for high dynamic range expansion from low dynamic range content.
+\newblock \emph{Computer Graphics Forum}, 37(2), 2018 (Eurographics).
+\newblock \href{https://doi.org/10.1111/cgf.13340}{doi:10.1111/cgf.13340}. arXiv:1803.02266.
+
+\bibitem{endo2017}
+Y.~Endo, Y.~Kanamori, and J.~Mitani.
+\newblock Deep reverse tone mapping.
+\newblock \emph{ACM Transactions on Graphics}, 36(6), 2017 (SIGGRAPH Asia).
+\newblock \href{https://doi.org/10.1145/3130800.3130834}{doi:10.1145/3130800.3130834}.
+
+\bibitem{liu2020}
+Y.-L. Liu, W.-S. Lai, Y.-S. Chen, Y.-L. Kao, M.-H. Yang, Y.-Y. Chuang, and J.-B. Huang.
+\newblock Single-image HDR reconstruction by learning to reverse the camera pipeline.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2020.
+
+\bibitem{santos2020}
+M.~S. Santos, T.~I. Ren, and N.~K. Kalantari.
+\newblock Single image HDR reconstruction using a CNN with masked features and perceptual loss.
+\newblock \emph{ACM Transactions on Graphics}, 39(4), 2020 (SIGGRAPH). arXiv:2005.07335.
+
+\bibitem{pu21}
+R.~K. Mantiuk and M.~Azimi.
+\newblock PU21: A novel perceptually uniform encoding for adapting existing quality metrics for HDR.
+\newblock In \emph{Picture Coding Symposium (PCS)}, 2021.
+\newblock \url{https://github.com/gfxdisp/pu21}
+
+\bibitem{cvvdp}
+R.~K. Mantiuk, P.~Hanji, M.~Ashraf, Y.~Asano, and A.~Chapiro.
+\newblock ColorVideoVDP: A visual difference predictor for image, video and display distortions.
+\newblock \emph{ACM Transactions on Graphics}, 43(4), 2024 (SIGGRAPH).
+\newblock \href{https://doi.org/10.1145/3658144}{doi:10.1145/3658144}. arXiv:2401.11485.
+
+\bibitem{froehlich2014}
+J.~Froehlich, S.~Grandinetti, B.~Eberhardt, S.~Walter, A.~Schilling, and H.~Brendel.
+\newblock Creating cinematic wide gamut HDR-video for the evaluation of tone mapping operators and HDR-displays.
+\newblock In \emph{Proc.\ SPIE 9023, Digital Photography X}, 90230X, 2014.
+\newblock \href{https://doi.org/10.1117/12.2040003}{doi:10.1117/12.2040003}.
+
+\bibitem{kalantari2017}
+N.~K. Kalantari and R.~Ramamoorthi.
+\newblock Deep high dynamic range imaging of dynamic scenes.
+\newblock \emph{ACM Transactions on Graphics}, 36(4), 2017 (SIGGRAPH).
+\newblock \href{https://doi.org/10.1145/3072959.3073609}{doi:10.1145/3072959.3073609}.
+
+\end{thebibliography}
+
+\appendix
+\section*{Standards referenced by the pipeline}
+\begin{itemize}\tightlist
+\item SMPTE ST 2084:2014 --- High Dynamic Range Electro-Optical Transfer Function of Mastering Reference Displays (PQ).
+\item ITU-R BT.2100 --- Image parameter values for high dynamic range television.
+\item ITU-R BT.2408 --- Operational practices in HDR television production (diffuse white at 203 nits).
+\item SMPTE ST 2065-4:2013 --- ACES Image Container File Layout (AP0 chromaticities; ACES 2065-1).
+\end{itemize}
+
+\end{document}

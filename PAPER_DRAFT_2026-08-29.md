@@ -14,7 +14,7 @@ We train a compact network for single-image SDR-to-HDR reconstruction and
 evaluate it against its own analytic inverse tone map on 429 held-out frames in
 PU21-PSNR and ColorVideoVDP JOD. On degraded input — an unknown tone curve,
 4:2:0 chroma, banding and JPEG, the condition real footage arrives in — the
-model gains **+1.43 dB and +0.44 JOD**, winning **346 of 429 frames (81%)**. On
+model gains **+1.43 dB and +0.44 JOD**, winning **348 of 429 frames (81%)**. On
 clean, well-graded input it *loses* **3.0 dB** of PU21-PSNR while CVVDP puts the
 same gap at **−0.046 JOD**: a two-order-of-magnitude disagreement between the
 metrics that is itself the result.
@@ -42,10 +42,12 @@ continuous per-frame scale it is unreachable. Posed as a *binary* decision on
 the one axis that is detectable — is this input clean or degraded? — it is
 reachable, and we build it. A 21,121-parameter gate on the shadow arm of the
 reconstruction, supervised on a label we generate ourselves, moves clean input
-by **+3.06 dB and +0.159 JOD** over the shipped model while giving up **0.19 dB
-and 0.054 JOD** on degraded input. It is the only configuration we scored that
-is positive on all four measures, and its clean CVVDP score beats every fixed
-alternative including both ends of the ablation it interpolates.
+by **+3.41 ± 0.32 dB and +0.135 ± 0.023 JOD** over the shipped model while
+giving up **0.30 ± 0.15 dB and 0.091 ± 0.041 JOD** on degraded input, over three
+training seeds. All three are positive on all four measures against the analytic
+baseline — the only configuration we scored of which that is true — and all
+three have a clean CVVDP above every fixed alternative, including both ends of
+the ablation the gate interpolates.
 
 Our contribution is therefore two measurements and one component: an account of
 where the ceiling sits and why — **the achievable gain is bounded by the
@@ -71,39 +73,54 @@ What follows is the system that exists, measured with the metrics that exist.
 
 ## 2. Related work
 
-> **Draft note.** Citation slots are marked `[CITE]` and are deliberately
-> unfilled. This section names the families of work this result sits among; it
-> does not attribute numbers or claims to specific papers, because those
-> attributions have not been verified against the sources. Filling them is a
-> prerequisite for submission, not an optional polish. The failure mode this
-> replaces — placeholder tables presented as measurements — is documented in
-> `PAPER_ERRATA.md` and is the reason for the caution.
+> **Draft note.** Every reference below was checked against the publisher or
+> author page for authors, title, venue and year; the one-line method
+> descriptions are at the level the titles and abstracts support. No number in
+> this paper is attributed to any of them — we compare against our own analytic
+> baseline only, and §9 states that as the paper's largest gap. The failure mode
+> this caution replaces — placeholder tables presented as measurements — is
+> documented in `PAPER_ERRATA.md`.
 
 **Single-image inverse tone mapping.** The dominant framing learns a mapping
 from an 8-bit frame to a higher-range one, typically with an encoder-decoder and
 a loss in a perceptual or log domain, and typically evaluated on synthetically
-clipped data. `[CITE]` Our architecture is deliberately smaller than this line
-of work (1.2 M parameters) and is a *residual on an analytic inverse tone map*
-rather than a direct predictor, which is what makes "does the network beat doing
-nothing?" a question we can ask at every step of training.
+clipped data. Eilertsen et al. [1] predict a log-domain reconstruction of the
+saturated regions with a U-net and blend it back through a saturation mask;
+Marnerides et al. [2] combine three branches at different receptive fields;
+Endo et al. [3] instead synthesise a bracketed exposure stack from the single
+input and merge it; Liu et al. [4] decompose the task into learned inverses of
+the individual camera-pipeline stages. Our architecture is deliberately smaller
+than this line of work (1.2 M parameters) and is a *residual on an analytic
+inverse tone map* rather than a direct predictor, which is what makes "does the
+network beat doing nothing?" a question we can ask at every step of training.
 
 **Highlight and clipped-region reconstruction.** A related family treats the
 problem as inpainting the saturated regions specifically, rather than remapping
-the whole frame. `[CITE]` Our highlight and shadow masks serve the same purpose,
-but are predicted jointly with the residual and gated by a luminance prior
-rather than by a detected saturation mask. §6 is a direct criticism of that
-choice.
+the whole frame; Santos et al. [5] make the clipped area explicit by masking it
+out of the network's own features and adding a perceptual loss, and the masked
+blend in Eilertsen et al. [1] serves the same end. Our highlight and shadow
+masks share that purpose, but are predicted jointly with the residual and gated
+by a luminance prior rather than by a detected saturation mask. §6 is a direct
+criticism of that choice: our own failures are not in the clipped highlights at
+all.
 
-**Evaluation of HDR reconstruction.** PU21-PSNR `[CITE]` and ColorVideoVDP
-`[CITE]` are the two public measuring sticks we use. §5 reports a case where
-they disagree by two orders of magnitude in magnitude on the same frames, and §5
-shows the PU21 penalty is tail-carried; we are not aware of that disagreement
-being characterised for this task, and it is a contribution of this paper
-independent of the model.
+**Evaluation of HDR reconstruction.** PU21 [6] and ColorVideoVDP [7] are the two
+public measuring sticks we use — the first an encoding that makes existing
+metrics such as PSNR applicable to absolute-luminance HDR, the second a
+calibrated visible-difference predictor reporting in JOD. §5 reports a case
+where they disagree by two orders of magnitude in magnitude on the same frames,
+and §6 shows the PU21 penalty is only partly tail-carried; we are not aware of
+that disagreement being characterised for this task, and it is a contribution of
+this paper independent of the model.
 
 **Training data for HDR.** The scarcity of paired SDR/HDR footage shapes every
-result here `[CITE]`; §4 documents a distribution shift between our own training
-and held-out splits that we did not design and that a reader should weigh.
+result here. Public HDR video with cinematic production values remains small
+enough to enumerate — the HDM-HDR-2014 set of Froehlich et al. [8] contributes 9
+scenes and 11,007 frames to our corpus — and the widely used HDR still sets
+[9] are bracketed-exposure captures rather than graded footage. The remainder of
+our corpus is proprietary. §4 documents a distribution shift between our own
+training and held-out splits that we did not design and that a reader should
+weigh.
 
 **What we could not compare against.** No published method is evaluated on our
 split. `rudra bench --test-dir <method>` scores any third-party output against
@@ -154,7 +171,7 @@ effect on this corpus in practice: `censored_fraction` averages **0.0003**.
 | | v5 (shipped) | v6 (capacity ablation) |
 |---|---|---|
 | base channels | 32 | 64 |
-| parameters | 1,196,197 | 4,772,485 |
+| parameters | 1,196,197 | 4,770,117 |
 | crop | 384 | 384 |
 | batch × grad-accum | 2 × 2 | 2 × 2 |
 | optimiser | AdamW, lr 2e-4, wd 1e-4, cosine to 5% | same |
@@ -174,7 +191,11 @@ a run can be tied to the exact record set it saw.
 ## 4. Corpus, splits, and a distribution shift we did not intend
 
 27,678 training / 435 validation / 429 test records; val and test are 97 scenes
-each at 1280×720. Sampling is scene-balanced with a 40% video mass.
+each at 1280×720. Sampling is scene-balanced with a 40% video mass. The only
+publicly redistributable component is the HDM-HDR-2014 set of Froehlich et al.
+[8] (9 scenes, 11,007 frames, median 5.99 stops of measured dynamic range); the
+remainder is proprietary FXTD Studios footage, which is why §10 ships the
+manifests and the scoring harness rather than the corpus.
 
 The held-out splits are **not** drawn from the training distribution:
 
@@ -215,7 +236,7 @@ Per-frame, v5 against the baseline:
 
 | | mean Δ PU21 | median Δ | frames won | mean Δ JOD | median Δ JOD |
 |---|---:|---:|---:|---:|---:|
-| hard | **+1.427 dB** | +0.609 | **346 / 429 (81%)** | **+0.443** | +0.134 |
+| hard | **+1.427 dB** | +0.609 | **348 / 429 (81%)** | **+0.443** | +0.134 |
 | clean | −2.999 dB | −2.131 | 115 / 429 (27%) | **−0.046** | −0.040 |
 
 ![Per-frame gain distributions under both metrics](docs/figures/fig3_metric_disagreement.png)
@@ -352,10 +373,11 @@ whether we degraded the frame.
 *Gain over the analytic baseline, 429 held-out frames.*
 
 **It beat the prediction on both axes.** Predicted −0.35 dB clean and +1.16 dB
-hard; delivered **+0.07 and +1.24**. Against the shipped model that is
-**+3.06 dB and +0.159 JOD on clean for 0.19 dB and 0.054 JOD on hard** — it
-retains **87%** of the degraded-input gain on both metrics while turning the
-clean regression into a small win.
+hard; delivered **+0.07 and +1.24** on the first seed, and **+0.41 ± 0.33** and
+**+1.12 ± 0.15** across three (below). Against the shipped model that is
+**+3.41 ± 0.32 dB and +0.135 ± 0.023 JOD on clean for 0.30 ± 0.15 dB and
+0.091 ± 0.041 JOD on hard** — it turns the clean regression into a win while
+keeping most of the degraded-input gain.
 
 Two things are worth stating precisely. First, **it is the only configuration we
 scored that is positive on all four measures**; every other row buys one column
@@ -366,9 +388,50 @@ gate is emitting intermediate weights and finding per-frame settings that
 neither extreme reaches, which is more than the binary framing that motivated it
 predicted.
 
-We flag the obvious caution: this is one training run, selected on validation
-accuracy, scored once. The +0.07 dB clean margin over the baseline is small
-enough to be within run-to-run variance, though the +0.113 JOD is not.
+**Three seeds.** The +0.07 dB clean margin above is small enough that one run
+proves nothing, so we trained two more gates on the same backbone, changing only
+the seed, and scored them on the same 429 frames.
+
+| seed | clean dB | clean JOD | hard dB | hard JOD | clean CVVDP | clean frames won |
+|---|---:|---:|---:|---:|---:|---:|
+| 20260901 | +0.07 | +0.113 | +1.24 | +0.389 | 9.561 | 251 / 429 (59%) |
+| 2 | +0.71 | +0.068 | +0.96 | +0.308 | 9.516 | 315 / 429 (73%) |
+| 3 | +0.45 | +0.089 | +1.18 | +0.358 | 9.537 | 280 / 429 (65%) |
+| **mean ± sd** | **+0.41 ± 0.33** | **+0.090 ± 0.023** | **+1.12 ± 0.15** | **+0.352 ± 0.041** | | |
+
+*Gain over the analytic baseline. The shipped v5 wins 115 of 429 clean frames
+(27%) for comparison.*
+
+**All three are positive on all four measures**, and all three have a clean
+CVVDP above every fixed alternative we scored (best of those: 9.452). The
+result is a property of the method, not of a seed.
+
+It is also worth saying which way the single-run report erred. Seed 20260901 is
+the **worst** of the three on clean PU21 (+0.07 against a mean of +0.41) and the
+**best** on clean CVVDP (+0.113 against +0.090). Reporting it alone understated
+the dB result by a factor of six and overstated the JOD result by a quarter. The
+honest headline is the mean with its spread, and that is what the abstract
+carries.
+
+The selection criterion is worth a line of its own. Each gate's `best.pt` is
+chosen by a trailing median over degradation-classification accuracy on
+validation — 69.5%, 64.1% and 64.8% for seeds 20260901, 2 and 3. Ranked by that
+accuracy the three runs come out **in exactly the order of their clean CVVDP,
+and in exactly the reverse order of their clean PU21**:
+
+| seed | val accuracy | rank | clean JOD | rank | clean dB | rank |
+|---|---:|---:|---:|---:|---:|---:|
+| 20260901 | 69.5% | 1 | +0.113 | 1 | +0.07 | 3 |
+| 3 | 64.8% | 2 | +0.089 | 2 | +0.45 | 2 |
+| 2 | 64.1% | 3 | +0.068 | 3 | +0.71 | 1 |
+
+With n = 3 a perfect agreement or inversion arises by chance with p = 1/6, so
+this is an observation and not a result. We report it because it is the §5
+disagreement appearing a third time — after the metrics themselves and after the
+selection rule of §8 — now in a criterion that touches neither metric. Whatever
+the gate learns that makes a frame classifiable also makes it look better and
+measure worse. Three seeds cannot settle that; it is the first thing we would
+test with thirty.
 
 ## 7. What an adaptive gate is worth, and why it cannot be had
 
@@ -464,8 +527,19 @@ dB**, with only **10 of 102** evaluations positive; the shipped checkpoint's
 **+1.43 dB** on held-out frames — between the eval mean (+1.19) and its selected
 maximum, exactly where an inflated in-training figure should land. Selection now
 uses a trailing median over five evaluations; replayed on the same series it
-selects step 72,000 instead of 81,000, for a five-eval neighbourhood averaging
-−0.19 dB on clean against 81,000's −0.91.
+selects step 72,000 instead of 81,000.
+
+We then scored step 72,000 on the same 429 frames, and the answer is not the
+clean vindication we expected. On the criterion the selector optimises it is
+better: composite gain **−1.36 dB against the shipped checkpoint's −1.57**, and
+clean PU21 improves by **+0.55 dB**. On CVVDP it is *worse on both conditions* —
+**−0.052 JOD clean and −0.071 JOD hard** — so the smoothed rule would have
+shipped a checkpoint that a perceptual metric likes less. This is the same
+disagreement §5 reports, reappearing inside the selection rule itself: median
+smoothing removes the noise it was designed to remove, and the objective it
+smooths is still PU21. Smoothing a selector does not fix choosing the wrong
+quantity to select on. We report the fix and its limit together because
+reporting only the first would repeat the error the section is about.
 
 **An evaluation that read the front of the split.** `DataLoader(val,
 shuffle=False)` with `max_batches=N` evaluates the alphabetically *first* N
@@ -503,16 +577,20 @@ against itself. Master EXR output was never affected.
   is against our own analytic baseline. `rudra bench --test-dir <method>` scores
   any third-party output against the same reference, and that comparison is the
   obvious next step. This is the paper's largest gap and we do not minimise it.
-- **The related-work section carries unfilled `[CITE]` markers** and must not be
-  submitted in that state (§2).
-- **The shadow gate is a single training run**, selected on validation accuracy
-  and scored once. Its +0.07 dB clean margin over the baseline is within
-  plausible run-to-run variance; the +0.113 JOD is the more robust claim. No
-  seed sweep was run.
-- **The gate is not in the viewer.** RUDRA Studio still composites with the
-  shadow arm always on, so a gate-conditioned checkpoint renders there as if it
-  were v5. The fix is one scalar in the frame header and one multiply in the
-  shader; it is not done.
+- **No claim in this paper is grounded in a re-implementation of prior work.**
+  §2 places the result among families of methods and cites them
+  bibliographically; it does not reproduce their numbers, and we did not run
+  their code.
+- **Three seeds is a spread, not a distribution.** The gate is positive on all
+  four measures in all three runs, but n=3 supports "the sign is stable", not a
+  confidence interval. The clean PU21 spread (+0.07 to +0.71) is wide relative
+  to its mean.
+- **The viewer now honours the gate**, but only as a per-frame scalar. RUDRA
+  Studio receives the predicted shadow weight in the `/api/frame` header and
+  multiplies the shadow prior by it in the compositing shader; CPU/GPU parity
+  holds to 8.4e-06 relative error across 11 cases spanning weights 0.0 to 1.0.
+  The weight cannot be folded into the residual the way `residual_scale` is,
+  because it enters inside a `max()` and is not linear in the residual.
 
 ---
 
@@ -525,14 +603,35 @@ powershell -ExecutionPolicy Bypass -File training\run_bench.ps1
 # one more checkpoint against the same reference
 powershell -ExecutionPolicy Bypass -File training\score_checkpoint.ps1 `
     -Checkpoint <ckpt> -Name <label>
+
+# every number in §5 and §6.1--6.2 recomputed from those results and
+# diffed against what this paper claims; exit status 1 on any mismatch
+python training\audit_paper_numbers.py --bench <bench dir>
+
+# §6's headroom split and its correlation, from the same results joined
+# to the corpus manifest's per-frame peak_nits
+python training\analyze_headroom.py --bench <bench dir> `
+    --manifest <manifest> --check
 ```
 
 Results land as `bench/RESULTS.md`, per-clip JSON and per-frame CSV. The
 composite exists in three languages — torch (`rudra/sdr2hdr.py`), GLSL
 (`ui/compositor.js`) and numpy (`tests/compose_reference.py`) — pinned against
-each other to 8.4e-06 relative error by `tests/webgl_parity/parity.py`. 156
-tests pass, including canvas orientation, PU21 torch-versus-numpy parity, and a
-smoke test that presses all 54 controls of the viewer.
+each other to 8.4e-06 relative error by `tests/webgl_parity/parity.py`.
+`pytest tests/` covers those, canvas orientation, PU21 torch-versus-numpy
+parity, and a smoke test that presses all 54 controls of the viewer.
+
+The audits above are not decoration. An earlier draft of §5 reported 346 of 429
+frames won on degraded input where the benchmark says 348; the count had been
+transcribed, and nothing in the pipeline compared it back to the file it came
+from. An earlier draft of §3.4 gave v6 4,772,485 parameters where the checkpoint
+has 4,770,117, for the same reason. Every derived number in §5, §6 and §6.1--6.2
+is now recomputed on demand and both scripts exit non-zero on any drift.
+
+Two analyses remain uncovered: §6's trimmed-PSNR table and §7's oracle sweep.
+Both need per-PIXEL statistics over the reference frames rather than the
+per-frame results the benchmark writes, and we state that rather than leaving
+the reader to assume otherwise.
 
 Weights, pairs and HDR sources are not committed; `training/` regenerates them.
 
@@ -557,14 +656,78 @@ six; none moved the bound.
 input cannot answer. Asked a binary question on the axis that *is* detectable —
 did this frame arrive clean or degraded? — it can. Locating the failure in the
 shadow arm rather than the highlights made that decomposition available, and a
-21,121-parameter gate on that arm delivers **+3.06 dB and +0.159 JOD on clean
-for 0.19 dB and 0.054 JOD on hard**, the only configuration we scored that is
-positive on all four measures, with a clean CVVDP that beats both ends of the
+21,121-parameter gate on that arm delivers **+3.41 ± 0.32 dB and
++0.135 ± 0.023 JOD on clean for 0.30 ± 0.15 dB and 0.091 ± 0.041 JOD on hard**
+across three seeds — the only configuration we scored that is positive on all
+four measures, in every run, with a clean CVVDP that beats both ends of the
 ablation it interpolates.
 
 The lesson we would carry to the next problem is not about tone mapping. Three
 of the four things that cost us most this cycle were measurement defects, not
 model defects: selection on the maximum of a noisy series, an evaluation that
 read the alphabetical front of its split, and a viewer that presented every
-frame upside down beneath tests that only ever compared float buffers. The
-bound was real. So were the ways we nearly failed to see it.
+frame upside down beneath tests that only ever compared float buffers. A fourth
+belongs beside them: our first report of the gate quoted a single seed that
+happened to be the weakest of three on one metric and the strongest on the
+other, and we would not have known without running the other two.
+
+The bound was real. So were the ways we nearly failed to see it.
+
+
+---
+
+## References
+
+[1] G. Eilertsen, J. Kronander, G. Denes, R. K. Mantiuk, J. Unger. "HDR image
+reconstruction from a single exposure using deep CNNs." *ACM Transactions on
+Graphics* 36(6), 2017 (SIGGRAPH Asia). doi:10.1145/3130800.3130816.
+arXiv:1710.07480.
+
+[2] D. Marnerides, T. Bashford-Rogers, J. Hatchett, K. Debattista. "ExpandNet: A
+Deep Convolutional Neural Network for High Dynamic Range Expansion from Low
+Dynamic Range Content." *Computer Graphics Forum* 37(2), 2018 (Eurographics).
+doi:10.1111/cgf.13340. arXiv:1803.02266.
+
+[3] Y. Endo, Y. Kanamori, J. Mitani. "Deep reverse tone mapping." *ACM
+Transactions on Graphics* 36(6), 2017 (SIGGRAPH Asia).
+doi:10.1145/3130800.3130834.
+
+[4] Y.-L. Liu, W.-S. Lai, Y.-S. Chen, Y.-L. Kao, M.-H. Yang, Y.-Y. Chuang,
+J.-B. Huang. "Single-Image HDR Reconstruction by Learning to Reverse the Camera
+Pipeline." *CVPR*, 2020.
+
+[5] M. S. Santos, T. I. Ren, N. K. Kalantari. "Single Image HDR Reconstruction
+Using a CNN with Masked Features and Perceptual Loss." *ACM Transactions on
+Graphics* 39(4), 2020 (SIGGRAPH). arXiv:2005.07335.
+
+[6] R. K. Mantiuk, M. Azimi. "PU21: A novel perceptually uniform encoding for
+adapting existing quality metrics for HDR." *Picture Coding Symposium (PCS)*,
+2021. https://ieeexplore.ieee.org/document/9477471/ · code:
+https://github.com/gfxdisp/pu21
+
+[7] R. K. Mantiuk, P. Hanji, M. Ashraf, Y. Asano, A. Chapiro. "ColorVideoVDP: A
+visual difference predictor for image, video and display distortions." *ACM
+Transactions on Graphics* 43(4), 2024 (SIGGRAPH). doi:10.1145/3658144.
+arXiv:2401.11485.
+
+[8] J. Froehlich, S. Grandinetti, B. Eberhardt, S. Walter, A. Schilling,
+H. Brendel. "Creating cinematic wide gamut HDR-video for the evaluation of tone
+mapping operators and HDR-displays." *Proc. SPIE 9023, Digital Photography X*,
+90230X, 2014. doi:10.1117/12.2040003.
+
+[9] N. K. Kalantari, R. Ramamoorthi. "Deep high dynamic range imaging of dynamic
+scenes." *ACM Transactions on Graphics* 36(4), 2017 (SIGGRAPH).
+doi:10.1145/3072959.3073609.
+
+### Standards referenced by the pipeline
+
+[S1] SMPTE ST 2084:2014 — High Dynamic Range Electro-Optical Transfer Function of
+Mastering Reference Displays (PQ).
+
+[S2] ITU-R BT.2100 — Image parameter values for high dynamic range television.
+
+[S3] ITU-R BT.2408 — Operational practices in HDR television production
+(diffuse white at 203 nits).
+
+[S4] SMPTE ST 2065-4:2013 — ACES Image Container File Layout (AP0
+chromaticities; ACES 2065-1).

@@ -1,0 +1,19 @@
+{
+  "manifest": "E:\\RUDRA_v3_20260822\\sdr_hdr_manifest.jsonl",
+  "init_checkpoint": "E:\\RUDRA_v3_20260822\\checkpoints\\sdr2hdr_image_v5\\shipped_v5_step81000.pt",
+  "output_dir": "E:\\RUDRA_v3_20260822\\checkpoints\\sdr2hdr_shadow_s2",
+  "steps": 3000,
+  "lr": 0.003,
+  "grad_accum": 8,
+  "max_side": 512,
+  "degradation_probability": 0.5,
+  "eval_every": 200,
+  "eval_batches": 128,
+  "best_smoothing": 5,
+  "workers": 2,
+  "seed": 2,
+  "device": "cuda",
+  "base_channels": 32,
+  "shadow_conditioning": true,
+  "objective": "degradation_bce"
+}

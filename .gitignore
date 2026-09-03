@@ -63,3 +63,28 @@ COMPETITIVE_*.html
 
 # Master EXRs written by RUDRA Studio -- deliverables, not source.
 ui/_masters/
+
+# The one committed checkpoint (see checkpoints/README.md). Weights are
+# otherwise never committed -- *.pth above, and everything under the data dir.
+!checkpoints/
+!checkpoints/*.pt
+!checkpoints/README.md
+
+# secrets -- nothing matched a scan on 3 Sep 2026; this keeps it that way
+.env
+.env.*
+*.pem
+*.key
+**/credentials*
+
+# Third-party method clones for the §9 comparison. Cloned beside the repo by
+# training/run_expandnet.py and friends; not ours to vendor, and each carries
+# its own .git, so staging one commits a gitlink with no .gitmodules and hands
+# everyone who clones RUDRA an empty directory.
+hdr-expandnet/
+Deep-HdrReconstruction/
+hdrcnn/
+SingleHDR/
+
+# Scratch
+Claude outputs/

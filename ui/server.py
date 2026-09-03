@@ -8,6 +8,7 @@ header hard-coded "Backbone: Flux 1 Dev". Nothing you clicked touched a model.
 Now it serves two endpoints beside the static files:
 
   GET  /api/model                what checkpoint is actually loaded
+  GET  /api/checkpoints          the committed models this clone can load
   POST /api/frame                one forward pass -> raw fields, for the GPU
                                  compositor in ui/compositor.js
   POST /api/infer                run SDR2HDRNet on an uploaded image
@@ -59,6 +60,11 @@ NETWORK_PEAK_NITS = 10_000.0
 DEFAULT_CHECKPOINT_ROOTS = (
     Path("E:/RUDRA_v3_20260822/checkpoints"),
     REPO / "hdrdata" / "checkpoints",
+    # The one checkpoint committed to the repo. Last, so a machine with the
+    # training data keeps using the newest local run -- but a fresh clone,
+    # which has nothing else, still starts with a real model instead of
+    # falling back to demo mode.
+    REPO / "checkpoints",
 )
 
 _state: dict = {"model": None, "info": {"loaded": False}, "lock": threading.Lock()}
@@ -73,14 +79,62 @@ _extra: dict = {}
 # ---------------------------------------------------------------------------
 # model
 # ---------------------------------------------------------------------------
+REGISTRY = REPO / "checkpoints" / "models.json"
+
+
+def registry() -> dict:
+    """The committed checkpoints and which of them is the default.
+
+    Newest-file is a fine rule for one directory of training runs and a bad one
+    for a directory of shipped models: it picks whatever was copied last, and
+    one of the files in there is a temporal refiner that is not an SDR2HDRNet
+    at all and raises on load. So the repo directory is described, not guessed.
+    """
+    try:
+        data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    except Exception:                                             # noqa: BLE001
+        return {"default": None, "models": []}
+    return {"default": data.get("default"),
+            "models": [m for m in data.get("models", []) if isinstance(m, dict)]}
+
+
+def loadable_models() -> list[dict]:
+    """Registry entries the viewer can actually load, with resolved paths."""
+    out = []
+    for m in registry()["models"]:
+        if m.get("kind") != "sdr2hdr":
+            continue
+        path = REPO / "checkpoints" / str(m.get("file", ""))
+        if path.is_file():
+            out.append(dict(m, path=str(path)))
+    return out
+
+
 def find_checkpoint(explicit: str | None) -> Path | None:
     if explicit:
         path = Path(explicit)
-        return path if path.exists() else None
+        if path.exists():
+            return path
+        # A bare name is allowed if it is one of the committed models, so
+        # `--checkpoint sdr2hdr_image_v5.pt` works from a fresh clone.
+        named = REPO / "checkpoints" / path.name
+        return named if named.is_file() else None
     candidates: list[Path] = []
     for root in DEFAULT_CHECKPOINT_ROOTS:
-        if root.is_dir():
-            candidates += list(root.glob("*/shipped_*.pt")) + list(root.glob("*/best.pt"))
+        if not root.is_dir():
+            continue
+        if root == REPO / "checkpoints":
+            # Described, not guessed. Fall through to the glob only if the
+            # registry is missing or names a file that is not there.
+            default = registry()["default"]
+            if default and (root / default).is_file():
+                candidates.append(root / default)
+                continue
+            candidates += [Path(m["path"]) for m in loadable_models()]
+            continue
+        # A training run writes <root>/<run>/best.pt or <root>/<run>/shipped_*.pt.
+        candidates += list(root.glob("*/shipped_*.pt"))
+        candidates += list(root.glob("*/best.pt"))
     if not candidates:
         return None
     # Prefer an explicitly shipped checkpoint, then the most recent.
@@ -388,6 +442,14 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
             torch.cuda.empty_cache()
         fields = predict_fields(model, tensor, tile_size=512, overlap=overlap)
 
+    # The learned shadow weight is a whole-frame judgement, so it is computed
+    # once from the whole frame and travels in the header as a scalar. It CANNOT
+    # be folded into the residual the way residual_scale is: it scales the
+    # shadow prior inside a max(), which is not linear in the residual.
+    shadow_weight = 1.0
+    if getattr(model, "shadow_gate", None) is not None:
+        shadow_weight = float(model.predict_shadow_weight(tensor).flatten()[0])
+
     residual = fields["residual"][0].permute(1, 2, 0).cpu().numpy()
     highlight = fields["highlight"][0].permute(1, 2, 0).cpu().numpy()
     shadow = fields["shadow"][0, 0].cpu().numpy()
@@ -411,6 +473,7 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
         "width": width,
         "height": height,
         "tiled": bool(fields["tiled"]),
+        "shadow_weight": shadow_weight,
         "log_scale": float(getattr(model, "log_scale", 16.0)),
         "max_hdr": float(getattr(model, "max_hdr", 4.0)),
         "peak_nits": NETWORK_PEAK_NITS,
@@ -605,6 +668,12 @@ def make_handler(args):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.startswith("/api/checkpoints"):
+                return self._json({
+                    "default": registry()["default"],
+                    "models": [{k: v for k, v in m.items() if k != "path"}
+                               for m in loadable_models()],
+                })
             if self.path.startswith("/api/model"):
                 _, info = ensure_model(args)
                 return self._json(info)

@@ -1,0 +1,48 @@
+{
+  "_comment": "The registry ui/server.py reads. Without it, discovery falls back to newest-file, which picks whatever was copied last -- including the temporal refiner, which is not an SDR2HDRNet and will not load as one.",
+  "default": "sdr2hdr_shadow_v1.pt",
+  "models": [
+    {
+      "file": "sdr2hdr_shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "The model the paper reports. Seed 20260901. Positive on all four measures.",
+      "params": 1217318
+    },
+    {
+      "file": "sdr2hdr_shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "Best of the three on clean PU21 (+0.71 dB), worst on clean CVVDP.",
+      "params": 1217318
+    },
+    {
+      "file": "sdr2hdr_shadow_s3.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 3",
+      "note": "The middle seed on every measure.",
+      "params": 1217318
+    },
+    {
+      "file": "sdr2hdr_image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": "What shipped before the gate. -3.0 dB on clean, +1.43 on degraded.",
+      "params": 1196197
+    },
+    {
+      "file": "sdr2hdr_image_v6.pt",
+      "kind": "sdr2hdr",
+      "title": "v6, 4x capacity",
+      "note": "The capacity ablation. 64 base channels. Moved neither condition much.",
+      "params": 4770117
+    },
+    {
+      "file": "sdr2hdr_temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "NOT an SDR2HDRNet -- the viewer must not try to load it. Unevaluated: 4 val and 5 test clips of one scene each.",
+      "params": null
+    }
+  ]
+}

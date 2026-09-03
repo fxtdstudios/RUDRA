@@ -103,6 +103,7 @@
     "uniform int uMode;",
     "uniform bool uPreserve;",
     "uniform bool uBaselineOnly;",
+    "uniform float uShadowWeight;",
     "void main(){",
     "  vec3 sdr = texture(uSdr, vUV).rgb;",
     "  vec3 base = baselineOf(sdr);",
@@ -112,6 +113,14 @@
     "  float y = dot(clamp(sdr, 0.0, 1.0), vec3(0.2126, 0.7152, 0.0722));",
     "  float hp = 1.0 / (1.0 + exp(-((y - 0.82) * 24.0)));",
     "  float sp = 1.0 / (1.0 + exp(-((0.10 - y) * 24.0)));",
+    /* The learned shadow weight. It multiplies the shadow PRIOR, never the
+       learned masks -- exactly what SDR2HDRNet.forward does, and exactly what
+       `--recovery-mode highlights` measured. 1.0 is the shipped behaviour, so a
+       checkpoint without the gate composes as it always did. Without this the
+       page would show the shadow arm always on while the Master EXR applied the
+       model's own judgement: the two would disagree, which is the class of bug
+       tests/webgl_parity exists to prevent. */
+    "  sp *= uShadowWeight;",
     "  float gate = uMode == 0 ? max(hp, sp) : (uMode == 1 ? hp : (uMode == 2 ? sp : 0.0));",
     "  gate *= uStrength;",
     "  vec3 predLog = clamp(log1p3(base * LOG_SCALE) + f.rgb * gate,",
@@ -127,7 +136,15 @@
     "in vec2 vUV;",
     "out vec4 oCol;",
     "uniform sampler2D uHdr;",
+    /* The BEFORE side of the wipe: the analytic baseline, always bound, so
+       toggling the wipe costs no rebind and no recomposite. */
+    "uniform sampler2D uHdrBefore;",
     "uniform float uScale;",
+    /* Wipe position in [0,1] across the canvas, or a negative number for off.
+       Left of it is the baseline, right of it is the reconstruction, which is
+       the order the words "before and after" are read in. */
+    "uniform float uWipe;",
+    "uniform float uWipeHalfWidth;",
     "void main(){",
     /* The one flip in the whole pipeline, and it belongs here. Every texture
        is uploaded in array order -- row 0 is the TOP of the image -- and the
@@ -139,7 +156,17 @@
        UNPACK_FLIP_Y_WEBGL at upload: that inverts the model/base targets too
        and silently flips the readback paths, which no numeric test would
        catch because they all compare the float buffer, never the canvas. */
-    "  oCol = vec4(linearToSrgb(clamp(texture(uHdr, vec2(vUV.x, 1.0 - vUV.y)).rgb * uScale, 0.0, 1.0)), 1.0);",
+    "  vec2 uv = vec2(vUV.x, 1.0 - vUV.y);",
+    "  vec3 hdr = (uWipe >= 0.0 && vUV.x < uWipe) ? texture(uHdrBefore, uv).rgb",
+    "                                             : texture(uHdr, uv).rgb;",
+    "  vec3 col = linearToSrgb(clamp(hdr * uScale, 0.0, 1.0));",
+    /* The handle is drawn here rather than as a DOM overlay so it cannot drift
+       from the split it marks: one pixel of disagreement between the line and
+       the seam is exactly the artefact a wipe exists to rule out. */
+    "  if (uWipe >= 0.0 && abs(vUV.x - uWipe) < uWipeHalfWidth) {",
+    "    col = vec3(1.0) - col;",
+    "  }",
+    "  oCol = vec4(col, 1.0);",
     "}"].join("\n");
 
   /* Point-sample into a smaller float target. The scopes and the
@@ -278,7 +305,9 @@
     var smallBase = null;      // and of the baseline, which never changes
     var baseSample = null;     // cached readback of smallBase
     var params = {strength: 1, mode: "all", preserve: true,
-                  displayNits: 203, show: "model",
+                  displayNits: 203, show: "model", shadowWeight: 1.0,
+                  wipe: -1,          // <0 is off; otherwise 0..1 across the canvas
+                  wipeHalfWidth: 0.0012,
                   regions: [{label: "highlights", low_nits: 400, high_nits: 2000, ev: 0},
                             {label: "speculars", low_nits: 2000, high_nits: 8000, ev: 0},
                             {label: "shadows", low_nits: 0.05, high_nits: 12, ev: 0}],
@@ -377,6 +406,7 @@
                    MODES[params.mode] === undefined ? 0 : MODES[params.mode]);
       gl.uniform1i(uniform(progComposite, "uPreserve"), params.preserve ? 1 : 0);
       gl.uniform1i(uniform(progComposite, "uBaselineOnly"), baselineOnly ? 1 : 0);
+      gl.uniform1f(uniform(progComposite, "uShadowWeight"), params.shadowWeight);
       var lo = [], hi = [], ev = [];
       for (var i = 0; i < 3; i++) {
         var band = params.regions[i] || {low_nits: 1, high_nits: 1, ev: 0};
@@ -404,7 +434,11 @@
 
     function present() {
       if (!frame) { return; }
-      var source = params.show === "baseline" ? base : model;
+      var wiping = params.wipe >= 0.0;
+      // While wiping, the right-hand side is always the reconstruction: a wipe
+      // of the baseline against itself is a blank comparison, and B-to-flip
+      // already covers "show me the baseline full frame".
+      var source = (!wiping && params.show === "baseline") ? base : model;
       if (canvas.width !== frame.w || canvas.height !== frame.h) {
         canvas.width = frame.w; canvas.height = frame.h;
       }
@@ -412,8 +446,13 @@
       gl.activeTexture(gl.TEXTURE6);
       gl.bindTexture(gl.TEXTURE_2D, source.tex);
       gl.uniform1i(uniform(progDisplay, "uHdr"), 6);
+      gl.activeTexture(gl.TEXTURE7);
+      gl.bindTexture(gl.TEXTURE_2D, base.tex);
+      gl.uniform1i(uniform(progDisplay, "uHdrBefore"), 7);
       gl.uniform1f(uniform(progDisplay, "uScale"),
                    PEAK_NITS / Math.max(params.displayNits, 1e-3));
+      gl.uniform1f(uniform(progDisplay, "uWipe"), wiping ? params.wipe : -1.0);
+      gl.uniform1f(uniform(progDisplay, "uWipeHalfWidth"), params.wipeHalfWidth);
       draw(progDisplay, frame.w, frame.h, null);
     }
 
@@ -478,7 +517,7 @@
       setFrame: setFrame,
       setParams: function (p) {
         var recompose = false;
-        ["strength", "mode", "preserve"].forEach(function (k) {
+        ["strength", "mode", "preserve", "shadowWeight"].forEach(function (k) {
           if (p[k] !== undefined && p[k] !== params[k]) { params[k] = p[k]; recompose = true; }
         });
         if (p.regions !== undefined) {
@@ -488,6 +527,12 @@
         }
         if (p.displayNits !== undefined) { params.displayNits = p.displayNits; }
         if (p.show !== undefined) { params.show = p.show; }
+        // The wipe only chooses which of two finished buffers each pixel reads,
+        // so it never triggers a recomposite -- dragging it is free.
+        if (p.wipe !== undefined) {
+          params.wipe = p.wipe < 0 ? -1 : Math.max(0, Math.min(1, p.wipe));
+        }
+        if (p.wipeHalfWidth !== undefined) { params.wipeHalfWidth = p.wipeHalfWidth; }
         if (recompose) { composite(); }
         return recompose;
       },
@@ -499,7 +544,8 @@
       meanNits: function () {
         return reduce(model, 1) * PEAK_NITS / (frame.w * frame.h);
       },
-      size: function () { return frame ? {width: frame.w, height: frame.h} : null; }
+      size: function () { return frame ? {width: frame.w, height: frame.h} : null; },
+      wipe: function () { return params.wipe; }
     };
   }
 

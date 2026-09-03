@@ -50,6 +50,7 @@ import time
 from hashlib import sha1
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 
@@ -139,6 +140,14 @@ def main() -> int:
                              "baseline/ an earlier export already produced")
     parser.add_argument("--no-baseline", action="store_true",
                         help="skip the analytic baseline tree")
+    parser.add_argument("--write-sdr", action="store_true",
+                        help="also write <out>/sdr/<scene>/<asset>.png: the exact "
+                             "8-bit frame the model was given, after --condition "
+                             "and --max-side. This is what a third-party inverse "
+                             "tone mapper consumes, so it is the input half of any "
+                             "comparison against published work. Feed this tree to "
+                             "their code, then bring their output back with "
+                             "training/import_method_output.py.")
     parser.add_argument("--recovery-mode", default="all",
                         choices=("all", "highlights", "shadows", "off"),
                         help="Which arm of the per-pixel gate is allowed to fire. The "
@@ -187,6 +196,8 @@ def main() -> int:
     trees = ([] if args.only_test else ["ref"]) + [args.test_name]
     if not (args.no_baseline or args.only_test):
         trees.append("baseline")
+    if args.write_sdr:
+        trees.append("sdr")
     for tree in trees:
         (out / tree).mkdir(parents=True, exist_ok=True)
 
@@ -246,6 +257,14 @@ def main() -> int:
             path = out / "baseline" / scene / f"{asset}.exr"
             path.parent.mkdir(parents=True, exist_ok=True)
             write_exr(path, to_scene_linear(base), half=True)
+        if args.write_sdr:
+            # 8-bit sRGB PNG, exactly the pixels the network saw. cv2 wants BGR.
+            eight = (sdr[0].permute(1, 2, 0).float().cpu().numpy() * 255.0 + 0.5)
+            eight = np.clip(eight, 0, 255).astype(np.uint8)[..., ::-1]
+            path = out / "sdr" / scene / f"{asset}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not cv2.imwrite(str(path), eight):
+                raise RuntimeError(f"failed to write {path}")
         written += 1
         if position % 25 == 0 or position == len(indexed):
             rate = position / max(time.time() - started, 1e-6)
@@ -265,6 +284,7 @@ def main() -> int:
         "nits_scale_for_bench": DIFFUSE_WHITE_NITS,
         "reference_clamped_at_network_units": REFERENCE_CEILING,
         "trees": trees,
+        "sdr_written": bool(args.write_sdr),
     }
     # A second model exports with --only-test into the same directory; if it
     # wrote export.json it would erase the first run's provenance.

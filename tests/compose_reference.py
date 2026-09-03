@@ -58,6 +58,7 @@ def baseline_of(sdr):
 
 
 def compose(sdr, residual, highlight, shadow, strength=1.0, mode="all",
+            shadow_weight=1.0,
             preserve=True):
     """(H, W, 3) sdr in [0, 1] plus the three head fields -> the prediction.
 
@@ -69,6 +70,10 @@ def compose(sdr, residual, highlight, shadow, strength=1.0, mode="all",
     y = (sdr * np.asarray(LUMA_REC709)).sum(-1, keepdims=True)
     highlight_prior = 1.0 / (1.0 + np.exp(-((y - 0.82) * 24.0)))
     shadow_prior = 1.0 / (1.0 + np.exp(-((0.10 - y) * 24.0)))
+    # The learned shadow weight scales the PRIOR only, never the masks -- the
+    # same place SDR2HDRNet.forward and the GLSL apply it. Default 1.0 is the
+    # ungated behaviour, so every existing caller is unaffected.
+    shadow_prior = shadow_prior * shadow_weight
     gates = {"all": np.maximum(highlight_prior, shadow_prior),
              "highlights": highlight_prior,
              "shadows": shadow_prior,

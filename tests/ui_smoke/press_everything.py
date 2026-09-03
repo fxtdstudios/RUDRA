@@ -173,6 +173,35 @@ def main(URL, FRAMES):
         record("Reconstruct ▸ Preserve toggle", canvas() != before)
         menu_click("preserve")
 
+        # ---- Wipe ----------------------------------------------------------
+        # The pixel-level check (which side is which) lives in
+        # tests/webgl_parity/wipe.py. What matters here is that the control on
+        # the page reaches it: the button, the key, the drag, and the exit.
+        full = canvas()
+        pg.click("#wipeBtn")
+        wiped = canvas()
+        record("Wipe ▸ button splits the view", wiped != full and
+               pg.eval_on_selector("#wipeBtn", "e => e.classList.contains('on')"))
+        record("Wipe ▸ plate label names both sides",
+               "Baseline" in pg.inner_text("#plateLabel")
+               and "RUDRA" in pg.inner_text("#plateLabel"),
+               pg.inner_text("#plateLabel"))
+        box = pg.query_selector("#gl").bounding_box()
+        pg.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] / 2)
+        pg.mouse.down()
+        pg.mouse.move(box["x"] + box["width"] * 0.8, box["y"] + box["height"] / 2)
+        pg.mouse.up()
+        dragged = canvas()
+        record("Wipe ▸ dragging moves the seam", dragged != wiped)
+        pg.keyboard.press("ArrowLeft")
+        record("Wipe ▸ arrow nudges it", canvas() != dragged)
+        pg.keyboard.press("w")
+        record("Wipe ▸ W exits, view restored", canvas() == full and
+               not pg.eval_on_selector("#wipeBtn", "e => e.classList.contains('on')"))
+        pg.keyboard.press("w")
+        pg.keyboard.press("Escape")
+        record("Wipe ▸ Escape exits too", canvas() == full)
+
         # ---- Edit menu ----------------------------------------------------
         before = canvas(); menu_click("undo")
         record("Edit ▸ Undo", "undo" in logtail(3))

@@ -1,0 +1,45 @@
+We train a compact network for single-image SDR-to-HDR reconstruction and
+evaluate it against its own analytic inverse tone map on 429 held-out frames in
+PU21-PSNR and ColorVideoVDP JOD. On degraded input --- an unknown tone curve,
+4:2:0 chroma, banding and JPEG, the condition real footage arrives in --- the
+model gains \textbf{+1.43 dB and +0.44 JOD}, winning \textbf{348 of 429 frames (81\%)}. On
+clean, well-graded input it \emph{loses} \textbf{3.0 dB} of PU21-PSNR while CVVDP puts the
+same gap at \textbf{−0.046 JOD}: a two-order-of-magnitude disagreement between the
+metrics that is itself the result.
+
+The clean regression is not uniform. It concentrates entirely in
+low-dynamic-range frames: the 60 worst average \textbf{−10.76 dB} at a median
+ground-truth peak of \textbf{238 nits}, the 60 best \textbf{+3.41 dB} at \textbf{19,590 nits},
+with correlation \textbf{+0.46} between gain and \texttt{log2(peak\_nits)}. The model has no
+representation of how much headroom a frame has, and so cannot decide to do
+nothing. The penalty is carried by the tail of the error distribution rather
+than its bulk (§6), which is itself a caution about the metric.
+
+We then measure what fixing that would be worth, and whether it can be fixed. An
+oracle per-frame scale on the residual is worth \textbf{+5.84 dB on clean and +0.29 dB
+on hard simultaneously}, and no constant achieves it --- clean wants 0.125, hard
+wants 1.1, and the constant that fixes clean discards 85\% of the hard gain. But
+a linear readout of the features such a gate would use explains only \textbf{3\%} of
+that scale's variance, and \textbf{79\% of the variance is within a condition rather
+than between}, so even a perfect clean-versus-degraded classifier caps at
+R² 0.213. The remaining 79\% asks whether a clipped region was a 200-nit lamp or
+a 20,000-nit sun --- a question an 8-bit frame does not answer.
+
+\textbf{But that bound is a property of the question, not of the problem.} Posed as a
+continuous per-frame scale it is unreachable. Posed as a \emph{binary} decision on
+the one axis that is detectable --- is this input clean or degraded? --- it is
+reachable, and we build it. A 21,121-parameter gate on the shadow arm of the
+reconstruction, supervised on a label we generate ourselves, moves clean input
+by \textbf{+3.41 ± 0.32 dB and +0.135 ± 0.023 JOD} over the shipped model while
+giving up \textbf{0.30 ± 0.15 dB and 0.091 ± 0.041 JOD} on degraded input, over three
+training seeds. All three are positive on all four measures against the analytic
+baseline --- the only configuration we scored of which that is true --- and all
+three have a clean CVVDP above every fixed alternative, including both ends of
+the ablation the gate interpolates.
+
+Our contribution is therefore two measurements and one component: an account of
+where the ceiling sits and why --- \textbf{the achievable gain is bounded by the
+information in the SDR input, not by model capacity, corpus size, or training
+objective}, each of which we vary and none of which moves it --- and a
+demonstration that decomposing the problem along the detectable axis recovers
+most of what the bound appeared to forbid.

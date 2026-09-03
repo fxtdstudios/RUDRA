@@ -1,30 +1,30 @@
-ship v5, rebuild the Studio, fix the temporal loss, make the benchmark runnable
+capacity ablation: v6 at 64ch confirms the ceiling is the corpus
 
-v5 step 81,000 ships as shipped_v5_step81000.pt: +1.80 dB hard, +0.02 dB
-clean. Peak highlight recovery has not moved in three runs, but v3b and v4
-bought theirs by damaging well-graded input by up to 4.2 dB and v5 does not.
-Both long runs peak near 80k steps and decay after; best-checkpoint selection
-is what rescues them.
+v6 ran the identical recipe and schedule at --base-channels 64 (4.77 M
+parameters against v5's 1.20 M) and reached +1.906 composite against +1.798.
+The matched-step curves converge by 80k: v6 leads through the middle (+1.129
+against +0.964 at 36-40k) and is level at 76-81k (+1.803 against +1.814). The
+extra parameters bought optimisation speed, not capability, and +0.108 dB sits
+inside the noise of a maximum taken over 101 evaluations. v5 stays shipped:
+equal quality inside the noise, at a quarter the size.
 
-Studio: the network runs once per frame and the page composes on the viewer's
-GPU (ui/compositor.js), so residual strength, recovery mode, preserve, region
-EV and display peak all run at frame rate instead of one round trip each.
-Compare is a flip, not a wipe. The menubar, frames rail and transport now do
-what they say, and tests/ui_smoke/press_everything.py presses every control
-and fails if one turns out to be decoration. Region EV is a real grade:
-rudra/delivery/controls.py applies the identical qualifier and gain when
-Master writes the EXR.
+That makes the corpus ceiling a measurement across a 4x capacity range rather
+than an inference from a single width, which is the claim the paper needed.
 
-Assets are served under mtime-stamped URLs, on a port that is not 8080, after
-a stylesheet another project had left in the browser cache answered a request
-for style.css?v=4 and the Studio rendered in someone else's CSS.
+Code review of the previous commit found three real defects, all fixed:
 
-The temporal refiner trained on a plain log-L1 that never saw a grading
-ceiling, on a video corpus where 84% of clips carry one; censored_log_error is
-now shared by both trainers.
+  - Filenames were concatenated into innerHTML unescaped. A frame named with
+    an img/onerror payload executed in the page's origin, which can drive
+    /api/master. A regression test proves it: the check fails on the old code.
+  - Dragging the scrub bar started one uncancelled GPU forward pass per frame
+    crossed. There is now a single in-flight request, superseded via
+    AbortController, and an aborted fetch is no longer reported as a failure.
+  - WebGL uniform locations were looked up on every draw, including inside the
+    reduction ladder. They are memoised per program now.
 
-rudra bench had no way to be fed, and CVVDP had never once executed: pycvvdp
-was handed a device string where it wanted a torch.device, and three layers of
-except Exception reported that as "install torch + pycvvdp".
-training/export_bench_pairs.py produces the ref/test/baseline pairs; the
-summary now names the real reason when the backend falls back.
+export_bench_pairs.py gained --test-name and --only-test, so a second model is
+scored against an existing reference instead of re-exporting 429 frames of it.
+Its --condition hard docstring was overclaiming: the degradation model and seed
+match the eval, but the eval degrades a 384-pixel crop where this degrades the
+whole frame, so the realisations differ. Said plainly now, in both the module
+and the README.

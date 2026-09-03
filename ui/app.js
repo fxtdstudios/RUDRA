@@ -33,6 +33,9 @@
     frames: [], index: -1, playing: false, playTimer: null,
     mode: "all", strength: 1, peakEv: 0, preserve: true,
     show: "model", flipHeld: false,
+    // Wipe: null when off, otherwise 0..1 across the plate. The baseline is on
+    // the left, the reconstruction on the right.
+    wipe: null, wipeDragging: false,
     regions: defaultRegions(), container: "aces",
     railLeft: true, railRight: true, scopesOpen: true, zoom: "fit",
     header: null, metrics: null, scopeData: null, master: null,
@@ -312,15 +315,26 @@
 
   function present() {
     if (!ctx || !state.header) { return; }
-    ctx.setParams({displayNits: displayNits(), show: shown()});
+    var wiping = state.wipe !== null;
+    ctx.setParams({displayNits: displayNits(), show: shown(),
+                   wipe: wiping ? state.wipe : -1});
     ctx.present();
     $("peakBadge").textContent = "Display peak " + Math.round(displayNits()) + " nits";
-    var isBase = shown() === "baseline";
-    $("plateLabel").textContent = isBase ? "Inverse-ACES baseline"
-      : ("RUDRA reconstruction" + (graded() ? " + region EV" : ""));
+    var isBase = !wiping && shown() === "baseline";
+    $("plateLabel").textContent = wiping
+      ? ("Baseline \u2502 RUDRA" + (graded() ? " + region EV" : ""))
+      : (isBase ? "Inverse-ACES baseline"
+                : ("RUDRA reconstruction" + (graded() ? " + region EV" : "")));
     $("plateLabel").classList.toggle("base", isBase);
+    var hint = $("plateHint");
+    if (hint) {
+      hint.textContent = wiping ? "Drag to move the wipe \u00b7 W to exit"
+                                : "Hold B, or the image, to flip";
+    }
+    $("gl").title = wiping ? "Drag to move the wipe" : "Hold to see the baseline";
     [].forEach.call($("viewMode").children, function (b) {
-      b.classList.toggle("on", b.dataset.view === shown());
+      if (b.id === "wipeBtn") { b.classList.toggle("on", wiping); }
+      else { b.classList.toggle("on", !wiping && b.dataset.view === shown()); }
     });
   }
 
@@ -505,6 +519,11 @@
     state.header = head;
     frame.touched = performance.now();
 
+    // The model's own judgement about this frame's shadows, computed server-side
+    // from the whole frame. Missing on a checkpoint without the gate, and 1.0 is
+    // the ungated behaviour, so an old checkpoint composes exactly as before.
+    ctx.setParams({shadowWeight: head.shadow_weight === undefined
+                                 ? 1.0 : Number(head.shadow_weight)});
     ctx.setFrame({width: head.width, height: head.height,
                   sdr: sdr, fields: fieldsU16, shadow: shadowU16});
     ctx.setParams({strength: state.strength, mode: state.mode,
@@ -713,6 +732,8 @@
 
   var SHORTCUTS = [
     ["B (hold)", "Flip to the inverse-ACES baseline"],
+    ["W", "Wipe: baseline left, RUDRA right. Drag the image to move it."],
+    ["\u2190 \u2192", "Nudge the wipe (Shift for fine)"],
     ["O", "Open frames"],
     ["M", "Master EXR"],
     [", / .", "Previous / next frame"],
@@ -918,14 +939,40 @@
     });
     $("viewMode").addEventListener("click", function (e) {
       var b = e.target.closest("button[data-view]");
-      if (b) { state.show = b.dataset.view; present(); }
+      if (b) { state.show = b.dataset.view; state.wipe = null; present(); }
     });
+    function wipeFromEvent(e) {
+      var r = $("gl").getBoundingClientRect();
+      if (r.width <= 0) { return state.wipe; }
+      return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    }
+    ACTIONS.wipe = function () {
+      state.wipe = state.wipe === null ? 0.5 : null;
+      state.flipHeld = false;
+      present();
+    };
+
     $("plate").addEventListener("pointerdown", function (e) {
-      if (e.button === 0) { state.flipHeld = true; present(); }
+      if (e.button !== 0) { return; }
+      // While the wipe is up, dragging moves the seam. Hold-to-flip would fight
+      // it for the same gesture, so only one of the two is ever live.
+      if (state.wipe !== null) {
+        state.wipeDragging = true;
+        if ($("plate").setPointerCapture) { $("plate").setPointerCapture(e.pointerId); }
+        state.wipe = wipeFromEvent(e);
+        present();
+        return;
+      }
+      state.flipHeld = true; present();
+    });
+    $("plate").addEventListener("pointermove", function (e) {
+      if (state.wipeDragging) { state.wipe = wipeFromEvent(e); present(); }
     });
     window.addEventListener("pointerup", function () {
+      if (state.wipeDragging) { state.wipeDragging = false; }
       if (state.flipHeld) { state.flipHeld = false; present(); }
     });
+    $("wipeBtn").addEventListener("click", function () { ACTIONS.wipe(); });
     $("strength").addEventListener("pointerdown", pushUndo);
     $("strength").addEventListener("input", function () {
       state.strength = parseFloat(this.value);
@@ -961,7 +1008,19 @@
         if (!e.repeat) { state.flipHeld = true; present(); }
         return;
       }
-      if (k === "Escape") { closeSheet(); closeMenus(); return; }
+      if (k === "w" || k === "W") { ACTIONS.wipe(); return; }
+      if (state.wipe !== null && (k === "ArrowLeft" || k === "ArrowRight")) {
+        e.preventDefault();
+        var step = e.shiftKey ? 0.01 : 0.05;
+        state.wipe = Math.max(0, Math.min(1,
+          state.wipe + (k === "ArrowRight" ? step : -step)));
+        present();
+        return;
+      }
+      if (k === "Escape") {
+        if (state.wipe !== null) { state.wipe = null; present(); return; }
+        closeSheet(); closeMenus(); return;
+      }
       var map = {
         "o": "open", "O": "open", "m": "master", "M": "master",
         "z": "undo", "Z": "undo", "y": "redo", "Y": "redo",

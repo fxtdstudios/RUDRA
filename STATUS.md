@@ -17,7 +17,7 @@
 > advanced it.
 >
 > **Line C, as of 1 Sep 2026:** v5 (1,196,197 parameters) benchmarked on 429
-> held-out frames — **+1.43 dB PU21-PSNR and +0.44 JOD on degraded input, 346 of
+> held-out frames — **+1.43 dB PU21-PSNR and +0.44 JOD on degraded input, 348 of
 > 429 frames**; **-3.0 dB / -0.046 JOD on clean input**. Failure mode located
 > (error correlates +0.46 with scene headroom), oracle bound measured (+5.84 dB
 > clean), and that bound shown to be mostly unreachable from an 8-bit input
@@ -28,10 +28,12 @@
 > split, and a viewer presenting every frame upside down.
 >
 > **Line C remaining:** a comparison against any published method on this split
-> (the largest gap), 7 unfilled `[CITE]` markers in the paper's related work,
-> scoring `step_0072000.pt` to confirm the selection fix, characterising the
-> error tail on more than 26 frames, and the temporal refiner — whose held-out
-> set is 4 validation and 5 test clips of one scene each, too small to report.
+> (the largest gap), a seed sweep on the shadow gate to put an error bar on its
+> +0.07 dB clean margin, scoring `step_0072000.pt` to confirm the selection fix,
+> characterising the error tail on more than 26 frames, LaTeX/arXiv formatting,
+> and the temporal refiner — whose held-out set is 4 validation and 5 test clips
+> of one scene each, too small to report. The paper's related work is cited
+> (9 references + 4 standards, 2026-09-03); no `[CITE]` markers remain.
 
 ---
 

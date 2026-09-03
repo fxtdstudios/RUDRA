@@ -42,6 +42,8 @@ def main():
     GRADED = [{"low_nits": 400.0, "high_nits": 2000.0, "ev": 1.0},
               {"low_nits": 2000.0, "high_nits": 8000.0, "ev": -0.4},
               {"low_nits": 0.05, "high_nits": 12.0, "ev": 0.75}]
+    # shadow_weight is the fifth axis: the GLSL, the numpy reference and
+    # SDR2HDRNet.forward must all apply it to the shadow PRIOR and nowhere else.
     cases = [
         (1.0, "all", True, 203.0),
         (1.0, "all", False, 203.0),
@@ -53,6 +55,12 @@ def main():
     cases = [c + (NEUTRAL,) for c in cases] + [
         (1.0, "all", True, 203.0, GRADED),
         (1.4, "highlights", False, 1000.0, GRADED),
+    ]
+    # (strength, mode, preserve, nits, regions, shadow_weight)
+    cases = [c + (1.0,) for c in cases] + [
+        (1.0, "all", True, 203.0, NEUTRAL, 0.0),    # the ablation's OFF endpoint
+        (1.0, "all", True, 203.0, NEUTRAL, 0.37),   # an intermediate the gate emits
+        (1.2, "all", False, 1000.0, GRADED, 0.63),
     ]
 
     import functools, http.server, socketserver, threading
@@ -81,11 +89,11 @@ def main():
             print("page errors:", errors); return 1
 
         worst = 0.0
-        for strength, mode, preserve, nits, regions in cases:
+        for strength, mode, preserve, nits, regions, shadow_w in cases:
             got = page.evaluate(
                 "a => window.runCase(a)",
                 {"strength": strength, "mode": mode, "preserve": preserve,
-                 "displayNits": nits, "regions": regions})
+                 "displayNits": nits, "regions": regions, "shadowWeight": shadow_w})
             gl_rgb = np.array(got["composite"], dtype=np.float64).reshape(H, W, 4)[..., :3]
             # readPixels returns the default framebuffer bottom row first, and
             # DISPLAY flips V so the frame is presented right way up, so the
@@ -98,7 +106,8 @@ def main():
 
             ref = compose(sdr_u8.astype(np.float64) / 255.0,
                             residual.astype(np.float64), highlight.astype(np.float64),
-                            shadow.astype(np.float64), strength, mode, preserve)
+                            shadow.astype(np.float64), strength, mode,
+                            shadow_w, preserve)
             ref = apply_regions(ref, regions)
             err = np.abs(gl_rgb - ref).max()
             rel = np.abs(gl_rgb - ref).max() / max(float(np.abs(ref).max()), 1e-9)
@@ -111,7 +120,8 @@ def main():
             mx = float((ref.max(-1)).max()) * 10000.0
             mean = float((ref.max(-1)).mean()) * 10000.0
             print(f"  strength={strength:<5} mode={mode:<11} preserve={str(preserve):<5} "
-                  f"peak={nits:>6.0f} {'graded' if regions is GRADED else '  flat'}"
+                  f"peak={nits:>6.0f} sw={shadow_w:<4.2f} "
+                  f"{'graded' if regions is GRADED else '  flat'}"
                   f"  abs {err:.3e}  rel {rel:.3e}  disp8 {disp_err:.1f} "
                   f"| peak {got['peak']:.4f} vs {mx:.4f}  mean {got['mean']:.4f} vs {mean:.4f}")
             # relative to the frame peak: half-float fields carry ~1e-3 relative

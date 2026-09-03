@@ -130,7 +130,7 @@
           <canvas id="gl" title="Hold to see the baseline"></canvas>
           <span class="badge right" id="plateLabel"
                 style="left:8px;bottom:8px">RUDRA reconstruction</span>
-          <span class="badge" style="right:8px;bottom:8px">Hold B, or the image, to flip</span>
+          <span class="badge" style="right:8px;bottom:8px" id="plateHint">Hold B, or the image, to flip</span>
           <span class="badge num" style="right:8px;top:8px" id="peakBadge">Display peak 203 nits</span>
         </div>
       </div>
@@ -150,6 +150,7 @@
         <div class="seg" id="viewMode">
           <button type="button" data-view="model" class="on">RUDRA</button>
           <button type="button" data-view="baseline">Baseline</button>
+          <button type="button" id="wipeBtn" title="Wipe: baseline left, RUDRA right (W)">Wipe</button>
         </div>
       </div>
 
