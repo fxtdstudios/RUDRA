@@ -392,10 +392,10 @@ Every derived number in §5, §6 and §6.1–6.2 is recomputed on demand by two
 scripts that exit non-zero on any drift — 58 claims from the benchmark files,
 five more from the headroom join. Both are below.
 
-Two things the paper is honest about and this README should be too. No published
-method has been scored on our split, so every number above is against our own
-analytic baseline; that is the largest gap — `training/run_expandnet.py` closes
-the mechanical half of it, and running it is the next job. And §6's
+Two things the paper is honest about and this README should be too. One published
+method has been scored on our split, so the numbers above are against our own
+analytic baseline and against ExpandNet (§5.1); three other public methods have
+runnable code and have not been run. And §6's
 trimmed-PSNR table and §7's oracle sweep still have no script, because they need
 per-pixel statistics over the reference frames rather than the per-frame results
 the benchmark writes. §10 says so rather than leaving a reader to assume
@@ -417,9 +417,29 @@ expensive half.
 
 ### Comparing against published work
 
-The harness is built, and ExpandNet has a runner that imports the authors' own
-model and weights from a clone of their repository rather than reimplementing
-the method:
+**Done for one method.** ExpandNet, run from the authors' released weights on
+the same 429 frames:
+
+| clean, 429 frames | PU21 dB | CVVDP JOD |
+|---|---:|---:|
+| **RUDRA + gate, as deployed** | **46.06** | **9.561** |
+| analytic inverse-ACES baseline | 45.99 | 9.448 |
+| ExpandNet | 27.50 | 7.532 |
+
+−18.56 dB and −2.029 JOD, winning 1 of 429 frames on PU21 and 16 on CVVDP.
+Both metrics agree, which is worth noting beside the disagreement above: the
+two-order-of-magnitude gap is a property of *small* differences on well-graded
+input, not a defect in either instrument.
+
+Three caveats live in §5.1 of the paper and should travel with the number.
+ExpandNet is run outside its training domain; our reference is unclamped to
+about a million nits; and it needs a per-frame exposure fit spanning 35.5×
+where RUDRA needs 1.0×, because RUDRA predicts absolute nits and ExpandNet
+predicts relative radiance. Given the *best possible* exposure it recovers only
++0.39 dB, so the fit is not what costs it.
+
+Santos 2020, HDRCNN and SingleHDR have public code and no runner yet. The
+harness that made this one work:
 
 ```bash
 git clone https://github.com/dmarnerides/hdr-expandnet.git
@@ -431,7 +451,7 @@ python training/import_method_output.py --out <dir> --from <out>/expandnet_raw \
 rudra bench <dir> --nits-scale 203 --test-dir expandnet
 ```
 
-Santos 2020, HDRCNN and SingleHDR have no runner yet.
+
 
 Published single-image iTMO methods predict *relative* radiance with no nit
 anchor, so the importer fits one global scalar per frame on the pixels the SDR
@@ -484,6 +504,33 @@ Three things that make a training log readable:
   where 84% of clips carry a hard ceiling — it would have undone the image
   model's highlights frame by frame.
 
+**Video is a different problem, and the corpus is why.** There are 935 clips but
+only **13 scenes**, split 11 train / 1 val / 1 test. A number measured on one
+held-out scene describes that scene, so the temporal refiner is reported as
+unevaluated rather than given a figure. More clips would not help; 926 training
+clips from 11 scenes is 11 scenes sliced 84 ways.
+
+`pipeline/render_hdri_moves.py` is the way out. It flies a virtual camera
+through the 963 scene-referred Poly Haven panoramas — pans, tilts, rolls and
+slow zooms — and writes SDR/HDR clip pairs with exact ground truth, because both
+halves come from the same radiance. Frames are named for
+`build_video_manifest.py`, so the output drops into the existing pipeline:
+
+```bash
+python pipeline/render_hdri_moves.py --hdri-dir <polyhaven> --dst work/pairs_moves
+python training/build_video_manifest.py --hdr-dir work/pairs_moves/hdr \
+    --sdr-dir work/pairs_moves/sdr --output work/video_manifest_moves.jsonl \
+    --clip-length 9 --frame-step 1
+```
+
+Two honest limits. A panorama has no parallax, so nothing occludes anything as
+the camera turns and nothing in the scene moves; that covers a large share of
+real plates and none of the hardest ones. And the 2k panoramas are 2048×1024, so
+a 75° field of view samples 427 source pixels across a 1280-wide frame.
+`--max-upscale` refuses that by default instead of quietly training on softened
+sources — fetch the 4k or 8k versions, same licence, for anything you intend to
+report.
+
 The distribution shift is worth knowing before you read any clean number. The
 band where the model fails, below 400 nits, is 45.2% of the test split and 27.2%
 of what the sampler actually draws. Weighted median peak: 1,713 nits in train
@@ -499,7 +546,8 @@ rudra/            Descriptor, DRE transformer, cross-attention, FiLM decoder,
 rudra/delivery/   Torch-free: DoVi L1 / HDR10+, ACES / EXR / OCIO, grade
                   controls, benchmarks, the `rudra` CLI
 pipeline/         Corpus construction and its gates: scanner, pair preparation,
-                  HDR storage (hdr_io), manifests, verify_dataset
+                  HDR storage (hdr_io), manifests, verify_dataset, and the
+                  HDRI camera-move renderer that makes a video split possible
 training/         Trainers, evaluation, inference, the exporter that turns a
                   checkpoint into benchmark pairs, run_bench.ps1, the ExpandNet
                   runner and third-party importer, and the scripts that

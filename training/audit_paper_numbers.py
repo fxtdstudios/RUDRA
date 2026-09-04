@@ -48,10 +48,10 @@ CLAIMS = [
     ("noshadow hard gain dB",   "6.1",          "gain_db",  "hard",  "v5_noshadow", +0.33, 0.01),
     ("noshadow hard gain JOD",  "6.1",          "gain_jod", "hard",  "v5_noshadow", +0.134, 0.001),
 
-    ("v6 clean gain dB",        "5.1",          "gain_db",  "clean", "v6",          -2.75, 0.01),
-    ("v6 clean gain JOD",       "5.1",          "gain_jod", "clean", "v6",          +0.004, 0.001),
-    ("v6 hard gain dB",         "5.1",          "gain_db",  "hard",  "v6",          +0.96, 0.01),
-    ("v6 hard gain JOD",        "5.1",          "gain_jod", "hard",  "v6",          +0.344, 0.001),
+    ("v6 clean gain dB",        "5.2",          "gain_db",  "clean", "v6",          -2.75, 0.01),
+    ("v6 clean gain JOD",       "5.2",          "gain_jod", "clean", "v6",          +0.004, 0.001),
+    ("v6 hard gain dB",         "5.2",          "gain_db",  "hard",  "v6",          +0.96, 0.01),
+    ("v6 hard gain JOD",        "5.2",          "gain_jod", "hard",  "v6",          +0.344, 0.001),
 
     ("gate clean gain dB",      "6.2",          "gain_db",  "clean", "shadow_v1",   +0.07, 0.01),
     ("gate clean gain JOD",     "6.2",          "gain_jod", "clean", "shadow_v1",   +0.113, 0.001),
@@ -77,6 +77,18 @@ CLAIMS = [
     ("seed3 hard gain JOD",     "6.2",          "gain_jod", "hard",  "shadow_s3",  +0.358, 0.001),
     ("seed3 clean frames won",  "6.2",          "won",      "clean", "shadow_s3",   280, 0),
     ("seed1 clean frames won",  "6.2",          "won",      "clean", "shadow_v1",   251, 0),
+
+    # §5.1: ExpandNet on the same split. The absolute rows are checked as
+    # deltas against the baseline so one rule covers every method.
+    ("expandnet vs base dB",    "5.1",          "gain_db",  "clean", "expandnet",  -18.49, 0.01),
+    ("expandnet vs base JOD",   "5.1",          "gain_jod", "clean", "expandnet",  -1.916, 0.001),
+    ("expandnet frames won",    "5.1",          "won",      "clean", "expandnet",     1, 0),
+    ("aligned vs base dB",      "5.1",          "gain_db",  "clean", "rudra_aligned", +0.62, 0.01),
+    ("aligned vs base JOD",     "5.1",          "gain_jod", "clean", "rudra_aligned", +0.110, 0.001),
+    ("expandnet vs RUDRA dB",   "5.1",          "delta_db",  "clean", "expandnet", "shadow_v1", -18.56, 0.01),
+    ("expandnet vs RUDRA JOD",  "5.1",          "delta_jod", "clean", "expandnet", "shadow_v1", -2.029, 0.001),
+    ("fit worth to RUDRA dB",   "5.1",          "delta_db",  "clean", "rudra_aligned", "shadow_v1", +0.55, 0.01),
+    ("fit worth to RUDRA JOD",  "5.1",          "delta_jod", "clean", "rudra_aligned", "shadow_v1", -0.0025, 0.0005),
 
     # §8: step 72,000 is better on the criterion the selector optimises and
     # worse on CVVDP. Both halves are claims, so both are checked.

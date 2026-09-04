@@ -37,6 +37,12 @@ baseline --- the only configuration we scored of which that is true --- and all
 three have a clean CVVDP above every fixed alternative, including both ends of
 the ablation the gate interpolates.
 
+Against a published method on the same 429 frames --- ExpandNet, run from the
+authors' released weights --- RUDRA is \textbf{+18.56 dB and +2.03 JOD}. Both metrics
+agree there, which is worth stating beside the disagreement above: the
+two-order-of-magnitude gap is a property of \emph{small} differences on well-graded
+input, not a defect in either instrument.
+
 Our contribution is therefore two measurements and one component: an account of
 where the ceiling sits and why --- \textbf{the achievable gain is bounded by the
 information in the SDR input, not by model capacity, corpus size, or training

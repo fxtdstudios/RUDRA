@@ -18,7 +18,14 @@ CITE = {1: "eilertsen2017", 2: "marnerides2018", 3: "endo2017", 4: "liu2020",
 # string in the table's header row.
 WIDE = {
     "v5 (shipped)": r"@{}lp{0.46\linewidth}p{0.20\linewidth}@{}",
+    # SS5.1's method column carries full sentences of label.
+    "RUDRA + gate, as deployed": r"@{}p{0.52\linewidth}rr@{}",
 }
+
+# Tables that fit only at a smaller size. Seven columns of signed decimals do
+# not go into a 6.5in text block at 11pt, and shrinking the type is honest
+# where dropping a column would not be.
+SMALL = ("clean dB | clean JOD | hard dB | hard JOD", "seed & clean dB")
 
 
 def pandoc(md, *extra):
@@ -71,6 +78,12 @@ def main():
                 lines[i] = re.sub(r"\{@\{\}.*\}$",
                                   lambda m, c=cols: "{" + c + "}", line)
                 break
+        if any(needle in window for needle in SMALL):
+            lines[i] = "{\\footnotesize\n" + lines[i]
+            for j in range(i + 1, len(lines)):
+                if lines[j].startswith("\\end{longtable}"):
+                    lines[j] = lines[j] + "\n}"
+                    break
     tex = "\n".join(lines)
 
     io.open(os.path.join(HERE, "_body.tex"), "w", encoding="utf-8").write(tex)

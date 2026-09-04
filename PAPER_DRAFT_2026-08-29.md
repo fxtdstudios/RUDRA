@@ -49,6 +49,12 @@ baseline — the only configuration we scored of which that is true — and all
 three have a clean CVVDP above every fixed alternative, including both ends of
 the ablation the gate interpolates.
 
+Against a published method on the same 429 frames — ExpandNet, run from the
+authors' released weights — RUDRA is **+18.56 dB and +2.03 JOD**. Both metrics
+agree there, which is worth stating beside the disagreement above: the
+two-order-of-magnitude gap is a property of *small* differences on well-graded
+input, not a defect in either instrument.
+
 Our contribution is therefore two measurements and one component: an account of
 where the ceiling sits and why — **the achievable gain is bounded by the
 information in the SDR input, not by model capacity, corpus size, or training
@@ -77,7 +83,8 @@ What follows is the system that exists, measured with the metrics that exist.
 > author page for authors, title, venue and year; the one-line method
 > descriptions are at the level the titles and abstracts support. No number in
 > this paper is attributed to any of them — we compare against our own analytic
-> baseline only, and §9 states that as the paper's largest gap. The failure mode
+> baseline and against ExpandNet (§5.1), and §9 says which comparisons are still
+> missing. The failure mode
 > this caution replaces — placeholder tables presented as measurements — is
 > documented in `PAPER_ERRATA.md`.
 
@@ -122,10 +129,11 @@ our corpus is proprietary. §4 documents a distribution shift between our own
 training and held-out splits that we did not design and that a reader should
 weigh.
 
-**What we could not compare against.** No published method is evaluated on our
-split. `rudra bench --test-dir <method>` scores any third-party output against
-the same reference; that comparison is the single most valuable addition to this
-paper and its absence is stated again in §9.
+**What we compare against.** ExpandNet [2] is scored on our split in §5.1, using
+the authors' released weights and their own pre- and postprocessing.
+`rudra bench --test-dir <method>` scores any third-party output against the same
+reference, so the other three are a matter of running their code, not of
+building anything. §9 says which.
 
 ---
 
@@ -252,7 +260,60 @@ difference. What the model adds to well-graded input is highlight energy that
 PU21-PSNR punishes and no viewer sees. *The clean PU21 row should never be
 reported without the JOD beside it.*
 
-### 5.1 Capacity is not the constraint
+### 5.1 A published method, on the same split
+
+Every number above is against our own analytic baseline, which §9 has called
+this paper's largest gap since the first draft. It is now closed for one method.
+
+ExpandNet [2] was run on the same 429 frames, using the authors' own model and
+released weights from their repository rather than a reimplementation, and their
+preprocessing and postprocessing unchanged. The inputs were the exact 8-bit
+frames RUDRA was given.
+
+| clean, 429 frames | PU21 dB | CVVDP JOD |
+|---|---:|---:|
+| **RUDRA + gate, as deployed** | **46.06** | **9.561** |
+| RUDRA + gate, exposure-aligned | 46.61 | 9.558 |
+| analytic inverse-ACES baseline | 45.99 | 9.448 |
+| v5 backbone, no gate | 42.99 | 9.402 |
+| ExpandNet | 27.50 | 7.532 |
+
+ExpandNet is **−18.56 dB and −2.029 JOD** against RUDRA as deployed, winning 1
+of 429 frames on PU21 and 16 on CVVDP.
+
+**The alignment, and what it is worth to each side.** ExpandNet ends in a
+sigmoid and its released postprocessing min/max-normalises each frame to [0,1],
+so it predicts *relative* radiance with no nit anchor. Scoring that directly
+against a reference in cd/m² measures its exposure guess. We therefore fit one
+global scalar per frame, on the pixels the SDR input neither clipped nor
+crushed. That is a free parameter, and it is not free to grant: ExpandNet's
+fitted scale has a **35.5× spread** across frames (p10 0.49, p90 17.45), while
+RUDRA's is **1.0×** (p10 0.9993, p90 1.018), because RUDRA predicts absolute
+nits. Put through the same fit RUDRA gains +0.55 dB and *loses* 0.0025 JOD, so
+the row we report for ourselves is RUDRA as deployed.
+
+The alignment is not what costs ExpandNet its score. Given the *best possible*
+per-frame exposure, chosen to maximise its own PU21, it recovers **+0.39 dB**.
+
+**Three caveats, because a gap this size invites the question.** ExpandNet is
+run outside its training domain: our SDR frames come from an ACES approximation
+at a −1 EV offset, not the curve its corpus used. Our reference is unclamped and
+reaches roughly a million nits, a range no method trained on display-referred targets
+was built for. And ExpandNet compresses dynamic range by a median factor of
+**2.3×** against the reference where RUDRA is within **1.32×**, which
+contributes but does not explain 18 dB. Read the row as *this method,
+unmodified, on this corpus*, not as a general ranking.
+
+**One thing this settles about §5.** The two metrics disagree by two orders of
+magnitude on RUDRA against its own baseline, and agree decisively here: 18.6 dB
+and 2.03 JOD say the same thing, and 2 JOD is two just-noticeable differences.
+The disagreement is a property of *small* differences on well-graded input, not
+a defect in either instrument. When the difference is real, both see it.
+
+Santos et al. [5], Eilertsen et al. [1] and Liu et al. [4] have public code and
+have not been run.
+
+### 5.2 Capacity is not the constraint
 
 v6 quadruples width to 4.77 M parameters. It is better on clean (+0.25 dB,
 +0.05 JOD) and worse on hard (−0.46 dB, −0.10 JOD) than v5 — movement in both
@@ -392,15 +453,15 @@ predicted.
 proves nothing, so we trained two more gates on the same backbone, changing only
 the seed, and scored them on the same 429 frames.
 
-| seed | clean dB | clean JOD | hard dB | hard JOD | clean CVVDP | clean frames won |
+| seed | clean dB | clean JOD | hard dB | hard JOD | CVVDP | frames won |
 |---|---:|---:|---:|---:|---:|---:|
-| 20260901 | +0.07 | +0.113 | +1.24 | +0.389 | 9.561 | 251 / 429 (59%) |
-| 2 | +0.71 | +0.068 | +0.96 | +0.308 | 9.516 | 315 / 429 (73%) |
-| 3 | +0.45 | +0.089 | +1.18 | +0.358 | 9.537 | 280 / 429 (65%) |
+| 20260901 | +0.07 | +0.113 | +1.24 | +0.389 | 9.561 | 251 (59%) |
+| 2 | +0.71 | +0.068 | +0.96 | +0.308 | 9.516 | 315 (73%) |
+| 3 | +0.45 | +0.089 | +1.18 | +0.358 | 9.537 | 280 (65%) |
 | **mean ± sd** | **+0.41 ± 0.33** | **+0.090 ± 0.023** | **+1.12 ± 0.15** | **+0.352 ± 0.041** | | |
 
-*Gain over the analytic baseline. The shipped v5 wins 115 of 429 clean frames
-(27%) for comparison.*
+*Gain over the analytic baseline; CVVDP and frames won are on clean, out of
+429. The shipped v5 wins 115 for comparison.*
 
 **All three are positive on all four measures**, and all three have a clean
 CVVDP above every fixed alternative we scored (best of those: 9.452). The
@@ -508,7 +569,7 @@ worth is mostly unreachable from the input.
 
 | lever varied | change | effect on the bound |
 |---|---|---|
-| capacity | 1.20 M → 4.77 M parameters | ±0.5 dB, sign varies (§5.1) |
+| capacity | 1.20 M → 4.77 M parameters | ±0.5 dB, sign varies (§5.2) |
 | corpus | 6× footage (v4) | +0.03 dB |
 | objective | censored loss; oracle supervision | no movement in α |
 
@@ -573,10 +634,11 @@ against itself. Master EXR output was never affected.
   report.
 - **One degradation model.** `hard` is our own seeded camera/codec pipeline, not
   a corpus of real degraded footage.
-- **No comparison to published inverse tone mapping methods.** Every number here
-  is against our own analytic baseline. `rudra bench --test-dir <method>` scores
-  any third-party output against the same reference, and that comparison is the
-  obvious next step. This is the paper's largest gap and we do not minimise it.
+- **One published method, not four.** ExpandNet is scored on our split (§5.1);
+  Santos et al., Eilertsen et al. and Liu et al. have public code and are not.
+  One comparison answers "compared to what?" and does not rank the field, and
+  §5.1's caveats — training-domain mismatch, an unclamped reference, a per-frame
+  exposure fit — apply to the one row we have.
 - **No claim in this paper is grounded in a re-implementation of prior work.**
   §2 places the result among families of methods and cites them
   bibliographically; it does not reproduce their numbers, and we did not run

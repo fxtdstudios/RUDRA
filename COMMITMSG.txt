@@ -1,30 +1,32 @@
-capacity ablation: v6 at 64ch confirms the ceiling is the corpus
+Close the comparison gap: ExpandNet on the 429-frame split
 
-v6 ran the identical recipe and schedule at --base-channels 64 (4.77 M
-parameters against v5's 1.20 M) and reached +1.906 composite against +1.798.
-The matched-step curves converge by 80k: v6 leads through the middle (+1.129
-against +0.964 at 36-40k) and is level at 76-81k (+1.803 against +1.814). The
-extra parameters bought optimisation speed, not capability, and +0.108 dB sits
-inside the noise of a maximum taken over 101 evaluations. v5 stays shipped:
-equal quality inside the noise, at a quarter the size.
+RUDRA + gate scores 46.06 dB / 9.561 JOD against ExpandNet's 27.50 / 7.532,
+run from the authors' released weights with their own pre- and postprocessing.
+-18.56 dB and -2.029 JOD, winning 1 of 429 frames on PU21 and 16 on CVVDP.
 
-That makes the corpus ceiling a measurement across a 4x capacity range rather
-than an inference from a single width, which is the claim the paper needed.
+Both metrics agree here, which settles something about section 5: the
+two-order-of-magnitude disagreement is a property of small differences on
+well-graded input, not a defect in either instrument.
 
-Code review of the previous commit found three real defects, all fixed:
+Three caveats in 5.1 rather than in a reviewer's report -- training-domain
+mismatch, an unclamped reference, and a per-frame exposure fit spanning 35.5x
+for ExpandNet against 1.0x for RUDRA. Given the best possible exposure it
+recovers +0.39 dB, so the fit is not what costs it. Put through the same fit
+RUDRA gains 0.55 dB and loses 0.0025 JOD, so the row we report for ourselves
+is RUDRA as deployed.
 
-  - Filenames were concatenated into innerHTML unescaped. A frame named with
-    an img/onerror payload executed in the page's origin, which can drive
-    /api/master. A regression test proves it: the check fails on the old code.
-  - Dragging the scrub bar started one uncancelled GPU forward pass per frame
-    crossed. There is now a single in-flight request, superseded via
-    AbortController, and an aborted fetch is no longer reported as a failure.
-  - WebGL uniform locations were looked up on every draw, including inside the
-    reduction ladder. They are memoised per program now.
+Section 9's "largest gap" becomes "one published method, not four".
 
-export_bench_pairs.py gained --test-name and --only-test, so a second model is
-scored against an existing reference instead of re-exporting 429 frames of it.
-Its --condition hard docstring was overclaiming: the degradation model and seed
-match the eval, but the eval degrades a 384-pixel crop where this degrades the
-whole frame, so the realisations differ. Said plainly now, in both the module
-and the README.
+Also in this commit:
+
+  * pipeline/render_hdri_moves.py -- virtual camera moves through the 963
+    Poly Haven panoramas, which turns 13 video scenes into as many as there
+    are panoramas. The clip index rides in the frame number so all clips of
+    one panorama stay one scene and a held-out split cannot leak.
+  * training/export_for_hub.py + docs/HUB_MODEL_CARD.md -- the checkpoints as
+    safetensors with their architecture config in the file metadata, and a
+    model card that states the clean-input regression and the information
+    bound rather than burying them.
+  * audit_paper_numbers.py extended to 67 claims, comparison rows included.
+  * paper build: footnotesize support for wide tables, and a Unicode
+    superscript that broke pdflatex.
