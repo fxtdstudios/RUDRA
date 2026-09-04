@@ -166,6 +166,15 @@ Whole scenes are held out, so no scene appears on both sides of a split.
 JPEG. `clean` is well-graded input, which the analytic inverse-ACES baseline
 already handles well.
 
+![Degraded input, four methods](docs/compare/hard_deployment.png)
+
+Three held-out frames under the degraded condition. The HDR columns are stopped
+down by whole stops so the highlight range lands where a browser can show it,
+and the exposure is picked from the reference alone, so no method is flattered
+by its own output. The analytic inverse tone map has a hard ceiling and clips
+into it; the sky is a flat plate. RUDRA keeps the roll-off the reference has.
+Per-frame numbers under each panel come from the benchmark's own result files.
+
 | Condition | Method | PU21-PSNR (dB) | CVVDP (JOD) |
 |---|---|---:|---:|
 | clean | analytic baseline | 45.99 | 9.448 |
@@ -261,6 +270,13 @@ weight per frame on the shadow prior, supervised by binary cross-entropy against
 the degradation label. Weight 1.0 reproduces `recovery_mode="all"` exactly and
 0.0 reproduces `recovery_mode="highlights"` exactly, so it interpolates between
 the two ablation endpoints and nothing else.
+
+![Well-graded input, with and without the gate](docs/compare/clean_gate.png)
+
+Three low-headroom frames that need no reconstruction at all. The shipped v5
+lifts them anyway, which is the shadow arm firing where it should not: a purple
+cast in the black curtain, haze on the dark wall, milk in the foreground rocks.
+The gate turns that arm down and lands on the reference.
 
 Three seeds, gain over the analytic baseline:
 
@@ -418,9 +434,17 @@ ExpandNet, run from the authors' released weights on the same 429 frames:
 | ExpandNet | 27.50 | 7.532 |
 
 That is -18.56 dB and -2.029 JOD, winning 1 of 429 frames on PU21 and 16 on
-CVVDP. Both metrics agree here, which is worth noting beside the disagreement
-above: the two-order-of-magnitude gap is a property of small differences on
-well-graded input, not a defect in either instrument.
+CVVDP.
+
+Both metrics agree here, which is worth noting beside the disagreement above:
+the two-order-of-magnitude gap is a property of small differences on well-graded
+input, not a defect in either instrument.
+
+![RUDRA against ExpandNet](docs/compare/published_method.png)
+
+ExpandNet loses the sun in the third frame outright and flattens the highlight
+range in the other two. It is also the only column here that got a per-frame
+exposure fit.
 
 Three caveats live in section 5.1 of the paper and should travel with the
 number. ExpandNet is run outside its training domain. Our reference is unclamped
@@ -544,6 +568,8 @@ training/         Trainers, evaluation, inference, the exporter that turns a
 ui/               RUDRA Studio: the page, its GPU compositor, the inference
                   server behind them
 paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
+docs/             Paper figures, the Studio screenshot, the comparison strips
+                  and make_compare.py, which rebuilds them from a scored bench
 checkpoints/      Every SDR to HDR model, plus models.json, the registry the
                   viewer reads (see its README)
 config/, configs/ VAE registry and training recipes
@@ -592,6 +618,18 @@ error page:
 
 ```bash
 python ui/capture_shot.py
+```
+
+The comparison strips under `docs/compare/` are generated the same way, from a
+scored benchmark rather than from a screenshot. Every caption in them is read
+back out of the benchmark's own result JSON, so a strip cannot claim a gain the
+benchmark does not have, and the display exposure is picked from the reference
+alone rather than from any method's output:
+
+```bash
+python docs/make_compare.py --bench <bench dir>
+python docs/make_compare.py --bench <bench dir> \
+    --list-candidates hard baseline shadow_v1 20    # how the frames were picked
 ```
 
 Every script has `--help` and a docstring saying what it does and why.
