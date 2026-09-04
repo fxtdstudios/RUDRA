@@ -6,6 +6,8 @@
 *.toc
 *.fls
 *.fdb_latexmk
-main.pdf
 rudra-arxiv.tar.gz
 arxiv/
+
+# main.pdf IS committed: the README links it as the paper, so a clone that
+# cannot build LaTeX still gets the document. Rebuild it with build.sh.

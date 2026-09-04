@@ -14,9 +14,9 @@ and it reconstructs what the tone map threw away. That path is what most of this
 README is about, because it is the part we finished measuring.
 
 📦 Weights — [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main)
-📄 Paper — [`PAPER_DRAFT_2026-08-29.md`](PAPER_DRAFT_2026-08-29.md), *What an
-8-Bit Frame Can and Cannot Say About the Scene Behind It*. Run
-`bash paper/build.sh` for the PDF.
+📄 Paper — [**paper/main.pdf**](paper/main.pdf), *What an 8-Bit Frame Can and
+Cannot Say About the Scene Behind It* (15 pages). The markdown it is generated
+from is [`PAPER_DRAFT_2026-08-29.md`](PAPER_DRAFT_2026-08-29.md).
 🔎 Status — [`STATUS.md`](STATUS.md) says which of the three things called RUDRA
 are actually done. Short version: the production decoders are; the research
 pipeline's Stage 3 is not; the SDR→HDR model is measured and written up.
@@ -374,10 +374,12 @@ and spread everywhere.
 
 ## The paper
 
-[`PAPER_DRAFT_2026-08-29.md`](PAPER_DRAFT_2026-08-29.md) is the write-up of the
-SDR→HDR model: 14 pages, 11 sections, three figures, and every number in it
-traceable to a command. The markdown is the source of truth. The LaTeX under
-`paper/` is generated.
+[**`paper/main.pdf`**](paper/main.pdf) is the write-up of the SDR→HDR model: 15
+pages, 11 sections, three figures, and every number in it traceable to a
+command. It is committed, so a clone with no LaTeX still has the document.
+
+`PAPER_DRAFT_2026-08-29.md` is what it is generated from and remains the source
+of truth; the LaTeX under `paper/` is regenerated on every build.
 
 ```bash
 bash paper/build.sh      # -> paper/main.pdf

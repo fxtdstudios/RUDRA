@@ -2,7 +2,7 @@
 
 *Bounds for inverse tone mapping, and a gate that reaches one of them.*
 
-**Draft, 29 August 2026.** Supersedes the §6/§7.1 tables flagged as blocking in
+**4 September 2026.** Supersedes the §6/§7.1 tables flagged as blocking in
 `PAPER_ERRATA.md`. Every number below is measured, and the command that produced
 it is named.
 
@@ -79,7 +79,7 @@ What follows is the system that exists, measured with the metrics that exist.
 
 ## 2. Related work
 
-> **Draft note.** Every reference below was checked against the publisher or
+> **Note on citations.** Every reference below was checked against the publisher or
 > author page for authors, title, venue and year; the one-line method
 > descriptions are at the level the titles and abstracts support. No number in
 > this paper is attributed to any of them — we compare against our own analytic
@@ -724,14 +724,15 @@ across three seeds — the only configuration we scored that is positive on all
 four measures, in every run, with a clean CVVDP that beats both ends of the
 ablation it interpolates.
 
-The lesson we would carry to the next problem is not about tone mapping. Three
-of the four things that cost us most this cycle were measurement defects, not
-model defects: selection on the maximum of a noisy series, an evaluation that
-read the alphabetical front of its split, and a viewer that presented every
-frame upside down beneath tests that only ever compared float buffers. A fourth
-belongs beside them: our first report of the gate quoted a single seed that
-happened to be the weakest of three on one metric and the strongest on the
-other, and we would not have known without running the other two.
+The lesson we would carry to the next problem is not about tone mapping. Four of
+the things that cost us most this cycle were measurement defects, not model
+defects. Three are in §8: selection on the maximum of a noisy series, an
+evaluation that read the alphabetical front of its split, and a viewer that
+presented every frame upside down beneath tests that only ever compared float
+buffers. The fourth is in §6.2, and is the one we would warn a reader about
+first: our initial report of the gate quoted a single seed that happened to be
+the weakest of three on one metric and the strongest on the other. We would not
+have known without running the other two.
 
 The bound was real. So were the ways we nearly failed to see it.
 
