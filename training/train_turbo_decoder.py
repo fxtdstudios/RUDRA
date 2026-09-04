@@ -48,8 +48,11 @@ import logging
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from copy import deepcopy
+
+if TYPE_CHECKING:  # for a return annotation only; never imported at runtime
+    from rudra.fast_vae import RadianceTurboDecoder
 
 import sys
 import os
@@ -628,10 +631,11 @@ def load_trained_turbo_decoder(
         import fast_vae
         fast_vae._TRAINED_DECODER = decoder
     """
-    try:
-        from .hdr.fast_vae import RadianceTurboDecoder
-    except ImportError:
-        from fast_vae import RadianceTurboDecoder
+    # Both names are needed below, and this is the one place they live. The
+    # two-branch import this used to carry named modules that do not exist,
+    # so the function raised ModuleNotFoundError for every checkpoint, and
+    # NameError on RadianceFullDecoder for the ones named "full".
+    from rudra.fast_vae import RadianceTurboDecoder, RadianceFullDecoder
 
     try:
         from radiance.config.model_map import resolve_model_vae_config

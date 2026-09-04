@@ -626,6 +626,11 @@ The shader checks run headless on software GL, so they need no GPU and no torch.
 The page is pressed rather than read, because a menu item that runs nothing
 looks exactly like one that works.
 
+All of this runs on every push. `.github/workflows/tests.yml` has two jobs: the
+suite on Python 3.10 and 3.13 against CPU torch, with a flake8 pass for syntax
+errors and undefined names, and the three shader checks against a real WebGL2
+context on SwiftShader. Neither needs a GPU. The whole thing is about a minute.
+
 Tiling is the one place the two compositions genuinely disagree, because
 feathering fields and feathering composed predictions are not the same operation
 either side of `expm1`. The viewer and Master both ask for an untiled pass, fall

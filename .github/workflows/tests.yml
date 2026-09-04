@@ -1,0 +1,62 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: pytest, Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          # CPU wheels, explicitly. The default index resolves torch to the
+          # CUDA build and drags in ~2.5 GB of nvidia packages that no runner
+          # here can use, which is most of the job's wall clock for nothing.
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[test]"
+
+      - name: Syntax errors and undefined names
+        run: |
+          pip install flake8
+          flake8 rudra pipeline training ui tests docs conftest.py \
+              --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Test
+        run: pytest tests/ -q
+
+  shader:
+    name: shader parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # These three read pixels back out of a real WebGL2 context on
+      # SwiftShader. They need no GPU and no torch, and they are the only
+      # check that what the page draws matches what Master EXR writes.
+      - name: Install a browser
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy playwright
+          playwright install --with-deps chromium
+
+      - run: python tests/webgl_parity/parity.py
+      - run: python tests/webgl_parity/orientation.py
+      - run: python tests/webgl_parity/wipe.py
