@@ -171,14 +171,26 @@ def test_parameter_counts_match_the_registry(entry):
 
 
 def test_the_paper_quotes_the_measured_parameter_counts():
-    # v5 and v6 are quoted in §3.4 of the paper; the gate's 21,121 appears in
-    # the abstract, §6.2 and both READMEs.
-    paper = (REPO / "PAPER_DRAFT_2026-08-29.md").read_text(encoding="utf-8")
+    # v5 and v6 are quoted in §3.4; the gate's 21,121 is in the abstract, §6.2
+    # and both READMEs. Read the committed LaTeX rather than the markdown the
+    # paper used to be generated from: the markdown is no longer in the repo,
+    # and this asserted against a file a clean clone does not have.
+    sources = [REPO / "paper" / "_body.tex", REPO / "paper" / "_abstract.tex"]
+    missing = [p for p in sources if not p.exists()]
+    assert not missing, f"the committed paper source is gone: {missing}"
+    paper = "\n".join(p.read_text(encoding="utf-8") for p in sources)
+
     by_file = {m["file"]: m for m in _registry()["models"]}
     for name, key in (("sdr2hdr_image_v5.pt", "1,196,197"),
                       ("sdr2hdr_image_v6.pt", "4,770,117")):
         assert f"{by_file[name]['params']:,}" == key
         assert key in paper, f"the paper no longer quotes {key} for {name}"
+
+    # The gate is not a separate model in the registry: it is v5 plus a head,
+    # so its size is the difference the registry already records.
+    gate = by_file["sdr2hdr_shadow_v1.pt"]["params"] - by_file["sdr2hdr_image_v5.pt"]["params"]
+    assert f"{gate:,}" == "21,121", f"the gate head is {gate:,} parameters, not 21,121"
+    assert "21,121" in paper, "the paper no longer quotes the gate's size"
 
 
 @needs_torch

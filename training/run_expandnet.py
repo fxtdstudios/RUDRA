@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run ExpandNet over an exported `sdr/` tree, for the comparison the paper owes.
 
-Every number in `PAPER_DRAFT_2026-08-29.md` is against RUDRA's own analytic
+Every number in the paper (`paper/main.pdf`) is against RUDRA's own analytic
 baseline. §9 calls that the paper's largest gap. This closes the mechanical half
 of it for the first third-party method: ExpandNet (Marnerides et al., CGF 2018),
 which is the lightest of the four public methods §2 names.
