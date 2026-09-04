@@ -88,3 +88,8 @@ SingleHDR/
 
 # Scratch
 Claude outputs/
+
+# Session scratch. NEXT_*.md is already covered by the *.md rule above; this
+# one is not, and it kept getting committed by hand.
+COMMITMSG.txt
+NEXT_*.md
