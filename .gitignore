@@ -86,10 +86,10 @@ Deep-HdrReconstruction/
 hdrcnn/
 SingleHDR/
 
-# Scratch
-Claude outputs/
-
-# Session scratch. NEXT_*.md is already covered by the *.md rule above; this
-# one is not, and it kept getting committed by hand.
+# Scratch and session notes. NEXT_*.md is already covered by the *.md rule
+# above; COMMITMSG.txt is not, and it kept getting committed by hand.
+scratch/
 COMMITMSG.txt
 NEXT_*.md
+AGENTS.md
+.agents/
