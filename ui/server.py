@@ -57,15 +57,23 @@ if str(REPO) not in sys.path:
 
 DIFFUSE_WHITE_NITS = 203.0
 NETWORK_PEAK_NITS = 10_000.0
-DEFAULT_CHECKPOINT_ROOTS = (
-    Path("E:/RUDRA_v3_20260822/checkpoints"),
-    REPO / "hdrdata" / "checkpoints",
-    # The one checkpoint committed to the repo. Last, so a machine with the
-    # training data keeps using the newest local run -- but a fresh clone,
-    # which has nothing else, still starts with a real model instead of
-    # falling back to demo mode.
-    REPO / "checkpoints",
-)
+def checkpoint_roots() -> tuple[Path, ...]:
+    """Where to look for a model, in order of preference.
+
+    Set RUDRA_CHECKPOINT_ROOTS to your own training output, os.pathsep
+    separated, to have the newest run there win. This used to be one
+    hard-coded absolute path on the machine the models were trained on,
+    which meant nothing to anyone else who cloned the repo.
+
+    The repo's own checkpoints/ is always last and always searched, so a
+    fresh clone starts with a real model instead of falling back to demo
+    mode.
+    """
+    env = os.environ.get("RUDRA_CHECKPOINT_ROOTS", "")
+    roots = [Path(p) for p in env.split(os.pathsep) if p.strip()]
+    if not roots:
+        roots = [REPO / "hdrdata" / "checkpoints"]
+    return (*roots, REPO / "checkpoints")
 
 _state: dict = {"model": None, "info": {"loaded": False}, "lock": threading.Lock()}
 # Extra checkpoints loaded on demand, keyed by path. Comparing two models used
@@ -119,28 +127,33 @@ def find_checkpoint(explicit: str | None) -> Path | None:
         # `--checkpoint sdr2hdr_image_v5.pt` works from a fresh clone.
         named = REPO / "checkpoints" / path.name
         return named if named.is_file() else None
-    candidates: list[Path] = []
-    for root in DEFAULT_CHECKPOINT_ROOTS:
+    # First root that has anything wins, and the newest file inside it wins
+    # from there. Pooling every root and taking the newest mtime, which is
+    # what this used to do, made the order above decorative: a fresh clone
+    # writes the committed checkpoints with a current mtime, so the repo
+    # copy beat the local training run it was supposed to defer to.
+    for root in checkpoint_roots():
         if not root.is_dir():
             continue
         if root == REPO / "checkpoints":
-            # Described, not guessed. Fall through to the glob only if the
-            # registry is missing or names a file that is not there.
+            # Described, not guessed. One of the files in here is a temporal
+            # refiner that is not an SDR2HDRNet and raises on load, so fall
+            # through to the registry listing only if the default is missing.
             default = registry()["default"]
             if default and (root / default).is_file():
-                candidates.append(root / default)
-                continue
-            candidates += [Path(m["path"]) for m in loadable_models()]
+                return root / default
+            loadable = [Path(m["path"]) for m in loadable_models()]
+            if loadable:
+                return loadable[0]
             continue
         # A training run writes <root>/<run>/best.pt or <root>/<run>/shipped_*.pt.
-        candidates += list(root.glob("*/shipped_*.pt"))
-        candidates += list(root.glob("*/best.pt"))
-    if not candidates:
-        return None
-    # Prefer an explicitly shipped checkpoint, then the most recent.
-    shipped = [c for c in candidates if c.name.startswith("shipped_")]
-    pool = shipped or candidates
-    return max(pool, key=lambda p: p.stat().st_mtime)
+        candidates = list(root.glob("*/shipped_*.pt")) + list(root.glob("*/best.pt"))
+        if not candidates:
+            continue
+        # Prefer an explicitly shipped checkpoint, then the most recent.
+        shipped = [c for c in candidates if c.name.startswith("shipped_")]
+        return max(shipped or candidates, key=lambda p: p.stat().st_mtime)
+    return None
 
 
 def load_model(checkpoint: Path | None, device_name: str):

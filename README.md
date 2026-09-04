@@ -14,7 +14,8 @@ and it reconstructs what the tone map threw away. Most of this README is about
 that path, because it is the part we finished measuring.
 
 Paper: [`paper/main.pdf`](paper/main.pdf), *What an 8-Bit Frame Can and Cannot
-Say About the Scene Behind It*, 15 pages.
+Say About the Scene Behind It*, 15 pages. The same file is mirrored at
+[`research/RUDRA_HDR_2026.pdf`](research/RUDRA_HDR_2026.pdf).
 Weights: [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main).
 
 Three separate things share the name RUDRA, and [`STATUS.md`](STATUS.md) keeps
@@ -680,7 +681,19 @@ not.
 The temporal refiner exists and is not evaluated here. Its held-out set is 4
 validation and 5 test clips of one scene each, which is too small to report.
 
+The viewer looks for a model in `RUDRA_CHECKPOINT_ROOTS` first, then in this
+repo's `checkpoints/`, so a clone with nothing else still starts on a real
+model. Point it at your own training output to have the newest run there win:
+
+```bash
+export RUDRA_CHECKPOINT_ROOTS=/path/to/your/checkpoints     # or set on Windows
+```
+
 ## Licence
 
 Apache 2.0, see [LICENSE](LICENSE). The training sources carry their own
 licences; the table above lists them.
+
+---
+
+[FXTD Studios](https://fxtdstudios.com) · Cairo

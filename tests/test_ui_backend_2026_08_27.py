@@ -220,3 +220,61 @@ def test_half_float_holds_the_full_scene_referred_range():
         back, _ = read_exr(path)
     assert np.isfinite(back).all(), "the sun must not become inf in half"
     assert back.max() * 203.0 == pytest.approx(1_000_000.0, rel=2e-3)
+
+
+# ── checkpoint discovery, 4 Sep 2026 ──────────────────────────────────────────
+# The viewer has to find a model in a clone that has nothing but the repo, and
+# it has to prefer a local training run when there is one. The roots used to
+# include one absolute path from the machine the models were trained on, and
+# the winner was the newest mtime across all roots pooled together, which made
+# the order decorative.
+
+def _server():
+    import importlib
+    import sys
+    sys.path.insert(0, str(REPO / "ui"))
+    return importlib.import_module("server")
+
+
+def test_a_bare_clone_finds_the_registry_default(monkeypatch):
+    srv = _server()
+    monkeypatch.setenv("RUDRA_CHECKPOINT_ROOTS", "")
+    found = srv.find_checkpoint(None)
+    assert found is not None, "a clone with committed checkpoints found no model"
+    assert found.parent == REPO / "checkpoints"
+    assert found.name == srv.registry()["default"]
+    assert found.is_file()
+
+
+def test_no_absolute_path_from_one_machine_is_baked_in(monkeypatch):
+    srv = _server()
+    monkeypatch.setenv("RUDRA_CHECKPOINT_ROOTS", "")
+    for root in srv.checkpoint_roots():
+        assert not root.is_absolute() or str(root).startswith(str(REPO)), (
+            f"{root} is somebody's local drive, not something a clone can use")
+
+
+def test_a_local_run_outranks_the_committed_model(monkeypatch, tmp_path):
+    # Order of roots decides, not mtime: touch the committed default last so
+    # the pooled-newest rule this replaced would pick the wrong one.
+    srv = _server()
+    run = tmp_path / "sdr2hdr_image_v9"
+    run.mkdir()
+    (run / "best.pt").write_bytes(b"not a real checkpoint")
+    (REPO / "checkpoints" / srv.registry()["default"]).touch()
+
+    monkeypatch.setenv("RUDRA_CHECKPOINT_ROOTS", str(tmp_path))
+    assert srv.find_checkpoint(None) == run / "best.pt"
+
+    monkeypatch.setenv("RUDRA_CHECKPOINT_ROOTS", "")
+    assert srv.find_checkpoint(None).parent == REPO / "checkpoints"
+
+
+def test_a_shipped_checkpoint_beats_a_newer_best(monkeypatch, tmp_path):
+    srv = _server()
+    (tmp_path / "run_a").mkdir()
+    (tmp_path / "run_a" / "shipped_v5_step81000.pt").write_bytes(b"x")
+    (tmp_path / "run_b").mkdir()
+    (tmp_path / "run_b" / "best.pt").write_bytes(b"x")      # written later
+    monkeypatch.setenv("RUDRA_CHECKPOINT_ROOTS", str(tmp_path))
+    assert srv.find_checkpoint(None).name.startswith("shipped_")

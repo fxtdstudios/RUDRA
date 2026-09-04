@@ -205,3 +205,16 @@ def test_the_temporal_refiner_is_not_offered_to_the_viewer():
     model = SDR2HDRNet.from_config(payload.get("config", {}))
     with pytest.raises(RuntimeError):
         model.load_state_dict(payload["model"], strict=True)
+
+
+def test_the_research_copy_of_the_paper_is_the_paper():
+    # research/ is what the repo front page points people at. It used to hold
+    # RUDRA_V01.pdf, an early draft, long after that draft stopped being true.
+    # paper/build.sh writes both; this is the check that they stayed the same.
+    built = REPO / "paper" / "main.pdf"
+    mirror = REPO / "research" / "RUDRA_HDR_2026.pdf"
+    assert built.is_file(), "the built paper is missing"
+    assert mirror.is_file(), "research/RUDRA_HDR_2026.pdf is missing"
+    assert built.read_bytes() == mirror.read_bytes(), (
+        "research/RUDRA_HDR_2026.pdf has drifted from paper/main.pdf; "
+        "run bash paper/build.sh")

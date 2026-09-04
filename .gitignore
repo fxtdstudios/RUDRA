@@ -86,6 +86,10 @@ Deep-HdrReconstruction/
 hdrcnn/
 SingleHDR/
 
+# The v1 draft is superseded by paper/main.pdf (mirrored as
+# research/RUDRA_HDR_2026.pdf). Kept locally, out of the published repo.
+research/RUDRA_V01.pdf
+
 # Scratch and session notes. NEXT_*.md is already covered by the *.md rule
 # above; COMMITMSG.txt is not, and it kept getting committed by hand.
 scratch/

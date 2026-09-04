@@ -26,3 +26,10 @@ if grep -q "^!" main.log; then
   echo "FAILED:"; grep -n "^!" main.log; exit 1
 fi
 echo "built: $(pwd)/main.pdf ($(pdfinfo main.pdf | awk '/Pages/{print $2}') pages)"
+
+# research/ is the copy people browse to from the repo front page. It replaced
+# RUDRA_V01.pdf, an early draft that stayed there long after it stopped being
+# true. Written from the build so the two cannot drift; a test asserts they are
+# byte-identical.
+cp -f main.pdf ../research/RUDRA_HDR_2026.pdf
+echo "copied: research/RUDRA_HDR_2026.pdf"
