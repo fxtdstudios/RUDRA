@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a flat, self-contained arXiv upload from the current sources.
+# Build a flat, self-contained arXiv upload from the committed LaTeX.
 #   bash paper/mkarxiv.sh   ->  paper/rudra-arxiv.tar.gz
 #
 # Staging happens in a temp dir, not in the repo: the mounted sandbox this is
