@@ -49,6 +49,21 @@ Waveform, histogram and every measured number follow the composite on screen.
 MaxCLL and MaxFALL come from an exact GPU reduction, not a downsample. Press `?`
 for the keyboard.
 
+Double-click `run_studio.bat` on Windows, or run `./run_studio.sh` anywhere
+else. The first run builds a virtual environment and installs what it needs;
+after that it checks the install and goes straight to the server. Anything you
+pass is handed to the server:
+
+```bash
+./run_studio.sh                                      # or run_studio.bat
+./run_studio.sh --port 9000 --device cpu
+./run_studio.sh --setup                              # force a reinstall
+```
+
+Set `RUDRA_PYTHON` to an interpreter you already have, a ComfyUI environment
+for instance, and the launcher uses that instead of building a second one and
+downloading another copy of torch. To skip the launcher:
+
 ```bash
 python ui/server.py                                  # finds a checkpoint, opens a browser
 python ui/server.py --checkpoint sdr2hdr_image_v6.pt # or any committed model by name
@@ -65,7 +80,9 @@ Needs WebGL2 and float render targets. Any current browser will do.
 
 ## Install
 
-Python 3.10 to 3.13.
+Python 3.10 to 3.13. If you only want the viewer, clone and run
+`run_studio.bat` or `./run_studio.sh` and skip the rest of this section: the
+launcher does the install itself.
 
 ```bash
 git clone https://github.com/fxtdstudios/RUDRA.git && cd RUDRA
@@ -567,6 +584,8 @@ training/         Trainers, evaluation, inference, the exporter that turns a
                   recompute and probe the paper's numbers
 ui/               RUDRA Studio: the page, its GPU compositor, the inference
                   server behind them
+run_studio.bat    One-file launchers: set up on the first run, check and start
+run_studio.sh     on every run after that
 paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
 docs/             Paper figures, the Studio screenshot, the comparison strips
                   and make_compare.py, which rebuilds them from a scored bench

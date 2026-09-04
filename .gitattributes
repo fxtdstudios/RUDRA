@@ -19,5 +19,8 @@
 *.ckpt binary
 *.npz  binary
 
-# Batch files are run by cmd.exe and want CRLF.
+# Batch files are run by cmd.exe and want CRLF. Shell scripts must never have
+# it: a CRLF shebang line makes the kernel look for an interpreter that does
+# not exist, and the error names a file that is plainly there.
 *.bat  text eol=crlf
+*.sh   text eol=lf
