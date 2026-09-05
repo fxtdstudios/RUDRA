@@ -1,65 +1,104 @@
-LICENCE FOR THE TRAINED WEIGHTS IN THIS DIRECTORY
-=================================================
+RUDRA TRAINED WEIGHTS -- NON-COMMERCIAL LICENCE
+===============================================
+
+Copyright 2026 FXTD Studios. All rights reserved.
 
 The CODE in this repository is Apache License 2.0 (see ../LICENSE).
-The WEIGHTS in this directory are NOT, and this file says why.
+The WEIGHTS in this directory are NOT. They are licensed as below.
 
-WHAT FXTD STUDIOS GRANTS
-------------------------
-FXTD Studios owns the training procedure, the architecture, and the effort
-that produced these files, and grants you a non-exclusive, royalty-free
-licence to use, copy, modify and redistribute them for any purpose,
-including commercially, subject to the one condition below.
 
-THE CONDITION
--------------
-These weights were trained on a mixed corpus. One of its sources carries a
-term FXTD Studios cannot waive on your behalf:
+1. GRANT
+--------
+FXTD Studios grants you a worldwide, royalty-free, non-exclusive licence to
+use, copy, modify, publish and redistribute these weights and any works
+derived from them, FOR NON-COMMERCIAL PURPOSES ONLY, provided you keep this
+file with any copy you distribute and give the attribution in section 4.
 
-  Poly Haven HDRIs            CC0                  no restriction
-                              https://polyhaven.com/license
+Non-commercial purposes include academic and industrial research, teaching,
+evaluation, benchmarking, personal projects, and publishing results obtained
+with the weights. Publishing a paper, a benchmark or a comparison that uses
+them is expressly permitted and encouraged.
 
-  HdM-HDR-2014                free for ACADEMIC and educational use;
-  HdM-HFR-2017                COMMERCIAL use requires a separate licence
-                              agreement with Hochschule der Medien Stuttgart
-                              https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/
 
-  Netflix Chimera             CC BY 4.0 -- requires attribution
-                              https://opencontent.netflix.com/
+2. WHAT IS NOT GRANTED
+----------------------
+Any use primarily intended for or directed toward commercial advantage or
+monetary compensation. That includes, without limiting the general sense:
 
-  FXTD Studios footage        proprietary; licensed to you as part of these
-                              weights, no separate permission needed
+  - use in a product or service you sell, license, or offer for a fee
+  - use in commercial production work, including client deliverables
+  - use to provide a paid or ad-supported hosted service
+  - redistribution as part of anything commercially licensed
 
-If you intend to use these weights COMMERCIALLY, satisfy the HdM term first.
-Contact HdM Stuttgart via the dataset page above. FXTD Studios' grant does
-not extend to it and cannot.
+Output produced with these weights for a non-commercial purpose is yours.
 
-If you use these weights at all, the Netflix Chimera attribution rides along:
-credit "Netflix Open Content, CC BY 4.0" wherever you credit the sources.
 
-WHICH FILES THIS COVERS
------------------------
-Every .pt file in this directory, and the corresponding files published at
-https://huggingface.co/fxtdstudios/RUDRA. The .json files, the checksums and
-this README are Apache 2.0 with the rest of the repository.
+3. WHY -- AND WHAT WOULD CHANGE IT
+----------------------------------
+These weights were trained on a mixed corpus:
 
-WHY THIS FILE EXISTS
---------------------
-Until 5 September 2026 these weights were published under the repository's
-blanket Apache 2.0, which told every reader that commercial use was fine.
-That was a claim FXTD Studios was not in a position to make. Whether trained
-weights are a derivative work of their training data is unsettled and varies
-by jurisdiction -- but HdM's terms are a contract accepted at download, and a
-contract binds regardless of how that question is eventually answered.
+  Poly Haven HDRIs          CC0                    no restriction
+                            https://polyhaven.com/license
 
-A CLEAN ALTERNATIVE IS COMING
------------------------------
-`pipeline/render_hdri_moves.py` generates training pairs from the 963 CC0
-Poly Haven panoramas alone. Weights retrained on CC0 material plus FXTD's own
-footage carry no upstream condition at all, and are the intended replacement
-for these. See STATUS.md.
+  HdM-HDR-2014              free for ACADEMIC and educational use;
+  HdM-HFR-2017              COMMERCIAL use requires a separate agreement
+                            with Hochschule der Medien Stuttgart
+                            https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/
 
-NOT LEGAL ADVICE
-----------------
-This file describes provenance and points at the upstream terms. It is not
-legal advice, and it is not a substitute for reading them.
+  Netflix Chimera           CC BY 4.0 -- requires attribution
+                            https://opencontent.netflix.com/
+
+  FXTD Studios footage      proprietary, FXTD's own
+
+The HdM term is the binding one. It is a contract accepted at download, not
+only a copyright question, so it holds regardless of how the unsettled
+question of whether trained weights are a derivative work of their training
+data is eventually answered. FXTD Studios cannot waive somebody else's term,
+so it does not pretend to: the licence above is narrower than what FXTD
+alone could grant.
+
+`pipeline/render_hdri_moves.py` builds training pairs from the CC0 Poly Haven
+panoramas alone. Weights retrained on CC0 material plus FXTD's own footage
+carry no upstream condition, and are intended to be released under Apache 2.0
+as an unrestricted replacement for these. See STATUS.md.
+
+
+4. ATTRIBUTION
+--------------
+Wherever you credit sources, credit:
+
+    Netflix Open Content -- Chimera, CC BY 4.0
+    https://opencontent.netflix.com/
+
+For the weights themselves:
+
+    RUDRA, FXTD Studios -- https://github.com/fxtdstudios/RUDRA
+
+
+5. COMMERCIAL USE
+-----------------
+Ask. Commercial licensing is available from FXTD Studios
+(https://fxtdstudios.com), subject to FXTD settling the HdM term for the
+relevant use. The unrestricted retrain in section 3 is the other route, and
+does not depend on anyone's permission.
+
+
+6. WHICH FILES THIS COVERS
+--------------------------
+Every .pt file in this directory, and the corresponding weight files
+published at https://huggingface.co/fxtdstudios/RUDRA. The .json files, the
+checksums and README.md in this directory are Apache 2.0 with the rest of
+the repository.
+
+
+7. NO WARRANTY
+--------------
+The weights are provided "AS IS", without warranty of any kind, express or
+implied. FXTD Studios is not liable for any claim, damages or other
+liability arising from their use.
+
+
+This file describes provenance and terms. It is not legal advice.
+Until 5 September 2026 these weights carried the repository's blanket
+Apache 2.0, which told readers commercial use was fine. That was a claim
+FXTD Studios was not in a position to make.

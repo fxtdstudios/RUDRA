@@ -1,8 +1,8 @@
 # RUDRA — Training & Research Status
 
-> **Updated 1 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 5 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
-> holds **three separate lines of work** that share a name, and "is RUDRA
+> holds **four separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
 >
 > | line | what it is | state |
@@ -10,10 +10,11 @@
 > | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
+> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **gate passed, nothing trained yet** |
 >
-> **The paper drafted on 29 Aug (`PAPER_DRAFT_2026-08-29.md`) is about line C.**
-> It is not the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
-> completion path is unchanged and is listed below; nothing in this session
+> **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
+> the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
+> completion path is unchanged and is listed below; nothing since 22 Aug has
 > advanced it.
 >
 > **Line C, as of 1 Sep 2026:** v5 (1,196,197 parameters) benchmarked on 429
@@ -27,13 +28,72 @@
 > selection on a noisy maximum, an eval reading the alphabetical front of the
 > split, and a viewer presenting every frame upside down.
 >
-> **Line C remaining:** a comparison against any published method on this split
-> (the largest gap), a seed sweep on the shadow gate to put an error bar on its
-> +0.07 dB clean margin, scoring `step_0072000.pt` to confirm the selection fix,
-> characterising the error tail on more than 26 frames, LaTeX/arXiv formatting,
-> and the temporal refiner — whose held-out set is 4 validation and 5 test clips
-> of one scene each, too small to report. The paper's related work is cited
-> (9 references + 4 standards, 2026-09-03); no `[CITE]` markers remain.
+> **Line C, done since:** ExpandNet run from the authors' released weights on
+> the same 429 frames (−18.56 dB, −2.03 JOD, 1 frame won on PU21 and 16 on
+> CVVDP); the shadow gate scored on three seeds (+0.41 ± 0.33 dB clean,
+> +1.12 ± 0.15 dB hard); `step_0072000.pt` scored, confirming the selection fix
+> picks it and that it is better on the criterion the selector optimises and
+> worse on CVVDP in both conditions; the LaTeX build, the arXiv package and the
+> committed PDF. Related work cited (9 references + 4 standards); no `[CITE]`
+> markers remain.
+>
+> **Line C remaining:** nothing measurable. The blockers are the arXiv
+> endorsement (a person has to say yes), the HuggingFace upload, and the
+> weights licence below. Section 10 still declares two gaps honestly: three
+> published methods have runnable code and have not been run, and §6's
+> trimmed-PSNR table and §7's oracle sweep have no script because they need
+> per-pixel statistics the benchmark does not write.
+>
+> ---
+>
+> **Line D — v02, the temporal track (opened 4 Sep 2026).** The v01 video corpus
+> is 935 clips across **13 scenes**, which is why the temporal refiner is
+> reported as unevaluated. `pipeline/render_hdri_moves.py` flies a virtual
+> camera through the CC0 Poly Haven panoramas, one panorama being one scene:
+> the corpus is now **993 scenes, 17,874 frames, 128 GB**.
+>
+> Three things were measured before any model was trained, in the shape of §7:
+>
+> - `TemporalHDRRefiner`'s receptive field is **±4 frames, ±4 pixels**, measured
+>   by gradient, against **4.3–27.3 px/frame** of camera motion. It cannot fetch
+>   a value from where the content was; it can only smooth. Retraining it is the
+>   control, not a candidate.
+> - Scoring per frame is **blind to flicker by construction**. Two clips with an
+>   identical 0.0600 relative error on every frame score 10.000 and 10.000
+>   per-frame, and 10.000 and 5.111 as clips. `hdr_vdp3_clip_jod` runs
+>   ColorVideoVDP in video mode; `rudra/pose_warp.py` adds a temporal
+>   consistency measure with no flow estimator in it, ground truth against
+>   itself sitting at 0.0145 stops.
+> - **The gate.** `training/gate_temporal_oracle.py`, 2 clips: on clean frames
+>   the per-frame model already scores 9.972 JOD of 10, so nothing can be won
+>   and the run says nothing. Under degradation, per-frame is −1.962 JOD and an
+>   **aligned mean of the warped neighbours — no ground truth, the simplest
+>   thing a model could learn — reaches 7.346 JOD**, matching the per-pixel
+>   oracle. Achievable **+9.31 JOD** against a +0.5 threshold.
+>
+> Two caveats travel with that: the −1.962 floor is far below the 7.805 the
+> benchmark reports for its hard condition, and the degradation is seeded per
+> frame, which is the best possible case for temporal averaging. **Line D
+> remaining:** calibrate the floor, repeat the aligned-mean measurement with
+> *estimated* optical flow rather than the analytic camera poses (real footage
+> has no poses — this decides the architecture and must precede any training),
+> then train rung 1 as the control and rung 2 as flow-warp plus multi-scale
+> fusion, testing on the 13 real scenes the v01 corpus provides.
+>
+> ---
+>
+> **Licensing (5 Sep 2026).** The code is Apache 2.0. The **weights are not**:
+> HdM-HDR-2014 and HdM-HFR-2017 are **75.6% of the training corpus** and are
+> free for academic use only, with commercial use requiring a separate
+> agreement with HdM Stuttgart. `checkpoints/LICENSE` now licenses the weights
+> non-commercially and `NOTICE` carries the Netflix Chimera CC BY 4.0
+> attribution. Academic use is permitted, so **the paper is unaffected**.
+>
+> The intended resolution is two model families: `rudra-research` as it stands,
+> and a `rudra-studio` retrained without HdM — Netflix Chimera (14.3%, CC BY,
+> median peak 7,094 nits) plus Poly Haven (10.1%, CC0) plus the 17,874 rendered
+> frames plus FXTD's own footage, which is comparable corpus volume with the
+> high-nit end covered. That retrain depends on nobody's permission.
 
 ---
 

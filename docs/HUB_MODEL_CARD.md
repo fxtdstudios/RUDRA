@@ -1,6 +1,6 @@
 ---
 license: other
-license_name: rudra-weights
+license_name: rudra-weights-noncommercial
 license_link: https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE
 library_name: comfyui
 pipeline_tag: image-to-image

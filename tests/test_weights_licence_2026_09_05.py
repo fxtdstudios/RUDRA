@@ -1,4 +1,4 @@
-"""The weights are not Apache 2.0, and nothing may quietly say they are.
+"""The weights are non-commercial, and nothing may quietly say otherwise.
 
 Until 5 September 2026 six checkpoints shipped under the repository's blanket
 Apache 2.0 while HdM-HDR-2014 -- one of their training sources -- is free for
@@ -31,8 +31,20 @@ def test_the_weights_carry_their_own_licence():
     licence = REPO / "checkpoints" / "LICENSE"
     assert licence.is_file(), "checkpoints/LICENSE is gone"
     body = licence.read_text(encoding="utf-8")
-    for needle in ("HdM", "COMMERCIAL", "CC BY 4.0", "Poly Haven"):
+    for needle in ("NON-COMMERCIAL", "HdM", "CC BY 4.0", "Poly Haven"):
         assert needle in body, f"checkpoints/LICENSE no longer mentions {needle}"
+
+
+def test_the_weights_licence_actually_restricts_commercial_use():
+    body = (REPO / "checkpoints" / "LICENSE").read_text(encoding="utf-8")
+    assert "FOR NON-COMMERCIAL PURPOSES ONLY" in body, (
+        "the grant no longer says non-commercial. If that was deliberate, the "
+        "HdM term has to have been settled first -- it is a contract accepted "
+        "at download, not a term FXTD Studios can waive.")
+    # Research use must stay explicitly allowed, or the licence quietly blocks
+    # the reproduction the paper asks readers to attempt.
+    for allowed in ("research", "teaching", "evaluation", "benchmarking"):
+        assert allowed in body.lower(), f"non-commercial use '{allowed}' is no longer named"
 
 
 def test_the_notice_carries_the_required_attribution():
@@ -50,6 +62,9 @@ def test_the_model_card_does_not_claim_apache():
         "the code that is Apache 2.0; the weights carry an HdM restriction "
         "FXTD Studios cannot waive. See checkpoints/LICENSE.")
     assert meta["license"] == "other"
+    assert "noncommercial" in meta.get("license_name", ""), (
+        f"license_name is {meta.get('license_name')!r}; it should say "
+        f"noncommercial so the HuggingFace listing is not misleading")
     assert meta.get("license_link", "").endswith("checkpoints/LICENSE")
 
 
@@ -57,3 +72,5 @@ def test_the_readme_separates_the_two():
     body = (REPO / "README.md").read_text(encoding="utf-8")
     assert "checkpoints/LICENSE" in body, (
         "the README's licence section no longer points at the weights licence")
+    assert "non-commercial" in body.lower(), (
+        "the README no longer says the weights are non-commercial")

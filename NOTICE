@@ -7,9 +7,10 @@ This product includes software developed at FXTD Studios
 ------------------------------------------------------------------------
 Trained weights
 ------------------------------------------------------------------------
-The model weights distributed in `checkpoints/` are licensed separately;
-see `checkpoints/LICENSE`. They are NOT covered by the Apache 2.0 grant
-above, because one of their training sources restricts commercial use.
+The model weights distributed in `checkpoints/` are NON-COMMERCIAL. They
+are NOT covered by the Apache 2.0 grant above, because one of their training
+sources restricts commercial use. See `checkpoints/LICENSE`, and contact
+FXTD Studios for commercial licensing.
 
 ------------------------------------------------------------------------
 Attribution required by the training sources
