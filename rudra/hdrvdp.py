@@ -104,6 +104,87 @@ def _get_cvvdp(device, display_name: str):
     return _CVVDP_CACHE[key]
 
 
+def hdr_vdp3_clip_jod(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    frames_per_second: float = 24.0,
+    color_space: str = "rec2020",
+    diffuse_white_nits: float = 200.0,
+    display_name: str = "standard_hdr_linear",
+) -> Tuple[float, str]:
+    """Perceptual quality of a CLIP against its reference, in JOD units.
+
+    ``hdr_vdp3_jod`` scores frame by frame, which is blind to flicker by
+    construction: a reconstruction whose error is steady and one whose error
+    inverts sign every frame get identical numbers, because every frame is
+    identical work. Measured on 4 Sep 2026 with two synthetic clips carrying
+    the SAME 0.0600 relative error on every frame:
+
+        steady error     per-frame 10.000    clip 10.000
+        flickering error per-frame 10.000    clip  5.111
+
+    Per-frame scoring called both perfect. ColorVideoVDP is a *video* metric --
+    it models temporal masking -- and the whole point of the v02 temporal work
+    is the difference those two rows show. Scoring a temporal model per frame
+    would measure everything except what it changes.
+
+    Args:
+        pred, target: scene-linear RGB clips, ``(B,T,3,H,W)`` or ``(T,3,H,W)``,
+            in ``color_space``.
+        frames_per_second: the clip's real rate. cvvdp's temporal model needs
+            it; passing 0 makes cvvdp treat the input as unrelated stills.
+        diffuse_white_nits: absolute luminance assigned to scene-linear 1.0.
+
+    Returns:
+        (jod, backend), backend being ``"colorvideovdp"`` or ``"proxy"``. The
+        proxy has no temporal model at all, so a proxy result here is a
+        per-frame number wearing a clip's name -- check the backend before
+        reporting a flicker claim.
+    """
+    global _CVVDP_LAST_ERROR
+    if pred.ndim == 4:
+        pred, target = pred[None], target[None]
+    if pred.ndim != 5 or pred.shape[2] != 3:
+        raise ValueError(f"expected (B,T,3,H,W) or (T,3,H,W), got {tuple(pred.shape)}")
+    if pred.shape != target.shape:
+        raise ValueError(f"clip shapes differ: {tuple(pred.shape)} vs {tuple(target.shape)}")
+    if frames_per_second <= 0:
+        raise ValueError("frames_per_second must be positive; 0 disables the "
+                         "temporal model, which is the thing being measured")
+
+    if not colorvideovdp_available():
+        _CVVDP_LAST_ERROR = "pycvvdp is not installed (pip install cvvdp)"
+        from .metrics import hdr_vdp_proxy
+        b, t_, c, h, w = pred.shape
+        return hdr_vdp_proxy(pred.reshape(b * t_, c, h, w),
+                             target.reshape(b * t_, c, h, w)), "proxy"
+
+    try:
+        device = torch.device("cuda" if (isinstance(pred, torch.Tensor)
+                                         and pred.is_cuda) else "cpu")
+        metric = _get_cvvdp(device, display_name)
+        with torch.no_grad():
+            b, t_, c, h, w = pred.shape
+            def prepare(x: torch.Tensor) -> torch.Tensor:
+                flat = _to_rec2020_linear(
+                    x.detach().float().clamp(min=0.0).reshape(b * t_, c, h, w),
+                    color_space) * diffuse_white_nits
+                # cvvdp's native layout is BCFHW: batch, channel, frame, h, w.
+                return flat.reshape(b, t_, c, h, w).permute(0, 2, 1, 3, 4).contiguous()
+
+            jod, _ = metric.predict(prepare(pred), prepare(target),
+                                    dim_order="BCFHW",
+                                    frames_per_second=float(frames_per_second))
+        _CVVDP_LAST_ERROR = None
+        return float(jod), "colorvideovdp"
+    except Exception as exc:                                      # noqa: BLE001
+        _CVVDP_LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        from .metrics import hdr_vdp_proxy
+        b, t_, c, h, w = pred.shape
+        return hdr_vdp_proxy(pred.reshape(b * t_, c, h, w),
+                             target.reshape(b * t_, c, h, w)), "proxy"
+
+
 def hdr_vdp3_jod(
     pred: torch.Tensor,
     target: torch.Tensor,

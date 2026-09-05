@@ -32,7 +32,13 @@ def _index_frames(folder: Path, extensions=(".png", ".exr", ".hdr")):
     grouped: dict[str, dict[int, Path]] = defaultdict(dict)
     duplicates = 0
     stills = 0
-    for path in sorted(p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in extensions):
+    # Skip dotfiles. An interrupted render leaves its atomic-write temp behind
+    # as ".<stem>.<random>.tmp.png", whose suffix is .png and whose stem still
+    # matches SEQUENCE_RE, so it used to enter the manifest as a real frame --
+    # a half-written file presented to the trainer as ground truth.
+    for path in sorted(p for p in folder.rglob("*")
+                       if p.is_file() and not p.name.startswith(".")
+                       and p.suffix.lower() in extensions):
         match = SEQUENCE_RE.match(path.stem)
         if not match:
             stills += 1

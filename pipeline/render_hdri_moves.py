@@ -125,6 +125,44 @@ def move(rng: np.random.Generator, frames: int, hfov: float) -> list[dict]:
     return path
 
 
+def select_sources(hdri_dir: Path,
+                   done_file: Path | None) -> tuple[list[Path], set[str]]:
+    """Panoramas still to render, and the set already finished.
+
+    Two situations that look alike and must not share an exit code:
+
+    An EMPTY directory is a mistake worth stopping for, so this raises.
+
+    Every panorama present being ALREADY RENDERED is not a mistake. It is
+    the normal state of the last batches of a batched run, and of any
+    re-run. This returns an empty list for it, and the caller exits 0. On
+    4 Sep 2026 the two shared one code and the corpus build aborted at
+    batch 0, having done nothing wrong.
+
+    The skip itself matters as much: nothing removes a rendered panorama
+    from ``hdri_dir`` unless ``--drop-source`` is on, so without it the
+    batched driver re-renders every earlier batch on every pass -- 993
+    panoramas in 20 batches becomes 10,500 renders.
+    """
+    hdris = sorted(p for p in hdri_dir.rglob("*")
+                   if p.suffix.lower() in (".exr", ".hdr"))
+    if not hdris:
+        raise SystemExit(f"error: no .exr/.hdr under {hdri_dir}")
+
+    already: set[str] = set()
+    if done_file and done_file.is_file():
+        already = {line.strip() for line in
+                   done_file.read_text(encoding="utf-8").splitlines() if line.strip()}
+        before = len(hdris)
+        hdris = [p for p in hdris if p.name not in already]
+        if before != len(hdris):
+            print(f"   resuming: {before - len(hdris)} panorama(s) already rendered")
+    if not hdris:
+        print(f"   nothing to do: all {len(already)} panorama(s) in "
+              f"{hdri_dir} are already rendered")
+    return hdris, already
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -141,13 +179,26 @@ def main() -> int:
     parser.add_argument("--ceiling-nits", type=float, default=1_000_000.0)
     parser.add_argument("--seed", type=int, default=20260903)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--done-file", type=Path, default=None,
+                        help="append each panorama's name here once its clips "
+                             "are written. Pass the same path to "
+                             "fetch_polyhaven.py --exclude-file so a "
+                             "fetch/render/drop loop does not re-fetch what it "
+                             "already consumed. Without it, --drop-source "
+                             "deletes the evidence that the work was done.")
+    parser.add_argument("--drop-source", action="store_true",
+                        help="delete each panorama once its clips are written. "
+                             "A full 4k Poly Haven set is ~48 GB parked and the "
+                             "rendered pairs are ~30 GB on top; fetching a batch, "
+                             "rendering it and dropping it keeps peak disk to the "
+                             "pairs plus one file. Never deletes a source it "
+                             "skipped, and never in --dry-run.")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    hdris = sorted(p for p in args.hdri_dir.rglob("*")
-                   if p.suffix.lower() in (".exr", ".hdr"))
+    hdris, already = select_sources(args.hdri_dir, args.done_file)
     if not hdris:
-        raise SystemExit(f"error: no .exr/.hdr under {args.hdri_dir}")
+        return 0
     if args.limit:
         hdris = hdris[:args.limit]
 
@@ -253,6 +304,21 @@ def main() -> int:
                     }, indent=2), encoding="utf-8")
                 written += 1
             clips_written += 1
+        if args.done_file and not args.dry_run and src.name not in already:
+            already.add(src.name)
+            with open(args.done_file, "a", encoding="utf-8") as done:
+                done.write(src.name + "\n")
+
+        if args.drop_source and not args.dry_run:
+            # Only reached when every clip for this panorama was written: the
+            # skip paths above `continue` before here. Deleting a source we
+            # could not render would silently shrink the corpus and leave no
+            # way to find out which scenes went missing.
+            try:
+                src.unlink()
+            except OSError as exc:                                # noqa: BLE001
+                print(f"   could not drop {src.name}: {exc}")
+
         if (index + 1) % 10 == 0 or index + 1 == len(hdris):
             rate = (index + 1) / max(time.time() - started, 1e-9)
             print(f"   {index + 1:>5}/{len(hdris)} panoramas  {rate:5.2f}/s  "
