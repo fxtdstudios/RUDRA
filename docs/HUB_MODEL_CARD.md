@@ -1,5 +1,7 @@
 ---
-license: apache-2.0
+license: other
+license_name: rudra-weights
+license_link: https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE
 library_name: comfyui
 pipeline_tag: image-to-image
 tags:

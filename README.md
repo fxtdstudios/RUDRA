@@ -691,8 +691,19 @@ export RUDRA_CHECKPOINT_ROOTS=/path/to/your/checkpoints     # or set on Windows
 
 ## Licence
 
-Apache 2.0, see [LICENSE](LICENSE). The training sources carry their own
-licences; the table above lists them.
+The code is Apache 2.0, see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+The weights are not. They are licensed separately in
+[`checkpoints/LICENSE`](checkpoints/LICENSE), because HdM-HDR-2014 and
+HdM-HFR-2017 are free for academic use and require a separate agreement with
+HdM Stuttgart for commercial use, and that is not a term FXTD Studios can
+waive for you. Everything else in the corpus is CC0 or CC BY 4.0. If you use
+the weights, credit Netflix Open Content (CC BY 4.0); if you use them
+commercially, settle the HdM term first.
+
+A clean replacement is the reason `pipeline/render_hdri_moves.py` exists:
+weights retrained on the CC0 panoramas plus FXTD's own footage carry no
+upstream condition at all.
 
 ---
 

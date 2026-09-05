@@ -1,0 +1,26 @@
+RUDRA
+Copyright 2026 FXTD Studios
+
+This product includes software developed at FXTD Studios
+(https://fxtdstudios.com), licensed under the Apache License, Version 2.0.
+
+------------------------------------------------------------------------
+Trained weights
+------------------------------------------------------------------------
+The model weights distributed in `checkpoints/` are licensed separately;
+see `checkpoints/LICENSE`. They are NOT covered by the Apache 2.0 grant
+above, because one of their training sources restricts commercial use.
+
+------------------------------------------------------------------------
+Attribution required by the training sources
+------------------------------------------------------------------------
+Netflix Open Content -- Chimera (CC BY 4.0)
+    https://opencontent.netflix.com/
+
+Poly Haven HDRIs (CC0)
+    https://polyhaven.com/license
+
+HdM-HDR-2014 and HdM-HFR-2017, Hochschule der Medien Stuttgart
+    Free for academic and educational use. Commercial use requires a
+    separate agreement with HdM.
+    https://hdm-stuttgart.de/vmlab/hdm-hdr-2014/
