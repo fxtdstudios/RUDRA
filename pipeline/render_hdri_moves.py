@@ -107,9 +107,30 @@ def project(pano: np.ndarray, dirs: np.ndarray, rot: np.ndarray) -> np.ndarray:
                      interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
 
 
-def move(rng: np.random.Generator, frames: int, hfov: float) -> list[dict]:
+def move(rng: np.random.Generator, frames: int, hfov: float,
+         exposure_drift: float = 0.0, exposure_jitter: float = 0.0) -> list[dict]:
     """One camera path. Pans dominate, tilts and rolls are small, zoom is slow --
-    the distribution of moves a plate actually contains."""
+    the distribution of moves a plate actually contains.
+
+    EXPOSURE is the one axis this renderer left constant, and on 5 Sep 2026
+    that turned out to matter more than anything else in the file. v02's whole
+    claim is that a neighbouring frame can show a region the current frame
+    clipped. With a pure rotation through a static panorama and ONE tone curve
+    for every frame, a scene point carries the same SDR code in every frame it
+    appears in: what is blown stays blown, and the corpus contains none of the
+    information the claim is about. The temporal gate measured that faithfully
+    and returned nothing, which was a fact about the corpus rather than about
+    video.
+
+    Real footage does not hold exposure still. Auto-exposure hunts, an iris
+    breathes, a colourist rides the level. ``exposure_drift`` is the ramp (a
+    stop per frame, sign random per clip) and ``exposure_jitter`` the
+    frame-to-frame hunting; both default to 0.0, which reproduces the existing
+    corpus byte for byte.
+
+    The exposure applies to the SDR only. The HDR target stays the scene's
+    true radiance -- the camera's response is what moves, not the light.
+    """
     yaw = float(rng.uniform(0.0, 360.0))
     pitch = float(rng.uniform(-22.0, 22.0))
     roll = float(rng.normal(0.0, 1.2))
@@ -117,16 +138,25 @@ def move(rng: np.random.Generator, frames: int, hfov: float) -> list[dict]:
     d_pitch = float(rng.normal(0.0, 0.18))
     d_roll = float(rng.normal(0.0, 0.05))
     zoom = float(rng.normal(0.0, 0.25))          # degrees of hfov per frame
+    d_ev = float(rng.choice([-1.0, 1.0]) * exposure_drift)
+    # Centred on the clip, so the average exposure matches a clip rendered
+    # without drift and the two corpora stay comparable in overall level.
+    middle = (frames - 1) / 2.0
     path = []
     for i in range(frames):
+        ev = d_ev * (i - middle)
+        if exposure_jitter:
+            ev += float(rng.normal(0.0, exposure_jitter))
         path.append({"yaw": yaw + d_yaw * i, "pitch": max(-80.0, min(80.0, pitch + d_pitch * i)),
                      "roll": roll + d_roll * i,
-                     "hfov": max(20.0, min(140.0, hfov + zoom * i))})
+                     "hfov": max(20.0, min(140.0, hfov + zoom * i)),
+                     "ev": ev})
     return path
 
 
 def select_sources(hdri_dir: Path,
-                   done_file: Path | None) -> tuple[list[Path], set[str]]:
+                   done_file: Path | None,
+                   scene_list: Path | None = None) -> tuple[list[Path], set[str]]:
     """Panoramas still to render, and the set already finished.
 
     Two situations that look alike and must not share an exit code:
@@ -148,6 +178,25 @@ def select_sources(hdri_dir: Path,
                    if p.suffix.lower() in (".exr", ".hdr"))
     if not hdris:
         raise SystemExit(f"error: no .exr/.hdr under {hdri_dir}")
+
+    if scene_list:
+        # Rendering a NAMED subset of a 994-panorama directory. The
+        # alternative -- a directory of copies or links -- either duplicates
+        # 2 GB per run or needs privileges Windows does not hand out by
+        # default, and neither leaves a record of which scenes were used.
+        # A text file does, and it is what makes a seed sweep comparable.
+        wanted = [line.strip() for line in
+                  scene_list.read_text(encoding="utf-8").splitlines()
+                  if line.strip()]
+        by_stem = {p.stem: p for p in hdris}
+        missing = [name for name in wanted if name not in by_stem]
+        if missing:
+            raise SystemExit(
+                f"error: {len(missing)} scene(s) in {scene_list} are not in "
+                f"{hdri_dir}: {', '.join(missing[:5])}"
+                + (" ..." if len(missing) > 5 else ""))
+        hdris = [by_stem[name] for name in wanted]
+        print(f"   scene list : {len(hdris)} of {len(by_stem)} panorama(s)")
 
     already: set[str] = set()
     if done_file and done_file.is_file():
@@ -177,8 +226,28 @@ def main() -> int:
                         help="refuse sources that would be upscaled more than this "
                              "across the frame. 0 disables the check.")
     parser.add_argument("--ceiling-nits", type=float, default=1_000_000.0)
+    parser.add_argument("--exposure-drift", type=float, default=0.0,
+                        help="STOPS PER FRAME the SDR exposure ramps, sign "
+                             "random per clip. 0.0 (the default) reproduces "
+                             "the existing corpus exactly. 0.12 over nine "
+                             "frames is about a stop end to end -- roughly "
+                             "what auto-exposure does panning into the sun, "
+                             "and the only thing that puts the information "
+                             "v02 is looking for INTO the corpus. See move().")
+    parser.add_argument("--exposure-jitter", type=float, default=0.0,
+                        help="stops of frame-to-frame exposure hunting, "
+                             "sigma. Independent per frame, so unlike drift "
+                             "it is averaged away by a temporal model and "
+                             "should be kept small.")
     parser.add_argument("--seed", type=int, default=20260903)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--scene-list", type=Path, default=None,
+                        help="text file of panorama stems, one per line. "
+                             "Renders only those, in that order, and fails "
+                             "loudly if any is absent -- so a seed sweep can "
+                             "be pinned to exactly the scenes an earlier run "
+                             "used. docs/gate_v02_2026-09-05/"
+                             "_gate50_scenes.txt is one.")
     parser.add_argument("--done-file", type=Path, default=None,
                         help="append each panorama's name here once its clips "
                              "are written. Pass the same path to "
@@ -196,7 +265,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    hdris, already = select_sources(args.hdri_dir, args.done_file)
+    hdris, already = select_sources(args.hdri_dir, args.done_file,
+                                    args.scene_list)
     if not hdris:
         return 0
     if args.limit:
@@ -213,6 +283,8 @@ def main() -> int:
         "hfov_deg": args.hfov,
         "frames_per_clip": args.frames,
         "clips_per_hdri": args.clips_per_hdri,
+        "exposure_drift_stops_per_frame": args.exposure_drift,
+        "exposure_jitter_stops": args.exposure_jitter,
         "seed": args.seed,
         "note": ("Rendered by pipeline/render_hdri_moves.py. No parallax: pans, "
                  "tilts, rolls and zooms only, and nothing in the scene moves."),
@@ -231,12 +303,20 @@ def main() -> int:
             path.write_text(json.dumps(sentinel, indent=2), encoding="utf-8")
             return
         existing = json.loads(path.read_text(encoding="utf-8"))
+        # A corpus written before the exposure flags existed has neither key
+        # and was, by construction, rendered at 0.0 of both. Reading a missing
+        # key as 0.0 lets those directories keep resuming; anything else would
+        # refuse the 993 scenes already on disk.
+        defaults = {"exposure_drift_stops_per_frame": 0.0,
+                    "exposure_jitter_stops": 0.0}
         for key in ("hdr_io_version", "storage", "target_size", "tonemap",
+                    "exposure_drift_stops_per_frame", "exposure_jitter_stops",
                     "sdr_encoding"):
-            if existing.get(key) != sentinel.get(key):
+            on_disk = existing.get(key, defaults.get(key))
+            if on_disk != sentinel.get(key):
                 raise SystemExit(
                     f"error: {args.dst} was prepared with a different config "
-                    f"({key}: on disk {existing.get(key)!r}, requested "
+                    f"({key}: on disk {on_disk!r}, requested "
                     f"{sentinel.get(key)!r}). Use a fresh --dst; mixing "
                     f"conventions is how the August corpus became unreadable.")
 
@@ -275,7 +355,8 @@ def main() -> int:
         scene = src.stem
         for clip in range(args.clips_per_hdri):
             rng = np.random.default_rng(abs(hash((args.seed, scene, clip))) % (2**32))
-            path = move(rng, args.frames, args.hfov)
+            path = move(rng, args.frames, args.hfov,
+                        args.exposure_drift, args.exposure_jitter)
             for frame, pose in enumerate(path):
                 grid = (dirs if abs(pose["hfov"] - args.hfov) < 1e-9
                         else ray_grid(args.width, args.height, pose["hfov"]))
@@ -296,7 +377,13 @@ def main() -> int:
                         open_destination()
                         opened = True
                     code, stats = encode_hdr_u16(linear, storage)
-                    save_png_8bit(make_sdr(linear), sdr_dir / f"{stem}.png")
+                    # The SDR is what the camera recorded, exposure and all;
+                    # the HDR beside it is the light that was there. Scaling
+                    # the target too would make the pair self-consistent and
+                    # the task trivial.
+                    shown = linear if not pose.get("ev") \
+                        else linear * np.float32(2.0 ** pose["ev"])
+                    save_png_8bit(make_sdr(shown), sdr_dir / f"{stem}.png")
                     save_png_16bit(code, hdr_dir / f"{stem}.png")
                     (meta_dir / f"{stem}.json").write_text(json.dumps({
                         "stem": stem, "source": str(src.resolve()), "clip": clip,

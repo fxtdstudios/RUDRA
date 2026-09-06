@@ -10,7 +10,7 @@
 > | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
-> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **gate passed, nothing trained yet** |
+> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **passes with exact poses (+0.51 JOD), collapses to +0.02 with estimated flow** — oracle bound under flow is −0.005, so no headroom; one RAFT run decides whether v02 continues |
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
 > the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
@@ -64,21 +64,133 @@
 >   ColorVideoVDP in video mode; `rudra/pose_warp.py` adds a temporal
 >   consistency measure with no flow estimator in it, ground truth against
 >   itself sitting at 0.0145 stops.
-> - **The gate.** `training/gate_temporal_oracle.py`, 2 clips: on clean frames
->   the per-frame model already scores 9.972 JOD of 10, so nothing can be won
->   and the run says nothing. Under degradation, per-frame is −1.962 JOD and an
->   **aligned mean of the warped neighbours — no ground truth, the simplest
->   thing a model could learn — reaches 7.346 JOD**, matching the per-pixel
->   oracle. Achievable **+9.31 JOD** against a +0.5 threshold.
+> - **The gate.** `training/gate_temporal_oracle.py`. On clean frames the
+>   per-frame model already scores 9.972 JOD of 10, so nothing can be won and
+>   the run says nothing; the gate has to be read on `--condition hard`.
 >
-> Two caveats travel with that: the −1.962 floor is far below the 7.805 the
-> benchmark reports for its hard condition, and the degradation is seeded per
-> frame, which is the best possible case for temporal averaging. **Line D
-> remaining:** calibrate the floor, repeat the aligned-mean measurement with
-> *estimated* optical flow rather than the analytic camera poses (real footage
-> has no poses — this decides the architecture and must precede any training),
-> then train rung 1 as the control and rung 2 as flow-warp plus multi-scale
-> fusion, testing on the 13 real scenes the v01 corpus provides.
+> **The gate failed, and then said why (5 Sep 2026).** The 4 Sep reading of
+> **+9.31 JOD achievable** does not survive. Two faults produced it, and both
+> are fixed:
+>
+> - It scored a **bare `model(x)` forward pass**, not RUDRA as deployed. The
+>   benchmark runs `predict_image(preserve_outside=True)`, where outside the
+>   learned masks the output *is* the analytic baseline. That is why the floor
+>   sat at −1.96 JOD against the benchmark's 7.805 on the same checkpoint and
+>   the same 1280×720 frames — it was never a crop-size or resolution
+>   mismatch.
+> - `degrade_like_eval` **reseeds from the frame index**, so every frame of a
+>   nine-frame clip got its own exposure, tone curve, white balance,
+>   saturation, chroma subsampling, bit depth and JPEG quality. Averaging nine
+>   independent draws of a corruption is worth √9 whether or not the frames
+>   carry information. `--degradation {per-frame,per-clip,realistic,codec}`
+>   makes that assumption a flag; `codec` puts the clip through a real H.264
+>   round trip and is the one with a GOP in it.
+>
+> | degradation | clips | per-frame | achievable | ceiling |
+> |---|---|---|---|---|
+> | `per-frame` (4 Sep) | 2 | −2.396 JOD | **+9.397** | +9.408 |
+> | `realistic` | 40 | 6.961 | **+0.033** | +0.191 |
+> | `codec` | 40 | 6.864 | **+0.034** | +0.165 |
+>
+> Against a +0.5 JOD threshold, **the gate fails** — and even the unreachable
+> bound (omniscient per-pixel selection over exactly aligned neighbours)
+> reaches only +0.19.
+>
+> **That is a fact about the corpus, not about video.** `make_sdr` tone-maps
+> every frame with one fixed curve and one fixed EV offset, and the renderer's
+> camera only rotates through a static panorama — so a scene point carries the
+> **same SDR code in every frame it appears in**, and what is blown in frame 3
+> is blown in frame 7. The corpus contains none of the information v02's claim
+> is about. `--exposure-drift` and `--exposure-jitter` put that axis back
+> (defaults 0.0; the `_ingest_config` sentinel refuses to mix a drifted render
+> into the existing 993 scenes).
+>
+> **The gate passes once exposure moves (6 Sep 2026).** 50 panoramas rendered
+> twice with `PYTHONHASHSEED=0` — identical camera paths (checked to 1e-9),
+> identical H.264 degradation, the SDR exposure the only difference. Scene
+> list in `_gate50_scenes.txt`.
+>
+> | exposure | per-frame | achievable | ceiling |
+> |---|---|---|---|
+> | constant | 6.209 JOD | +0.110 | +0.264 JOD / +0.632 dB |
+> | ±0.48 stops | 5.786 | **+0.511** | +0.851 JOD / **+4.554 dB** |
+>
+> **+0.511 against a +0.5 threshold, with the fixed-exposure control at +0.110
+> on the very same scenes and camera paths.** The PU21 ceiling is the clearer
+> signal: +0.63 dB without exposure movement, +4.55 dB with it.
+>
+> **Repeated on three seeds (6 Sep 2026, `training/run_drift_gate.ps1`, on the
+> 4080):**
+>
+> | seed | flat | drift | drift ceiling | clips |
+> |---|---|---|---|---|
+> | 20260903 | +0.110 | +0.511 | +0.851 | 50 |
+> | 20260906 | +0.035 | **+0.603** | +1.090 | 40 |
+> | 20260907 | +0.046 | **+0.661** | +1.142 | 40 |
+> | **mean** | **+0.064** | **+0.592** | +1.028 | |
+>
+> **The result holds.** Every drift arm clears the threshold; every flat arm
+> is an order of magnitude below it. The ~+0.53 JOD separation between arms is
+> far larger than the spread across seeds, which is what makes this a result
+> rather than a run. The hypothesis behaves exactly as stated — a neighbour is
+> worth something when it saw the scene at a different exposure and close to
+> nothing when it did not.
+>
+> Two things travel with it. The 40 in the later rows is a defect:
+> `stage_oracle_clips` defaulted `--count` to 40 and the sweep passed none, so
+> those seeds used the first 40 of the 50 scenes — the *same* 40 in both arms,
+> so each pairing is intact, and the default is now 0. And drift makes the
+> per-frame job harder (6.209 → 5.786 on seed 20260903), so part of the gain
+> is repairing damage the drift itself did; the oracle ceiling separates the
+> two, and +0.26 JOD flat against +0.85 drift is information that exists to be
+> fetched, not merely damage to undo.
+>
+> What it licenses is narrow: a proposition about footage whose exposure
+> breathes — handheld, documentary, anything riding auto-exposure — not about
+> video in general.
+>
+> **And then estimated alignment took it away (6 Sep 2026).** Every number
+> above used the camera angles the renderer wrote down. A plate has none, so
+> the same 50 drifted clips were re-scored with the correspondence estimated
+> by DIS optical flow from the degraded SDR — what a deployed model holds:
+>
+> | arm | per-frame | control | aligned | oracle | **achievable** | ceiling |
+> |---|---|---|---|---|---|---|
+> | pose (exact) | 5.786 | 5.835 | 6.296 | 6.687 | **+0.511** | +0.851 |
+> | flow (DIS) | 5.786 | 5.844 | 5.802 | 5.839 | **+0.016** | −0.005 |
+> | flow + texture gate | 5.786 | 5.828 | 5.658 | 5.514 | **−0.128** | −0.314 |
+>
+> **Read the ceiling column.** Under estimated alignment the *oracle* — ground
+> truth consulted per pixel, better than any architecture or weighting could
+> ever do — beats the per-frame model by +0.053 JOD, while the control, which
+> carries no information at all, beats it by +0.058. The oracle's whole margin
+> is selection on resampling noise. **There is no headroom left to build for.**
+>
+> The alignment is not visibly bad, which is what makes this worth stating
+> carefully: DIS matched the analytic poses to a median 0.04 px at one frame
+> of separation and 0.09 px at eight, coverage within 1%, warped frames
+> agreeing to under half an 8-bit code value. PU21-PSNR keeps 75% of the gain
+> (+0.326 of +0.435 dB). The JOD keeps 3%. What survives a per-frame PSNR and
+> not a video metric is a small, spatially coherent error that changes every
+> frame — the exact artefact a temporal model exists to remove.
+>
+> Where it fails is legible: the six worst clips are open sky, the four best
+> interiors. On the sky scene flow error in low-texture regions is **1.35 px
+> against 0.15 px** in textured regions of the same frame, and
+> forward-backward consistency passed **57%** of those bad pixels, because in
+> a flat region any displacement round-trips perfectly. Flow fails exactly
+> where the highlights are. Gating on texture energy made it worse (−0.128):
+> a hard mask leaves nine-frame averaging beside one-frame averaging with a
+> seam between them. A softer weighting is not worth trying — the oracle row
+> bounds every weighting there is.
+>
+> **Line D remaining — one experiment, then a decision.** DIS is a fast
+> classical estimator and a learned flow (RAFT and successors) is markedly
+> better in low-texture regions, which is precisely where this failed. Re-run
+> the flow arm with one: it is the single experiment that could reopen v02.
+> If it also comes back flat, v02 as specified is finished, and the corpus
+> re-render, the architecture ladder and the video split all come off the
+> board. Line B's Stage 3 is then the better use of the GPU.
 >
 > ---
 >

@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
+import zlib
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[1]
@@ -56,8 +59,15 @@ NETWORK_PEAK_NITS = 10_000.0   # SDR2HDRNet.hdr: 1.0 = 10 000 nits
 STORAGE_WHITE_NITS = 203.0     # decode_hdr_u16 / the EXRs: 1.0 = diffuse white
 FLOOR_NITS = 0.005
 
+# The image benchmark clamps its reference before scoring
+# (export_bench_pairs.REFERENCE_CEILING, 1 000 network units = 10^7 nits) and
+# this did not. A rendered panorama carries the sun at 10^8 nits and upwards,
+# and an unclamped reference lets those few pixels dominate PU21-PSNR, so the
+# two numbers were never on the same footing. Imported rather than restated so
+# the two cannot drift apart.
 
-def round_trip(predictions: list[np.ndarray], poses: list[dict]) -> list[list]:
+
+def round_trip(predictions: list[np.ndarray], warp) -> list[list]:
     """Each frame's own prediction, warped out to every neighbour and back.
 
     THE CONTROL. An oracle picking the per-pixel best of nine candidates wins
@@ -76,13 +86,13 @@ def round_trip(predictions: list[np.ndarray], poses: list[dict]) -> list[list]:
         for j in range(len(predictions)):
             if j == i:
                 continue
-            there, _ = warp_frame(pred_i, poses[i], poses[j])
-            variants.append(warp_frame(there, poses[j], poses[i]))
+            there, _ = warp(pred_i, i, j)
+            variants.append(warp(there, j, i))
         out.append(variants)
     return out
 
 
-def aligned_mean(predictions: list[np.ndarray], poses: list[dict]) -> list[np.ndarray]:
+def aligned_mean(predictions: list[np.ndarray], warp) -> list[np.ndarray]:
     """Average the aligned neighbours. No ground truth, so a model could do it.
 
     The oracle picks the best candidate PER PIXEL by consulting ground truth.
@@ -102,7 +112,7 @@ def aligned_mean(predictions: list[np.ndarray], poses: list[dict]) -> list[np.nd
         for j, pred_j in enumerate(predictions):
             if j == i:
                 continue
-            warped, valid = warp_frame(pred_j, poses[j], poses[i])
+            warped, valid = warp(pred_j, j, i)
             m = valid[..., None]
             total += np.where(m, warped, 0.0)
             count += m
@@ -111,7 +121,7 @@ def aligned_mean(predictions: list[np.ndarray], poses: list[dict]) -> list[np.nd
 
 
 def oracle_combine(predictions: list[np.ndarray],
-                   poses: list[dict],
+                   warp,
                    truth: list[np.ndarray],
                    candidates: list[list] | None = None) -> list[np.ndarray]:
     """Best per-pixel choice among aligned neighbours, for every frame.
@@ -128,7 +138,7 @@ def oracle_combine(predictions: list[np.ndarray],
         best = base.copy()
         best_err = np.abs(np.log2(np.maximum(base, floor)) - log_truth)
         pool = candidates[i] if candidates is not None else [
-            warp_frame(p, poses[j], poses[i])
+            warp(p, j, i)
             for j, p in enumerate(predictions) if j != i]
         for warped, valid in pool:
             err = np.abs(np.log2(np.maximum(warped, floor)) - log_truth)
@@ -139,26 +149,233 @@ def oracle_combine(predictions: list[np.ndarray],
     return out
 
 
+def apply_hard(frame, index: int, clip_seed: int, mode: str):
+    """The hard condition, with a stated assumption about how it moves in time.
+
+    THIS IS THE CALIBRATION. `degrade_like_eval` reseeds from the frame index,
+    so the 4 Sep run redrew the exposure, the tone curve, the white balance,
+    the saturation, the chroma subsampling, the bit depth and the JPEG quality
+    independently on every frame of a nine-frame clip. Nothing shot through a
+    real camera does that. It is also, precisely, the condition under which
+    averaging nine aligned neighbours wins the most it can ever win: nine
+    independent draws of the same corruption average down like sqrt(9), and a
+    temporal model gets credit for arithmetic rather than for information.
+
+    The three modes bracket the truth rather than pretending to know it:
+
+      per-frame   every parameter redrawn every frame. The 4 Sep condition,
+                  kept so the +9.308 JOD result stays reproducible. Upper
+                  bound on what time can be worth; not a claim about footage.
+      per-clip    one realisation for the whole clip. A graded, encoded shot
+                  with a static grain plate. Lower bound.
+      realistic   the grade and the codec are properties of the SHOT and are
+                  frozen; the sensor noise is not, and is redrawn per frame.
+                  This is the one to read.
+
+    A gain that survives `realistic` is a gain a temporal model can expect to
+    see on real footage. A gain that only exists under `per-frame` is a
+    measurement of our own degradation model.
+    """
+    import torch
+    from training.export_bench_pairs import degrade_like_eval
+
+    if mode == "per-frame":
+        return degrade_like_eval(frame, index)
+    graded = degrade_like_eval(frame, clip_seed)
+    if mode == "per-clip":
+        return graded
+    if mode != "realistic":
+        raise ValueError(f"unknown degradation mode {mode!r}")
+
+    # degrade_sdr draws sigma once from U(0, 3/255) behind a 0.60 coin. Both
+    # are shot constants -- a camera's noise LEVEL does not change frame to
+    # frame -- so they are drawn from the clip seed and only the REALISATION
+    # is redrawn. Sensor noise is the one term in that function that is
+    # genuinely independent across frames, and it is the only one a temporal
+    # model is entitled to average away.
+    shot = random.Random(clip_seed)
+    if shot.random() >= 0.60:
+        return graded
+    sigma = shot.uniform(0.0, 3.0 / 255.0)
+    generator = torch.Generator().manual_seed((clip_seed + index) & 0xFFFFFFFF)
+    noise = torch.randn(graded.shape, generator=generator, dtype=graded.dtype)
+    return (graded + noise * sigma).clamp(0.0, 1.0)
+
+
+def codec_round_trip(frames: list[np.ndarray], crf: int, fps: float,
+                     codec: str = "libx264") -> list[np.ndarray]:
+    """Put the clip through a real video encoder and take it back out.
+
+    The three synthetic modes above argue about how a per-FRAME degradation
+    should move down a clip. A video codec settles the argument by not being
+    one: it has a GOP, it spends bits unevenly across frames, it predicts each
+    frame from its neighbours, and it subsamples chroma in 4:2:0 for real
+    rather than by blurring at half resolution. Whatever temporal structure
+    real compression has, this has it, and it is the only mode here that was
+    not designed by someone who already had a hypothesis.
+
+    That matters for a temporal gate specifically. Motion compensation makes a
+    codec's error CORRELATED along the clip wherever the camera move is easy to
+    predict -- which is exactly the case a temporal model would otherwise be
+    credited with fixing.
+
+    8-bit sRGB in, 8-bit sRGB out, which is what the network reads anyway.
+    """
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        for index, frame in enumerate(frames):
+            eight = np.clip(frame * 255.0 + 0.5, 0, 255).astype(np.uint8)
+            if not cv2.imwrite(str(work / f"{index:05d}.png"), eight[..., ::-1]):
+                raise SystemExit(f"error: could not stage frame {index} for {codec}")
+        encoded = work / "clip.mp4"
+        encode = ["ffmpeg", "-y", "-loglevel", "error",
+                  "-framerate", f"{fps:g}", "-i", str(work / "%05d.png"),
+                  "-c:v", codec, "-crf", str(crf), "-pix_fmt", "yuv420p",
+                  str(encoded)]
+        decode = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(encoded),
+                  str(work / "out_%05d.png")]
+        for command in (encode, decode):
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise SystemExit(f"error: {command[0]} failed\n{result.stderr}")
+        out = []
+        for index in range(len(frames)):
+            # ffmpeg numbers its output from 1.
+            path = work / f"out_{index + 1:05d}.png"
+            image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if image is None:
+                raise SystemExit(f"error: {codec} returned no frame {index}")
+            out.append(cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0)
+    if len(out) != len(frames):
+        raise SystemExit(f"error: {codec} returned {len(out)} of {len(frames)} frames")
+    return out
+
+
+def degrade_clip(frames: list[np.ndarray], clip_seed: int, mode: str,
+                 crf: int, fps: float) -> list[np.ndarray]:
+    """The hard condition, applied to a whole clip rather than a frame."""
+    import torch
+
+    if mode == "codec":
+        graded = [apply_hard(torch.from_numpy(np.ascontiguousarray(f)).permute(2, 0, 1),
+                             index, clip_seed, "realistic")
+                  for index, f in enumerate(frames)]
+        graded = [g.permute(1, 2, 0).numpy() for g in graded]
+        return codec_round_trip(graded, crf, fps)
+    out = []
+    for index, f in enumerate(frames):
+        chw = torch.from_numpy(np.ascontiguousarray(f)).permute(2, 0, 1)
+        out.append(apply_hard(chw, index, clip_seed, mode).permute(1, 2, 0).numpy())
+    return out
+
+
+def pose_aligner(poses: list[dict]):
+    """Exact correspondence from the renderer's camera angles. The upper bound."""
+    def warp(image, src_index, dst_index):
+        return warp_frame(image, poses[src_index], poses[dst_index])
+    return warp
+
+
+def flow_aligner(shown: list[np.ndarray], normalise: bool, tolerance: float,
+                 texture_floor: float = 0.0, backend: str = "dis",
+                 device: str = "cpu", scale: float = 1.0,
+                 cache_limit: int = 96):
+    """Correspondence ESTIMATED from the frames a deployed model actually has.
+
+    THE POINT OF THIS ARM. Every headline number the gate has produced used
+    poses the renderer wrote down, and a plate does not come with those. The
+    difference between the two arms is estimator error: unreachable by any
+    architecture, and therefore not part of what training could win.
+
+    Flow is estimated from the DEGRADED SDR -- the pixels the network was fed
+    -- and never from ground truth or from the HDR prediction, either of which
+    would smuggle the oracle back in through the alignment.
+
+    Flows are cached per ordered pair. A nine-frame clip needs 72 of them and
+    every one is asked for twice, once as a correspondence and once as its own
+    forward-backward check. The cache is BOUNDED: 72 fields at 720p is half a
+    gigabyte before the estimator has allocated anything of its own, and on
+    6 Sep 2026 the RAFT run on a 7 GB box was OOM-killed with no traceback --
+    the process simply stopped. Peak memory should not be a function of how
+    many frames a clip happens to have.
+    """
+    from rudra.flow_warp import (estimate_flow, forward_backward_valid,
+                                 texture_energy, to_matching_gray,
+                                 warp_with_flow)
+
+    grays = [to_matching_gray(f, normalise=normalise) for f in shown]
+    energies = ([texture_energy(g) for g in grays] if texture_floor > 0
+                else [None] * len(grays))
+    flows: dict[tuple[int, int], np.ndarray] = {}
+
+    def flow_for(dst_index: int, src_index: int) -> np.ndarray:
+        key = (dst_index, src_index)
+        if key not in flows:
+            if len(flows) >= cache_limit:
+                flows.pop(next(iter(flows)))          # oldest out, FIFO
+            flows[key] = estimate_flow(grays[dst_index], grays[src_index],
+                                       backend=backend, device=device,
+                                       scale=scale)
+        return flows[key]
+
+    def warp(image, src_index, dst_index):
+        if src_index == dst_index:
+            return image.astype(np.float32), np.ones(image.shape[:2], bool)
+        forward = flow_for(dst_index, src_index)
+        backward = flow_for(src_index, dst_index)
+        valid = forward_backward_valid(forward, backward, tolerance,
+                                       energies[dst_index], texture_floor)
+        return warp_with_flow(image, forward, valid)
+    return warp
+
+
 def score(frames: list[np.ndarray], truth: list[np.ndarray],
-          fps: float, cvvdp: bool) -> dict:
+          fps: float, cvvdp: bool, device: str = "cpu") -> dict:
+    """PU21-PSNR and clip JOD for one reconstruction against its reference.
+
+    `device` is not cosmetic. `hdr_vdp3_clip_jod` chooses where to run from
+    whether the tensors it is HANDED are on the GPU, so building them on the
+    CPU here left ColorVideoVDP on the CPU no matter what --device said -- and
+    the metric, not the network, is nearly all of this script's cost. The
+    50-clip pair on 6 Sep 2026 took 3.5 hours on two CPU cores for that
+    reason, and the forward passes were a few minutes of it.
+    """
     db = [pu_psnr(f * STORAGE_WHITE_NITS, t * STORAGE_WHITE_NITS)
           for f, t in zip(frames, truth)]
     row = {"pu21_db": float(np.mean(db))}
     if cvvdp:
         import torch
         from rudra.hdrvdp import hdr_vdp3_clip_jod
-        to_clip = lambda xs: torch.from_numpy(          # noqa: E731
-            np.ascontiguousarray(np.stack(xs))).permute(0, 3, 1, 2).float()
-        jod, backend = hdr_vdp3_clip_jod(to_clip(frames), to_clip(truth),
-                                         frames_per_second=fps,
-                                         diffuse_white_nits=STORAGE_WHITE_NITS)
+
+        def to_clip(xs, where):
+            return torch.from_numpy(np.ascontiguousarray(np.stack(xs))) \
+                .permute(0, 3, 1, 2).float().to(where)
+
+        where = device
+        try:
+            jod, backend = hdr_vdp3_clip_jod(
+                to_clip(frames, where), to_clip(truth, where),
+                frames_per_second=fps, diffuse_white_nits=STORAGE_WHITE_NITS)
+        except RuntimeError as exc:                       # noqa: BLE001
+            if "out of memory" not in str(exc).lower() or where == "cpu":
+                raise
+            # A 9-frame 720p clip is ~100 MB per tensor before cvvdp's own
+            # pyramids. Falling back keeps a long run alive rather than losing
+            # every clip already scored.
+            torch.cuda.empty_cache()
+            print(f"   cvvdp: out of memory on {where}, this clip on cpu")
+            jod, backend = hdr_vdp3_clip_jod(
+                to_clip(frames, "cpu"), to_clip(truth, "cpu"),
+                frames_per_second=fps, diffuse_white_nits=STORAGE_WHITE_NITS)
         row["cvvdp_jod"], row["cvvdp_backend"] = jod, backend
     return row
 
 
-def load_clip(clip_dir: Path, storage) -> tuple[list, list, list]:
+def load_clip(clip_dir: Path, storage, truth_ceiling: float) -> tuple[list, list, list]:
     """(sdr, hdr truth, poses) for one clip, in frame order."""
-    import cv2
     from pipeline.hdr_io import decode_hdr_u16
 
     metas = sorted(clip_dir.glob("meta/*.json"), key=lambda p: p.stem)
@@ -168,8 +385,9 @@ def load_clip(clip_dir: Path, storage) -> tuple[list, list, list]:
         s = cv2.imread(str(clip_dir / "sdr" / f"{m.stem}.png"), cv2.IMREAD_UNCHANGED)
         h = cv2.imread(str(clip_dir / "hdr" / f"{m.stem}.png"), cv2.IMREAD_UNCHANGED)
         sdr.append(cv2.cvtColor(s, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0)
-        truth.append(decode_hdr_u16(cv2.cvtColor(h, cv2.COLOR_BGR2RGB),
-                                    storage).astype(np.float32))
+        truth.append(np.minimum(
+            decode_hdr_u16(cv2.cvtColor(h, cv2.COLOR_BGR2RGB), storage),
+            truth_ceiling).astype(np.float32))
     return sdr, truth, poses
 
 
@@ -189,6 +407,74 @@ def main() -> int:
                          "has nothing to find and the gate cannot say "
                          "anything -- see the note at the bottom of this "
                          "file.")
+    ap.add_argument("--degradation",
+                    choices=("per-frame", "per-clip", "realistic", "codec"),
+                    default="codec",
+                    help="How the hard condition varies along the clip. "
+                         "per-frame redraws every parameter every frame -- "
+                         "the 4 Sep default, and the single most favourable "
+                         "case temporal averaging could be handed. per-clip "
+                         "freezes the whole realisation. realistic freezes "
+                         "the grade and the codec, which are properties of a "
+                         "shot, and redraws only the sensor noise, which is "
+                         "not. codec does that and then puts the clip through "
+                         "a real H.264 encode, which is the only mode here "
+                         "with a GOP and motion compensation in it -- read "
+                         "this one.")
+    ap.add_argument("--crf", type=int, default=28,
+                    help="H.264 quality for --degradation codec. Lower is "
+                         "better; 28 is a plausible delivery encode.")
+    ap.add_argument("--alignment", choices=("pose", "flow"), default="pose",
+                    help="pose reads the renderer's camera angles and is "
+                         "exact -- an upper bound no plate can offer. flow "
+                         "estimates the correspondence with DIS optical flow "
+                         "from the degraded SDR, which is all a deployed "
+                         "model has. The gap between them is estimator error "
+                         "and no architecture recovers it.")
+    ap.add_argument("--flow-tolerance", type=float, default=1.5,
+                    help="pixels of forward-backward disagreement tolerated "
+                         "before a correspondence is dropped as guesswork.")
+    ap.add_argument("--flow-backend", choices=("dis", "raft"), default="dis",
+                    help="dis is the fast classical estimator. raft is the "
+                         "learned one and is far better in the low-texture "
+                         "regions where dis lost the v02 gain -- 0.35 px "
+                         "against 2.61 px on an open-sky clip -- but roughly "
+                         "200x slower per pair on a CPU. Pair it with "
+                         "--flow-device cuda.")
+    ap.add_argument("--flow-scale", type=float, default=1.0,
+                    help="estimate the flow at this fraction of the frame and "
+                         "rescale it. 1.0 is full resolution. 0.75 keeps most "
+                         "of RAFT's accuracy at about a tenth of the memory, "
+                         "which is what lets it run without a large GPU.")
+    ap.add_argument("--flow-cache", type=int, default=96,
+                    help="how many flow fields to keep. A nine-frame clip "
+                         "needs 72 and each is ~7 MB at 720p.")
+    ap.add_argument("--flow-device", default="cpu",
+                    help="where --flow-backend raft runs. cpu is about 20 s "
+                         "per pair at 720p and a nine-frame clip needs 72.")
+    ap.add_argument("--flow-texture-floor", type=float, default=0.0,
+                    help="drop flow matches where the destination's local "
+                         "gradient energy is below this. 0 disables it; 8.0 "
+                         "separates open sky from built scenes on this "
+                         "corpus. Forward-backward consistency cannot catch a "
+                         "bad match in a flat region -- any displacement "
+                         "round-trips there -- and that is where estimated "
+                         "alignment lost the v02 gain. See "
+                         "rudra.flow_warp.texture_energy.")
+    ap.add_argument("--no-flow-normalise", action="store_true",
+                    help="match on raw luma. Dense flow assumes brightness "
+                         "constancy and an exposure ramp violates it, so the "
+                         "default standardises each frame first; this turns "
+                         "that off to measure what it was worth.")
+    ap.add_argument("--tile-size", type=int, default=0,
+                    help="0 runs the frame untiled, as the benchmark does "
+                         "when it fits. Falls back to 512 on OOM.")
+    ap.add_argument("--tile-overlap", type=int, default=64)
+    ap.add_argument("--raw-forward", action="store_true",
+                    help="Score the bare network instead of RUDRA as "
+                         "deployed. This is what the 4 Sep run did by "
+                         "accident; kept only so the discrepancy can be "
+                         "reproduced.")
     ap.add_argument("--no-cvvdp", action="store_true")
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
@@ -196,9 +482,29 @@ def main() -> int:
     import torch
     from pipeline.hdr_io import HDRStorage
     from rudra.sdr2hdr import SDR2HDRNet
-    from training.export_bench_pairs import degrade_like_eval
+    from training.export_bench_pairs import REFERENCE_CEILING
+    from training.infer_sdr2hdr import predict_image
+
+    truth_ceiling = REFERENCE_CEILING * (NETWORK_PEAK_NITS / STORAGE_WHITE_NITS)
 
     print(f"   condition  : {args.condition}")
+    print("   inference  : "
+          + ("bare network forward (NOT the shipped configuration)"
+             if args.raw_forward else
+             "predict_image, preserve_outside=True, recovery all @ 1.0"))
+    print(f"   reference  : clamped at {truth_ceiling:,.0f} x 203 nits")
+    print(f"   alignment  : {args.alignment}"
+          + ("" if args.alignment == "pose" else
+             f", {args.flow_backend.upper()}"
+             + (f" on {args.flow_device}" if args.flow_backend == "raft" else "")
+             + (f" @ {args.flow_scale:g}x" if args.flow_scale != 1.0 else "")
+             + f", fb tolerance {args.flow_tolerance} px"
+             + ("" if args.no_flow_normalise else ", exposure-normalised")
+             + ("" if args.flow_texture_floor <= 0 else
+                f", texture floor {args.flow_texture_floor:g}")))
+    if args.condition == "hard":
+        print(f"   degradation: {args.degradation}"
+              + (f", H.264 crf {args.crf}" if args.degradation == "codec" else ""))
     clips = sorted(p for p in args.clips.iterdir() if (p / "meta").is_dir())
     if not clips:
         raise SystemExit(f"no clip directories under {args.clips}")
@@ -213,35 +519,69 @@ def main() -> int:
 
     rows = []
     for clip in clips:
-        sdr, truth, poses = load_clip(clip, storage)
+        sdr, truth, poses = load_clip(clip, storage, truth_ceiling)
+        clip_seed = zlib.crc32(clip.name.encode("utf-8"))
+
         # One frame at a time. A nine-frame batch of 1280x720 is ~100 M
         # activations per layer and gets the process OOM-killed on CPU, which
         # is where this runs when the GPU is busy training.
+        # Degradation is a CLIP operation now, not a frame one -- a codec
+        # cannot be applied one frame at a time and still be a codec.
+        shown = sdr if args.condition == "clean" else degrade_clip(
+            sdr, clip_seed, args.degradation, args.crf, args.fps)
         per_frame = []
         with torch.no_grad():
-            for index, frame in enumerate(sdr):
-                x = torch.from_numpy(frame).permute(2, 0, 1)[None].to(args.device)
-                if args.condition == "hard":
-                    # Seeded per frame, so neighbours carry genuinely
-                    # different noise -- which is the whole reason a temporal
-                    # model could help here, and why the clean run could not
-                    # show it.
-                    # degrade_sdr takes CHW, not NCHW -- export_bench_pairs
-                    # calls it as degrade_like_eval(sdr[0], i)[None].
-                    x = degrade_like_eval(x[0].cpu(), index)[None].to(args.device)
-                hdr = model(x).hdr[0].permute(1, 2, 0).cpu().numpy()
+            for frame in shown:
+                x = torch.from_numpy(np.ascontiguousarray(frame)) \
+                    .permute(2, 0, 1)[None].to(args.device)
+                # RUDRA AS DEPLOYED, not the bare network. The benchmark
+                # that produced the 7.805 JOD hard figure runs predict_image
+                # with preserve_outside=True: outside the learned
+                # highlight/shadow masks the output IS the analytic baseline,
+                # untouched. A plain model(x) call has preserve_outside=False
+                # and so replaces the baseline everywhere, including the
+                # well-exposed midtones the baseline already inverts almost
+                # exactly. That -- not resolution, not the crop size -- is why
+                # the 4 Sep run scored -1.962 JOD where the benchmark scored
+                # 7.805 on the same checkpoint and the same 1280x720 frames.
+                # An oracle measured on top of a configuration nobody ships
+                # answers a question nobody asked.
+                if args.raw_forward:
+                    out = model(x).hdr
+                else:
+                    try:
+                        out = predict_image(model, x, preserve_outside=True,
+                                            tile_size=args.tile_size,
+                                            overlap=args.tile_overlap,
+                                            recovery_mode="all",
+                                            recovery_strength=1.0)
+                    except Exception as exc:            # noqa: BLE001
+                        if "out of memory" not in str(exc).lower():
+                            raise
+                        out = predict_image(model, x, preserve_outside=True,
+                                            tile_size=512,
+                                            overlap=args.tile_overlap,
+                                            recovery_mode="all",
+                                            recovery_strength=1.0)
+                hdr = out[0].permute(1, 2, 0).float().cpu().numpy()
                 # Into the storage convention everything else here uses.
                 per_frame.append(hdr * (NETWORK_PEAK_NITS / STORAGE_WHITE_NITS))
-        oracle = oracle_combine(per_frame, poses, truth)
-        control = oracle_combine(per_frame, poses, truth,
-                                 candidates=round_trip(per_frame, poses))
+        warp = (pose_aligner(poses) if args.alignment == "pose"
+                else flow_aligner(shown, not args.no_flow_normalise,
+                                  args.flow_tolerance,
+                                  args.flow_texture_floor,
+                                  args.flow_backend, args.flow_device,
+                                  args.flow_scale, args.flow_cache))
+        oracle = oracle_combine(per_frame, warp, truth)
+        control = oracle_combine(per_frame, warp, truth,
+                                 candidates=round_trip(per_frame, warp))
 
-        mean_of = aligned_mean(per_frame, poses)
+        mean_of = aligned_mean(per_frame, warp)
 
-        base = score(per_frame, truth, args.fps, not args.no_cvvdp)
-        best = score(oracle, truth, args.fps, not args.no_cvvdp)
-        ctrl = score(control, truth, args.fps, not args.no_cvvdp)
-        avg = score(mean_of, truth, args.fps, not args.no_cvvdp)
+        base = score(per_frame, truth, args.fps, not args.no_cvvdp, args.device)
+        best = score(oracle, truth, args.fps, not args.no_cvvdp, args.device)
+        ctrl = score(control, truth, args.fps, not args.no_cvvdp, args.device)
+        avg = score(mean_of, truth, args.fps, not args.no_cvvdp, args.device)
         rows.append({"clip": clip.name, "per_frame": base, "oracle": best,
                      "control": ctrl, "aligned_mean": avg})
         print(f"   {clip.name[:34]:34s} {base['pu21_db']:6.2f} | "
@@ -284,16 +624,161 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-# MEASURED, 4 September 2026, 2 clips of 9 frames, checkpoint sdr2hdr_shadow_v1
+# MEASURED, 4-5 September 2026, checkpoint sdr2hdr_shadow_v1, PU21 dB / JOD.
 #
-#   clean    per-frame 52.58 dB / 9.972 JOD
-#            control   53.57 dB / 9.980       selection-on-noise +0.99 dB
-#            oracle    55.12 dB / 9.988       real headroom +1.55 dB, +0.007 JOD
+# 4 Sep, --condition clean, 2 clips
+#   per-frame 52.58 / 9.972    oracle 55.12 / 9.988    headroom +1.55 / +0.007
 #
-# The clean run cannot answer the question it was built for. A per-frame score
-# of 9.972 out of 10 means the reconstruction is already perceptually
-# indistinguishable from ground truth on rendered panoramas, so there is no
-# room for a temporal model to win any -- which says nothing about whether
-# time carries information, only that this condition has nothing to give.
-# v01's whole result is that RUDRA earns its keep on DEGRADED input and is
-# near-neutral on clean, so the gate has to be read on --condition hard.
+# The clean run cannot answer the question it was built for. 9.972 out of 10
+# means the reconstruction is already perceptually indistinguishable from
+# ground truth, so nothing can be won -- which says nothing about whether time
+# carries information. The gate has to be read on --condition hard.
+#
+# 5 Sep, --condition hard, through predict_image as RUDRA ships
+#
+#   degradation   clips   per-frame      aligned mean   ACHIEVABLE   ceiling
+#   per-frame        2    30.07 / -2.396   35.99 / 7.001   +9.397 JOD  +9.408
+#   per-clip         2    31.22 /  7.993   31.20 / 7.982   -0.011 JOD  +0.003
+#   realistic        2    31.22 /  7.993   31.20 / 7.982   -0.011 JOD  +0.003
+#   codec            2    30.55 /  7.951   30.62 / 7.940   -0.011 JOD  +0.073
+#   realistic       40    27.27 /  6.961   27.56 / 6.994   +0.033 JOD  +0.191
+#   codec           40    27.15 /  6.864   27.27 / 6.897   +0.034 JOD  +0.165
+#
+# THE GATE FAILS. Against a +0.5 JOD threshold the achievable gain is +0.033
+# and +0.034 on the two coherent conditions at 40 clips, and even the
+# unreachable bound -- omniscient per-pixel selection over exactly aligned
+# neighbours -- reaches only +0.191.
+#
+# The +9.397 in the first row is the 4 Sep result and it was an artefact of
+# our own degradation. `degrade_like_eval` reseeds from the frame index, so
+# that row redraws the exposure, the tone curve, the white balance, the
+# saturation, the chroma subsampling, the bit depth and the JPEG quality
+# independently on every frame. Averaging nine independent draws of a
+# corruption is worth sqrt(9) whether or not the frames carry any information,
+# so the number measured the seeding, not the video. Two things had to be
+# fixed together: that, and scoring the bare network instead of RUDRA as
+# deployed (--raw-forward), which is why the floor sat at -2.396 JOD against
+# the image benchmark's 7.805. With both corrected the per-frame floor is
+# 6.86-7.99 JOD, on the same footing as the benchmark at last.
+#
+# WHY IT FAILS IS NOT A FACT ABOUT VIDEO. `training/prepare_training_data.py`
+# tone-maps every frame with one fixed curve and one fixed EV offset, and the
+# renderer's camera only rotates through a static panorama. A scene point
+# therefore carries THE SAME SDR CODE in every frame it appears in: what is
+# blown in frame 3 is blown in frame 7. The corpus contains none of the
+# information v02's claim is about -- that a neighbour can show what this
+# frame clipped -- so a faithful gate had to come back empty. The measurement
+# is sound; the corpus cannot test the hypothesis.
+#
+# `pipeline/render_hdri_moves.py --exposure-drift` puts that axis back (0.12
+# stops per frame is about one stop end to end over nine frames, roughly what
+# auto-exposure does panning into the sun).
+#
+# 5 Sep, THE PAIRED PILOT. 12 panoramas rendered twice with PYTHONHASHSEED=0:
+# identical camera paths, identical codec degradation, the SDR exposure the
+# only difference. Poses checked equal to 1e-9 before scoring.
+#
+#   exposure          per-frame      aligned mean   ACHIEVABLE   ceiling
+#   constant       26.91 / 5.037   27.06 / 5.378   +0.340 JOD   +0.557
+#                                                  +0.149 dB    +0.703 dB
+#   +/-0.48 stops  26.20 / 4.910   26.87 / 5.448   +0.538 JOD   +1.129
+#                                                  +0.665 dB    +5.563 dB
+#
+# Moving the exposure and changing NOTHING else takes the achievable gain from
+# +0.340 to +0.538 JOD -- across the +0.5 threshold -- and the oracle ceiling
+# from +0.703 to +5.563 dB, an eight-fold jump in what perfect alignment could
+# in principle fetch. That is the v02 hypothesis behaving exactly as stated:
+# a neighbour is worth something when it saw the scene at a different
+# exposure, and worth nothing when it did not.
+#
+# 5-6 Sep, THE SAME PAIRING AT 50 CLIPS. 12 pilot scenes plus 38 sampled
+# deterministically (_gate50_scenes.txt), same protocol.
+#
+#   exposure          per-frame      aligned mean   ACHIEVABLE   ceiling
+#   constant       26.17 / 6.209   26.29 / 6.319   +0.110 JOD   +0.264
+#                                                  +0.120 dB    +0.632 dB
+#   +/-0.48 stops  25.83 / 5.786   26.26 / 6.296   +0.511 JOD   +0.851
+#                                                  +0.435 dB    +4.554 dB
+#
+# THE GATE PASSES, and only under drift: +0.511 JOD against the +0.5
+# threshold, with the fixed-exposure control at +0.110 on the very same
+# scenes and camera paths. The PU21 ceiling is the clearer signal -- +0.632 dB
+# without exposure movement, +4.554 dB with it, seven times more for perfect
+# alignment to fetch.
+#
+# The pilot's flat number (+0.340 on 12 clips) was small-sample noise; at 50
+# it is +0.110, in line with the 40-clip runs. Read the 12-clip rows above as
+# a direction only.
+#
+# 6 Sep, THREE SEEDS (training/run_drift_gate.ps1, on the 4080).
+#
+#   seed        flat achievable   drift achievable   drift ceiling   clips
+#   20260903        +0.110            +0.511            +0.851         50
+#   20260906        +0.035            +0.603            +1.090         40
+#   20260907        +0.046            +0.661            +1.142         40
+#   ------------------------------------------------------------------
+#   mean            +0.064            +0.592            +1.028
+#
+# THE RESULT HOLDS. Every drift arm clears +0.5; every flat arm is an order
+# of magnitude below it, on the same panoramas and the same camera paths.
+# The separation -- about +0.53 JOD between arms -- is far larger than the
+# spread across seeds, which is what makes it a result rather than a run.
+#
+# The 40 in the later two rows is a defect worth recording: stage_oracle_clips
+# defaulted --count to 40 and the sweep did not pass one, so both arms of
+# those seeds took the first 40 of the 50 scenes the list names. The SAME 40
+# in both arms, so each pairing is intact and the comparison stands; the
+# default is now 0 (all).
+#
+# What that licenses is narrow: v02's claim holds where the exposure moved
+# between neighbours and fails where it did not, so it is a proposition about
+# footage whose exposure breathes rather than about video in general.
+#
+# 6 Sep, --alignment flow. THE ONE THAT ENDS IT. Everything above used the
+# camera angles the renderer wrote down. A plate has none, so the same 50
+# drifted clips were re-scored with the correspondence ESTIMATED by DIS
+# optical flow from the degraded SDR -- what a deployed model actually holds.
+#
+#   arm            per-frame  control  aligned   oracle | ACHIEVABLE  ceiling
+#   pose               5.786    5.835    6.296    6.687 |    +0.511   +0.851
+#   flow               5.786    5.844    5.802    5.839 |    +0.016   -0.005
+#   flow + texture     5.786    5.828    5.658    5.514 |    -0.128   -0.314
+#
+# READ THE CEILING COLUMN. Under estimated alignment the ORACLE -- exact
+# ground truth consulted per pixel, the best any weighting or architecture
+# could ever do and better, since nothing at inference can consult it -- beats
+# the per-frame model by +0.053 JOD while the control, which carries no
+# information at all, beats it by +0.058. The oracle's entire margin is
+# selection on resampling noise. There is no headroom left to build for.
+#
+# The alignment is not obviously bad, which is what makes this worth stating
+# carefully. Against the analytic poses, DIS matched to a median endpoint
+# error of 0.04 px at one frame of separation and 0.09 px at eight, with
+# coverage within 1% of the poses' and warped frames agreeing to under half an
+# 8-bit code value. PU21-PSNR accordingly keeps 75% of the gain (+0.326 of
+# +0.435 dB). The JOD keeps 3%. What survives per-frame PSNR and does not
+# survive a video metric is a small, spatially coherent error that CHANGES
+# EVERY FRAME -- the definition of the artefact a temporal model exists to
+# remove. §5 of the v01 paper is the same lesson: read the JOD.
+#
+# Where it fails is legible. The six worst clips are all open sky
+# (drackenstein_quarry_puresky, ostrich_road, fish_hoek_beach); the four best
+# are interiors (billiard_hall, burnt_warehouse). On the sky scene, flow error
+# in low-texture regions is 1.35 px against 0.15 px in textured regions of the
+# same frame -- and forward-backward consistency passed 57% of those bad
+# pixels, because in a flat region ANY displacement round-trips perfectly.
+# Flow fails exactly where the highlights are.
+#
+# The obvious repair does not work either. Gating on local texture energy
+# (--flow-texture-floor 8.0) made it worse, -0.128 JOD: a hard mask leaves
+# nine-frame averaging beside one-frame averaging with a seam between them,
+# and a video metric dislikes that more than it disliked the misalignment. A
+# softer weighting is not worth trying, because the oracle row already bounds
+# every weighting there is.
+#
+# WHAT WOULD CHANGE THIS. DIS is a fast classical estimator. A learned flow
+# (RAFT and its successors) is markedly better in low-texture regions, which
+# is precisely where this failed, and re-running the flow arm with one is the
+# single experiment that could reopen v02. Short of that, the honest reading
+# is that the +0.511 belongs to the renderer's poses and not to anything a
+# plate can supply.

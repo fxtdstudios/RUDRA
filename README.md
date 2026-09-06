@@ -681,6 +681,53 @@ not.
 The temporal refiner exists and is not evaluated here. Its held-out set is 4
 validation and 5 test clips of one scene each, which is too small to report.
 
+No temporal model was trained beyond it, and that is a measurement rather than
+a plan that ran out of time. `training/gate_temporal_oracle.py` asks what a
+*perfectly* aligned temporal model could win before one is built — exact
+correspondence from the renderer's camera poses, omniscient per-pixel
+selection among the aligned neighbours. On 40 rendered camera-move clips under
+a real H.264 round trip it comes back at **+0.03 JOD achievable against a +0.5
+threshold**, with the unreachable bound itself at +0.17.
+
+The reason is in the corpus rather than in video. Those clips are pure camera
+rotations through a static panorama, tone mapped with one fixed curve, so a
+scene point carries the same 8-bit code in every frame it appears in and a
+neighbour has nothing to add. Rendering fifty panoramas **twice** — identical
+camera paths, identical compression, the SDR exposure the only difference —
+separates the two claims:
+
+| exposure | achievable (3 seeds) | ceiling |
+| --- | --- | --- |
+| constant | +0.110, +0.035, +0.046 JOD | +0.26 JOD / +0.63 dB |
+| ±0.48 stops | **+0.511, +0.603, +0.661 JOD** | +1.03 JOD / **+4.55 dB** |
+
+Every drifted arm clears the +0.5 threshold; every fixed-exposure arm is an
+order of magnitude below it. So the information a temporal model would fetch
+is *exposure variation* — present when the exposure moved between neighbours,
+close to absent when it did not.
+
+That is measured with the camera angles the renderer wrote down, and a plate
+has none. Re-scoring the same clips with the correspondence **estimated** by
+optical flow — what a deployed model actually holds — removes it:
+
+| alignment | achievable | oracle ceiling |
+| --- | --- | --- |
+| exact poses | +0.511 JOD | +0.851 JOD |
+| estimated flow | **+0.016 JOD** | **−0.005 JOD** |
+
+The ceiling is the sentence that matters. Under estimated alignment an oracle
+consulting ground truth per pixel — better than any architecture could be —
+gains +0.053 JOD over the per-frame model, and a control carrying no
+information at all gains +0.058. **There is no headroom to build for.** The
+flow itself is accurate (0.04–0.09 px median against the analytic poses); it
+fails specifically in flat regions, where forward-backward consistency cannot
+detect the failure because any displacement round-trips through a constant
+area — which is to say, it fails exactly where the blown highlights are.
+
+So RUDRA remains a per-frame model, on measurement rather than for want of
+trying. [`STATUS.md`](STATUS.md) carries the tables and the one experiment
+that could reopen the question.
+
 The viewer looks for a model in `RUDRA_CHECKPOINT_ROOTS` first, then in this
 repo's `checkpoints/`, so a clone with nothing else still starts on a real
 model. Point it at your own training output to have the newest run there win:
