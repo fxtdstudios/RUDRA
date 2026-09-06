@@ -97,3 +97,6 @@ COMMITMSG.txt
 NEXT_*.md
 AGENTS.md
 .agents/
+
+# Agent scratch delivered into the repo by the Cowork app.
+Claude outputs/
