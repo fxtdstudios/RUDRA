@@ -9,7 +9,7 @@
 > |---|---|---|
 > | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
-> | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
+> | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio (opens a folder of frames or a video by path), the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
@@ -225,6 +225,25 @@
 > information these do not — real parallax, moving subjects, genuine
 > multi-exposure capture — not a better estimator and not a better
 > architecture. The gate would have to be re-run from scratch on it.
+>
+> **The question the gate did not answer** was whether the per-frame model is
+> temporally *stable* enough to deliver — the gate settled only whether a
+> temporal model could fetch more information (it cannot).
+> `training/measure_temporal_stability.py` measures the flicker gap,
+> `per_frame_jod - clip_jod`, which is what a per-frame metric is blind to.
+> First two clips, 9 frames each, 10 Sep 2026:
+>
+> | clip | RUDRA | analytic baseline |
+> |---|---|---|
+> | abandoned_workshop_02_4k_c0 | **1.109** | 1.175 |
+> | abandoned_workshop_4k_c0 | **1.151** | 1.188 |
+>
+> RUDRA is *below* the baseline on both, so **the model adds no flicker of its
+> own** — the ~1.15 JOD gap is in the input, which is why the baseline shows it
+> too. Indicative, not settled: two synthetic Poly Haven clips, not the 13 real
+> scenes. `shadow_weight` travel differs sharply between them (std 0.028 vs
+> 0.107, max frame jump 0.037 vs 0.129), and `gate_travel()` sampled no
+> `residual_scale` at all — that half measured nothing.
 >
 > **Still open, neither a training run:** `sdr2hdr_temporal_v1.pt` ships in
 > `models.json` marked *"Unevaluated"* and belongs to the closed line — pull

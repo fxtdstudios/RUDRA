@@ -33,6 +33,16 @@ Drop in a frame or a whole sequence. The network runs once per frame on the GPU
 and hands the page its raw fields. Everything after that is composed on your own
 GPU, so the controls move at frame rate instead of at one round trip each.
 
+For a real plate, type its path into **Open shot** at the foot of the Frames
+rail: a folder of frames, or a video file (`.mov`, `.mp4`, `.mxf`, `.mkv`,
+`.avi`, `.m2ts`, `.webm`). Nothing is uploaded -- the server is on the same
+machine as the footage and reads it where it sits, so a 1.4 GB ProRes never
+crosses the socket and a 900-frame plate opens as fast as a 3-frame one. Frames
+are decoded on demand as you scrub, so the shot opens now rather than in a
+minute. Video needs `ffmpeg` on `PATH` (`winget install Gyan.FFmpeg`); a folder
+of frames needs nothing. **Master EXR** works the same on an opened shot as on a
+dropped file, and names the file after the frame.
+
 Two ways to compare against the analytic inverse tone map:
 
 | | how | best for |
@@ -748,7 +758,8 @@ training/         Trainers, evaluation, inference, the exporter that turns a
                   runner and third-party importer, and the scripts that
                   recompute and probe the paper's numbers
 ui/               RUDRA Studio: the page, its GPU compositor, the inference
-                  server behind them
+                  server behind them, and sequence.py, which opens a folder
+                  of frames or a video by path
 run_studio.bat    One-file launchers: set up on the first run, check and start
 run_studio.sh     on every run after that
 paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
