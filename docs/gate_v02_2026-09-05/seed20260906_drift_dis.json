@@ -1,0 +1,922 @@
+[
+  {
+    "clip": "abandoned_workshop_02_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.891078969841352,
+      "cvvdp_jod": 6.43324613571167,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 28.61627790745516,
+      "cvvdp_jod": 6.572350978851318,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.059718166557275,
+      "cvvdp_jod": 6.458653450012207,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 27.48700332980476,
+      "cvvdp_jod": 6.632277488708496,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "abandoned_workshop_4k_c0",
+    "per_frame": {
+      "pu21_db": 23.721593293427492,
+      "cvvdp_jod": -2.014065742492676,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 25.869813634718128,
+      "cvvdp_jod": -0.044823646545410156,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 23.8779592844961,
+      "cvvdp_jod": -1.828383445739746,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 23.65845082978289,
+      "cvvdp_jod": -1.9879570007324219,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "autumn_forest_03_4k_c0",
+    "per_frame": {
+      "pu21_db": 27.26494506269215,
+      "cvvdp_jod": 6.626058578491211,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 31.504572014986916,
+      "cvvdp_jod": 7.583850860595703,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.863066465740886,
+      "cvvdp_jod": 6.812783241271973,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 28.10310827117984,
+      "cvvdp_jod": 7.0563130378723145,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "autumn_ground_4k_c0",
+    "per_frame": {
+      "pu21_db": 28.402608980453152,
+      "cvvdp_jod": 8.60533618927002,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 31.303052101453872,
+      "cvvdp_jod": 9.018661499023438,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 28.818239516956446,
+      "cvvdp_jod": 8.60667610168457,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 28.798521378499643,
+      "cvvdp_jod": 8.76819896697998,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "autumn_meadow_4k_c0",
+    "per_frame": {
+      "pu21_db": 32.00273629273439,
+      "cvvdp_jod": 6.758807182312012,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 38.814852544535235,
+      "cvvdp_jod": 7.334225654602051,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 32.66306609588743,
+      "cvvdp_jod": 6.774989604949951,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 34.302814431097275,
+      "cvvdp_jod": 6.667205333709717,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "aviation_museum_4k_c0",
+    "per_frame": {
+      "pu21_db": 25.41704159091452,
+      "cvvdp_jod": 6.929509162902832,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 26.96125203250565,
+      "cvvdp_jod": 6.916799545288086,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 25.650783265139747,
+      "cvvdp_jod": 6.891968727111816,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.936089829331664,
+      "cvvdp_jod": 7.33871603012085,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "ballroom_4k_c0",
+    "per_frame": {
+      "pu21_db": 28.690284311425906,
+      "cvvdp_jod": 6.975229263305664,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 31.87207609817132,
+      "cvvdp_jod": 6.657416820526123,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 28.841636590586763,
+      "cvvdp_jod": 7.020427703857422,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 29.031634093657132,
+      "cvvdp_jod": 6.699426651000977,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "barnaslingan_01_4k_c0",
+    "per_frame": {
+      "pu21_db": 20.50062469888013,
+      "cvvdp_jod": 4.3163838386535645,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 21.52184651947219,
+      "cvvdp_jod": 4.518970012664795,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 20.576028753450007,
+      "cvvdp_jod": 4.354771137237549,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 20.467079680780955,
+      "cvvdp_jod": 4.415150165557861,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "bathroom_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.080039685793487,
+      "cvvdp_jod": 5.794596195220947,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 28.321237141951908,
+      "cvvdp_jod": 5.455254077911377,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 26.13875070881604,
+      "cvvdp_jod": 5.808987617492676,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 24.506354006226392,
+      "cvvdp_jod": 4.080545902252197,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "belfast_sunset_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.186276100571092,
+      "cvvdp_jod": 3.779022693634033,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 26.322390851480773,
+      "cvvdp_jod": 3.836409568786621,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 24.326663270193237,
+      "cvvdp_jod": 3.8204550743103027,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 23.941107922049945,
+      "cvvdp_jod": 3.9302444458007812,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "bell_park_pier_4k_c0",
+    "per_frame": {
+      "pu21_db": 30.69649612418761,
+      "cvvdp_jod": 7.341686248779297,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 37.222004891452144,
+      "cvvdp_jod": 8.208989143371582,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 31.23533925853509,
+      "cvvdp_jod": 7.445797443389893,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 29.12588606048365,
+      "cvvdp_jod": 7.408607006072998,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "billiard_hall_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.861137907154205,
+      "cvvdp_jod": 7.285320281982422,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 28.71762208143198,
+      "cvvdp_jod": 7.556462287902832,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 25.422958929682764,
+      "cvvdp_jod": 7.414398193359375,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.378694277433755,
+      "cvvdp_jod": 6.711949348449707,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "blender_institute_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.638879287973367,
+      "cvvdp_jod": 5.638453483581543,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 26.32768300693957,
+      "cvvdp_jod": 6.3059821128845215,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 24.815617839893733,
+      "cvvdp_jod": 5.691253662109375,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 24.716064106591205,
+      "cvvdp_jod": 5.841043949127197,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "bloem_hill_01_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.61085330736542,
+      "cvvdp_jod": 4.454896450042725,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 31.105633252756824,
+      "cvvdp_jod": 7.7080769538879395,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 25.13571185830664,
+      "cvvdp_jod": 4.624100208282471,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.648684456381254,
+      "cvvdp_jod": 5.663942813873291,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "bloem_train_track_clear_4k_c0",
+    "per_frame": {
+      "pu21_db": 31.05627507044256,
+      "cvvdp_jod": 8.1500883102417,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 35.49153555576449,
+      "cvvdp_jod": 7.885567665100098,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 31.576046725520072,
+      "cvvdp_jod": 8.191073417663574,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 31.223672739278193,
+      "cvvdp_jod": 7.7671098709106445,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "blue_grotto_4k_c0",
+    "per_frame": {
+      "pu21_db": 28.728974466246996,
+      "cvvdp_jod": 6.697197437286377,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 34.257319001294405,
+      "cvvdp_jod": 8.00684642791748,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 29.632040482556476,
+      "cvvdp_jod": 6.911059379577637,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 30.00113212485053,
+      "cvvdp_jod": 6.873178482055664,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "burnt_warehouse_4k_c0",
+    "per_frame": {
+      "pu21_db": 28.80283361744324,
+      "cvvdp_jod": 6.206516265869141,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 34.704569935642205,
+      "cvvdp_jod": 7.258851051330566,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 29.438683273064342,
+      "cvvdp_jod": 6.446250915527344,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 30.148145592636183,
+      "cvvdp_jod": 6.266551971435547,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "charolettenbrunn_park_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.993081672503138,
+      "cvvdp_jod": 5.827786922454834,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 33.09025706022752,
+      "cvvdp_jod": 7.563143730163574,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.844670775667957,
+      "cvvdp_jod": 5.937806129455566,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 28.385235887088257,
+      "cvvdp_jod": 6.435779094696045,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "church_meeting_room_4k_c0",
+    "per_frame": {
+      "pu21_db": 21.597749320083803,
+      "cvvdp_jod": 4.888613224029541,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 22.294118074487294,
+      "cvvdp_jod": 5.559826850891113,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 21.688869617598545,
+      "cvvdp_jod": 4.960328578948975,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 21.693242146619717,
+      "cvvdp_jod": 5.124669551849365,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "concrete_tunnel_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.458429826857518,
+      "cvvdp_jod": 3.744145393371582,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 27.0384115868543,
+      "cvvdp_jod": 3.216322898864746,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 25.010769725074287,
+      "cvvdp_jod": 3.717899799346924,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 24.740949443689246,
+      "cvvdp_jod": 3.8570809364318848,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "courtyard_4k_c0",
+    "per_frame": {
+      "pu21_db": 22.74159591695703,
+      "cvvdp_jod": 3.330778121948242,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 28.135421097680283,
+      "cvvdp_jod": 5.996507167816162,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 23.532144105644864,
+      "cvvdp_jod": 3.6817455291748047,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 22.402155712591014,
+      "cvvdp_jod": 3.5483479499816895,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "cyclorama_hard_light_4k_c0",
+    "per_frame": {
+      "pu21_db": 29.14521961953126,
+      "cvvdp_jod": 5.774781227111816,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 30.560650339725484,
+      "cvvdp_jod": 0.753875732421875,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 29.164702515699375,
+      "cvvdp_jod": 5.776198863983154,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 27.46334872354932,
+      "cvvdp_jod": 2.9437475204467773,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "dam_wall_4k_c0",
+    "per_frame": {
+      "pu21_db": 27.52571707725264,
+      "cvvdp_jod": 7.210087299346924,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 33.29191650973748,
+      "cvvdp_jod": 5.1297478675842285,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.864136069189804,
+      "cvvdp_jod": 7.225275039672852,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 27.1109051574516,
+      "cvvdp_jod": 6.453640937805176,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "delta_2_4k_c0",
+    "per_frame": {
+      "pu21_db": 29.420321380960576,
+      "cvvdp_jod": 8.166509628295898,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 34.187030342672564,
+      "cvvdp_jod": 8.699095726013184,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 29.68667003613696,
+      "cvvdp_jod": 8.20600700378418,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 28.486903889401976,
+      "cvvdp_jod": 8.178289413452148,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "drackenstein_quarry_puresky_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.28110223277976,
+      "cvvdp_jod": 6.65317440032959,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 28.66271717681455,
+      "cvvdp_jod": 2.8979382514953613,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 26.333239384581262,
+      "cvvdp_jod": 6.6525468826293945,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 26.06436295717193,
+      "cvvdp_jod": 5.098962783813477,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "events_hall_interior_4k_c0",
+    "per_frame": {
+      "pu21_db": 30.23188145628742,
+      "cvvdp_jod": 6.212432861328125,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 33.92834924284587,
+      "cvvdp_jod": 7.200341701507568,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 30.391520974119505,
+      "cvvdp_jod": 6.267763137817383,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 31.08395961412066,
+      "cvvdp_jod": 6.260334014892578,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "farm_road_4k_c0",
+    "per_frame": {
+      "pu21_db": 24.119904073606026,
+      "cvvdp_jod": 6.277785778045654,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 25.443547864277306,
+      "cvvdp_jod": 6.02521276473999,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 24.15640692338365,
+      "cvvdp_jod": 6.289386749267578,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 24.137993100896384,
+      "cvvdp_jod": 5.804940223693848,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "hansaplatz_4k_c0",
+    "per_frame": {
+      "pu21_db": 20.50777464261905,
+      "cvvdp_jod": 6.157207012176514,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 23.719565648017934,
+      "cvvdp_jod": 7.677055358886719,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 20.98096210632356,
+      "cvvdp_jod": 6.275927543640137,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 21.177380433980158,
+      "cvvdp_jod": 7.0655436515808105,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "learner_park_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.755628898238374,
+      "cvvdp_jod": 4.668238639831543,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 29.712174212159294,
+      "cvvdp_jod": 5.0294294357299805,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.189573056345992,
+      "cvvdp_jod": 4.709991931915283,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 27.094588458773963,
+      "cvvdp_jod": 5.449069023132324,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "monks_forest_4k_c0",
+    "per_frame": {
+      "pu21_db": 22.376974451591927,
+      "cvvdp_jod": 5.833555221557617,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 24.16601854058173,
+      "cvvdp_jod": 6.370364189147949,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 22.602828727676407,
+      "cvvdp_jod": 5.918459892272949,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 22.312320244276645,
+      "cvvdp_jod": 6.150674343109131,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "mossy_forest_4k_c0",
+    "per_frame": {
+      "pu21_db": 29.826175426839104,
+      "cvvdp_jod": 7.06091833114624,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 37.96472956132557,
+      "cvvdp_jod": 8.727781295776367,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 30.844524764572636,
+      "cvvdp_jod": 7.26194953918457,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 31.46641250212431,
+      "cvvdp_jod": 7.6605329513549805,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "ostrich_road_4k_c0",
+    "per_frame": {
+      "pu21_db": 25.751350863254686,
+      "cvvdp_jod": 3.4224863052368164,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 26.624077213387853,
+      "cvvdp_jod": 3.1137614250183105,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 25.82693235626239,
+      "cvvdp_jod": 3.423675537109375,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.771941617907448,
+      "cvvdp_jod": 3.3286805152893066,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "pergola_walkway_4k_c0",
+    "per_frame": {
+      "pu21_db": 25.86496327827898,
+      "cvvdp_jod": 5.2350239753723145,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 31.506700661630084,
+      "cvvdp_jod": 6.661646366119385,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 26.56785541008948,
+      "cvvdp_jod": 5.428781986236572,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.36055708195298,
+      "cvvdp_jod": 5.89302921295166,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "rooitou_park_4k_c0",
+    "per_frame": {
+      "pu21_db": 31.889933775770828,
+      "cvvdp_jod": 8.199393272399902,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 36.54476682760169,
+      "cvvdp_jod": 8.061084747314453,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 32.32109812281983,
+      "cvvdp_jod": 8.209783554077148,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 32.923876470111445,
+      "cvvdp_jod": 8.154252052307129,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "scythian_tombs_4k_c0",
+    "per_frame": {
+      "pu21_db": 27.641215010197353,
+      "cvvdp_jod": 6.923701763153076,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 32.19095579881248,
+      "cvvdp_jod": 5.749302864074707,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 27.823894912132193,
+      "cvvdp_jod": 6.9075751304626465,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 27.050061875305573,
+      "cvvdp_jod": 7.0474534034729,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "studio_country_hall_4k_c0",
+    "per_frame": {
+      "pu21_db": 25.976639039835927,
+      "cvvdp_jod": 4.995975017547607,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 27.42458629851947,
+      "cvvdp_jod": 4.316768646240234,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 26.099258130866446,
+      "cvvdp_jod": 4.92991304397583,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 26.35135519644465,
+      "cvvdp_jod": 4.791633605957031,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "subway_entrance_4k_c0",
+    "per_frame": {
+      "pu21_db": 19.67887303746553,
+      "cvvdp_jod": 6.403566360473633,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 20.56215816123097,
+      "cvvdp_jod": 4.387905597686768,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 19.74384170655603,
+      "cvvdp_jod": 6.386204719543457,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 19.73505917822034,
+      "cvvdp_jod": 5.73881721496582,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "surgery_4k_c0",
+    "per_frame": {
+      "pu21_db": 30.438148717326815,
+      "cvvdp_jod": 7.4169721603393555,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 32.3397509249725,
+      "cvvdp_jod": 6.957056522369385,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 30.493504526644237,
+      "cvvdp_jod": 7.4363508224487305,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 30.656355731762964,
+      "cvvdp_jod": 6.092889308929443,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "teufelsberg_ground_1_4k_c0",
+    "per_frame": {
+      "pu21_db": 26.07411449705599,
+      "cvvdp_jod": 7.2464470863342285,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 29.100370608475583,
+      "cvvdp_jod": 7.596005916595459,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 26.275035032099378,
+      "cvvdp_jod": 7.180619716644287,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 25.829568796836874,
+      "cvvdp_jod": 7.223690986633301,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  },
+  {
+    "clip": "ushaka_sea_world_aquarium_4k_c0",
+    "per_frame": {
+      "pu21_db": 20.43017813037019,
+      "cvvdp_jod": 5.384960174560547,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "oracle": {
+      "pu21_db": 21.445550261051277,
+      "cvvdp_jod": 6.147145748138428,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "control": {
+      "pu21_db": 20.66770547081076,
+      "cvvdp_jod": 5.500372886657715,
+      "cvvdp_backend": "colorvideovdp"
+    },
+    "aligned_mean": {
+      "pu21_db": 20.67144950255569,
+      "cvvdp_jod": 5.799399375915527,
+      "cvvdp_backend": "colorvideovdp"
+    }
+  }
+]

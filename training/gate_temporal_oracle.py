@@ -92,8 +92,9 @@ def round_trip(predictions: list[np.ndarray], warp) -> list[list]:
     return out
 
 
-def aligned_mean(predictions: list[np.ndarray], warp) -> list[np.ndarray]:
-    """Average the aligned neighbours. No ground truth, so a model could do it.
+def aligned_mean(predictions: list[np.ndarray], warp,
+                 weighting: str = "mean") -> list[np.ndarray]:
+    """Combine the aligned neighbours. No ground truth, so a model could do it.
 
     The oracle picks the best candidate PER PIXEL by consulting ground truth.
     Nothing can do that at inference, so the oracle alone is a very loose
@@ -104,13 +105,36 @@ def aligned_mean(predictions: list[np.ndarray], warp) -> list[np.ndarray]:
     a model has, and it is close to the simplest thing a temporal architecture
     could learn. The real question is not the oracle's number but whether the
     achievable end of the bracket already beats the per-frame model.
+
+    THE MEAN IS A WEAK COMBINER, and that matters once alignment is estimated
+    rather than known. Measured 10 Sep 2026 on 40 drifted clips, seed
+    20260906: exact poses gave +0.603 JOD achievable against a ceiling of
+    +1.090; RAFT gave +0.341 against +0.671. The gap between what the mean
+    reaches and what the oracle shows is available is the room a learned
+    fusion works in, and under `uniform` a neighbour that round-trips at
+    1.4 px counts exactly as much as one at 0.1 px.
+
+    `confidence` weights each neighbour by exp(-(drift/sigma)^2 / 2) on its
+    forward-backward residual. It uses nothing a model could not compute at
+    inference. Under exact poses there is no residual, every weight is 1
+    inside the valid mask, and the two modes agree exactly -- which is the
+    property that keeps the pose arm a fixed reference across both, pinned
+    by tests/test_gate_resume_2026_09_07.py.
     """
+    if weighting not in ("mean", "confidence"):
+        raise ValueError(f"weighting must be mean or confidence, got {weighting!r}")
     out = []
     for i in range(len(predictions)):
         total = predictions[i].astype(np.float64).copy()
         count = np.ones_like(total)
         for j, pred_j in enumerate(predictions):
             if j == i:
+                continue
+            if weighting == "confidence":
+                warped, weight = warp(pred_j, j, i, weight=True)
+                m = weight[..., None].astype(np.float64)
+                total += warped * m
+                count += m
                 continue
             warped, valid = warp(pred_j, j, i)
             m = valid[..., None]
@@ -274,15 +298,21 @@ def degrade_clip(frames: list[np.ndarray], clip_seed: int, mode: str,
 
 def pose_aligner(poses: list[dict]):
     """Exact correspondence from the renderer's camera angles. The upper bound."""
-    def warp(image, src_index, dst_index):
-        return warp_frame(image, poses[src_index], poses[dst_index])
+    def warp(image, src_index, dst_index, weight: bool = False):
+        warped, valid = warp_frame(image, poses[src_index], poses[dst_index])
+        if not weight:
+            return warped, valid
+        # Exact correspondence: there is no residual to down-weight by, so a
+        # confidence combiner must reduce to the mean here. Anything else
+        # would move the pose arm and break it as a reference.
+        return warped, valid.astype(np.float32)
     return warp
 
 
 def flow_aligner(shown: list[np.ndarray], normalise: bool, tolerance: float,
                  texture_floor: float = 0.0, backend: str = "dis",
                  device: str = "cpu", scale: float = 1.0,
-                 cache_limit: int = 96):
+                 cache_limit: int = 96, sigma: float = 0.75):
     """Correspondence ESTIMATED from the frames a deployed model actually has.
 
     THE POINT OF THIS ARM. Every headline number the gate has produced used
@@ -302,9 +332,9 @@ def flow_aligner(shown: list[np.ndarray], normalise: bool, tolerance: float,
     the process simply stopped. Peak memory should not be a function of how
     many frames a clip happens to have.
     """
-    from rudra.flow_warp import (estimate_flow, forward_backward_valid,
-                                 texture_energy, to_matching_gray,
-                                 warp_with_flow)
+    from rudra.flow_warp import (estimate_flow, forward_backward_drift,
+                                 forward_backward_valid, texture_energy,
+                                 to_matching_gray, warp_with_flow)
 
     grays = [to_matching_gray(f, normalise=normalise) for f in shown]
     energies = ([texture_energy(g) for g in grays] if texture_floor > 0
@@ -321,14 +351,20 @@ def flow_aligner(shown: list[np.ndarray], normalise: bool, tolerance: float,
                                        scale=scale)
         return flows[key]
 
-    def warp(image, src_index, dst_index):
+    def warp(image, src_index, dst_index, weight: bool = False):
         if src_index == dst_index:
-            return image.astype(np.float32), np.ones(image.shape[:2], bool)
+            ones = np.ones(image.shape[:2], np.float32)
+            return image.astype(np.float32), (ones if weight else ones.astype(bool))
         forward = flow_for(dst_index, src_index)
         backward = flow_for(src_index, dst_index)
         valid = forward_backward_valid(forward, backward, tolerance,
                                        energies[dst_index], texture_floor)
-        return warp_with_flow(image, forward, valid)
+        warped, _ = warp_with_flow(image, forward, valid)
+        if not weight:
+            return warped, valid
+        drift, _ = forward_backward_drift(forward, backward)
+        confidence = np.exp(-0.5 * (drift / max(sigma, 1e-6)) ** 2)
+        return warped, (confidence * valid).astype(np.float32)
     return warp
 
 
@@ -441,6 +477,20 @@ def main() -> int:
                          "against 2.61 px on an open-sky clip -- but roughly "
                          "200x slower per pair on a CPU. Pair it with "
                          "--flow-device cuda.")
+    ap.add_argument("--combiner", choices=("mean", "confidence"), default="mean",
+                    help="how the aligned neighbours are combined into the "
+                         "ACHIEVABLE row. mean is the original: every valid "
+                         "neighbour counts the same. confidence weights each "
+                         "by exp(-(drift/sigma)^2/2) on its forward-backward "
+                         "residual, so a neighbour matched to 0.1 px outvotes "
+                         "one that scraped in at 1.4. Uses nothing a model "
+                         "could not compute at inference, and reduces to mean "
+                         "under exact poses. ONE alternative, declared before "
+                         "it was run -- not a search until something passes.")
+    ap.add_argument("--fb-sigma", type=float, default=0.75,
+                    help="pixels. The confidence weighting's falloff; half "
+                         "the FB tolerance by default, so a match at the "
+                         "tolerance keeps about 14% of a perfect one's vote.")
     ap.add_argument("--flow-scale", type=float, default=1.0,
                     help="estimate the flow at this fraction of the frame and "
                          "rescale it. 1.0 is full resolution. 0.75 keeps most "
@@ -477,6 +527,10 @@ def main() -> int:
                          "reproduced.")
     ap.add_argument("--no-cvvdp", action="store_true")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--resume", action="store_true",
+                    help="skip clips already present in --out and append to "
+                         "it. Rows are written after every clip either way, "
+                         "so an interrupted run is never wasted.")
     args = ap.parse_args()
 
     import torch
@@ -502,6 +556,9 @@ def main() -> int:
              + ("" if args.no_flow_normalise else ", exposure-normalised")
              + ("" if args.flow_texture_floor <= 0 else
                 f", texture floor {args.flow_texture_floor:g}")))
+    print(f"   combiner   : {args.combiner}"
+          + (f", sigma {args.fb_sigma:g} px"
+             if args.combiner == "confidence" and args.alignment == "flow" else ""))
     if args.condition == "hard":
         print(f"   degradation: {args.degradation}"
               + (f", H.264 crf {args.crf}" if args.degradation == "codec" else ""))
@@ -517,8 +574,32 @@ def main() -> int:
     model.load_state_dict(payload.get("model", payload), strict=True)
     model.eval().to(args.device)
 
-    rows = []
+    # Resumable, because these runs are long and the thing that ends them is
+    # rarely the code. A 50-clip CPU pass is hours; on 6-7 Sep 2026 one was
+    # OOM-killed and another lost to the sandbox being reclaimed, and both
+    # times every completed clip went with it. Rows are written after each
+    # clip, and --resume skips the ones already in the file.
+    rows: list[dict] = []
+    done: set[str] = set()
+    if args.resume and args.out and args.out.is_file():
+        try:
+            rows = json.loads(args.out.read_text(encoding="utf-8"))
+            done = {row["clip"] for row in rows}
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # A half-written file from a process that died mid-dump. Starting
+            # over is correct; silently scoring a truncated set is not.
+            print(f"   resume: {args.out} is unreadable, starting fresh")
+            rows, done = [], set()
+        else:
+            print(f"   resume: {len(done)} clip(s) already scored in {args.out}")
+
+    def flush() -> None:
+        if args.out:
+            args.out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+
     for clip in clips:
+        if clip.name in done:
+            continue
         sdr, truth, poses = load_clip(clip, storage, truth_ceiling)
         clip_seed = zlib.crc32(clip.name.encode("utf-8"))
 
@@ -571,12 +652,13 @@ def main() -> int:
                                   args.flow_tolerance,
                                   args.flow_texture_floor,
                                   args.flow_backend, args.flow_device,
-                                  args.flow_scale, args.flow_cache))
+                                  args.flow_scale, args.flow_cache,
+                                  args.fb_sigma))
         oracle = oracle_combine(per_frame, warp, truth)
         control = oracle_combine(per_frame, warp, truth,
                                  candidates=round_trip(per_frame, warp))
 
-        mean_of = aligned_mean(per_frame, warp)
+        mean_of = aligned_mean(per_frame, warp, args.combiner)
 
         base = score(per_frame, truth, args.fps, not args.no_cvvdp, args.device)
         best = score(oracle, truth, args.fps, not args.no_cvvdp, args.device)
@@ -586,7 +668,8 @@ def main() -> int:
                      "control": ctrl, "aligned_mean": avg})
         print(f"   {clip.name[:34]:34s} {base['pu21_db']:6.2f} | "
               f"ctrl {ctrl['pu21_db']:6.2f} | mean {avg['pu21_db']:6.2f} | "
-              f"oracle {best['pu21_db']:6.2f} dB")
+              f"oracle {best['pu21_db']:6.2f} dB", flush=True)
+        flush()
 
     def mean(kind, key):
         return float(np.mean([r[kind][key] for r in rows if key in r[kind]]))
@@ -615,7 +698,7 @@ def main() -> int:
     print("=" * 72)
 
     if args.out:
-        args.out.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        flush()
         print(f"   wrote {args.out}")
     return 0
 
@@ -776,9 +859,44 @@ if __name__ == "__main__":
 # softer weighting is not worth trying, because the oracle row already bounds
 # every weighting there is.
 #
-# WHAT WOULD CHANGE THIS. DIS is a fast classical estimator. A learned flow
-# (RAFT and its successors) is markedly better in low-texture regions, which
-# is precisely where this failed, and re-running the flow arm with one is the
-# single experiment that could reopen v02. Short of that, the honest reading
-# is that the +0.511 belongs to the renderer's poses and not to anything a
-# plate can supply.
+# 10 Sep, THE LEARNED ESTIMATOR, and the close. DIS is a fast classical
+# estimator, so the flow arm was re-run with RAFT-large, which is markedly
+# better in exactly the low-texture regions where DIS failed -- 0.35 px
+# against 2.61 px on an open-sky clip. Seed 20260906, 40 drifted clips, the
+# same clips for every row:
+#
+#   arm            per-frame  control  aligned   oracle | ACHIEVABLE  ceiling
+#   pose (exact)       5.925    5.973    6.528    7.063 |    +0.603   +1.090
+#   flow (DIS)         5.925    5.993    5.856    6.115 |    -0.069   +0.122
+#   flow (RAFT)        5.925    5.988    6.266    6.659 |    +0.341   +0.671
+#
+# RAFT recovers 57% of what exact poses give and MISSES THE THRESHOLD. +0.341
+# against the +0.5 this file was set at before any of it was measured. Not the
+# flat zero DIS gave -- the ceiling moved from +0.122 to +0.671, so under RAFT
+# there was room a better combiner might have reached.
+#
+# One combiner was declared and tried, before it was run: weight each
+# neighbour by exp(-(drift/sigma)^2/2) on its forward-backward residual rather
+# than averaging equally (--combiner confidence). On the same clips:
+#
+#   RAFT, mean         ACHIEVABLE +0.351      RAFT, confidence  +0.350
+#
+# Nothing. And the reason is the same wall from a third angle: RAFT's
+# forward-backward drift is 0.04-0.09 px on nearly every pixel that passes, so
+# the weight is ~1 everywhere and the signal has no dynamic range. The
+# failures are not low-confidence matches. They are CONFIDENT WRONG ones, in
+# flat regions where any displacement round-trips perfectly -- which is what
+# forward-backward consistency cannot see, and therefore what weighting by it
+# cannot fix.
+#
+# LINE D IS CLOSED. Three alignment arms and two combiners, against a
+# threshold fixed in advance: exact poses clear it, nothing a plate can supply
+# does. The +0.603 belongs to the renderer's camera angles. No temporal model
+# was trained because there is nothing measurable for one to learn, and that
+# is the result rather than the absence of one.
+#
+# What would reopen it: a corpus whose neighbouring frames carry information
+# these do not -- real parallax, moving subjects, genuine multi-exposure
+# capture -- not a better estimator and not a better architecture. The gate
+# would have to be re-run from scratch on it; none of the numbers above
+# transfer.
