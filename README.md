@@ -1,99 +1,195 @@
 # RUDRA
 
-**Radiometric Dynamic-Range Conditioning for HDR-Aware Diffusion Models**
+**SDR in, HDR out.** Point it at a frame, a folder or a movie and it expands
+ordinary 8-bit footage into scene-linear HDR you can grade, master and deliver.
+
 [FXTD Studios](https://fxtdstudios.com) / Radiance Research
-
-Diffusion models are trained on tone-mapped images, so they learn a world where
-nothing is brighter than white. RUDRA gives them the rest of the range back. It
-decodes latents straight to scene-linear HDR and conditions the backbone on a
-radiometric descriptor, so luminance, exposure and wide-gamut colour survive
-generation.
-
-A second path needs no diffusion model at all. Hand it an ordinary 8-bit frame
-and it reconstructs what the tone map threw away. Most of this README is about
-that path, because it is the part we finished measuring.
-
-Paper: [`paper/main.pdf`](paper/main.pdf), *What an 8-Bit Frame Can and Cannot
-Say About the Scene Behind It*, 15 pages. The same file is mirrored at
-[`research/RUDRA_HDR_2026.pdf`](research/RUDRA_HDR_2026.pdf).
-Weights: [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main).
-
-Three separate things share the name RUDRA, and [`STATUS.md`](STATUS.md) keeps
-them apart. The production decoders are done. The research pipeline's Stage 3
-was never trained. The SDR to HDR model is measured and written up, and it is
-what most of this file is about.
-
----
-
-## RUDRA Studio
 
 ![RUDRA Studio](docs/rudra_studio.png)
 
-Drop in a frame or a whole sequence. The network runs once per frame on the GPU
-and hands the page its raw fields. Everything after that is composed on your own
-GPU, so the controls move at frame rate instead of at one round trip each.
-
-For a real plate, type its path into **Open shot** at the foot of the Frames
-rail: a folder of frames, or a video file (`.mov`, `.mp4`, `.mxf`, `.mkv`,
-`.avi`, `.m2ts`, `.webm`). Nothing is uploaded -- the server is on the same
-machine as the footage and reads it where it sits, so a 1.4 GB ProRes never
-crosses the socket and a 900-frame plate opens as fast as a 3-frame one. Frames
-are decoded on demand as you scrub, so the shot opens now rather than in a
-minute. Video needs `ffmpeg` on `PATH` (`winget install Gyan.FFmpeg`); a folder
-of frames needs nothing. **Master EXR** works the same on an opened shot as on a
-dropped file, and names the file after the frame.
-
-Two ways to compare against the analytic inverse tone map:
-
-| | how | best for |
-|---|---|---|
-| flip | hold **B**, or press and hold the image | judging whether a change is real |
-| wipe | press **W**, drag to move the seam | showing someone where it is |
-
-Region EV is a grade, not a preview. Drag a value to scrub it, double-click to
-zero it. The bands are soft luminance qualifiers from
-`rudra/delivery/controls.py`, and **Master EXR** applies the same qualifier and
-gain to the file: full-resolution ACES 2065-1, AP0 primaries, ST 2065-4
-chromaticities, and a sidecar recording how it was graded.
-
-Waveform, histogram and every measured number follow the composite on screen.
-MaxCLL and MaxFALL come from an exact GPU reduction, not a downsample. Press `?`
-for the keyboard.
-
-Double-click `run_studio.bat` on Windows, or run `./run_studio.sh` anywhere
-else. The first run builds a virtual environment and installs what it needs;
-after that it checks the install and goes straight to the server. Anything you
-pass is handed to the server:
-
-```bash
-./run_studio.sh                                      # or run_studio.bat
-./run_studio.sh --port 9000 --device cpu
-./run_studio.sh --setup                              # force a reinstall
-```
-
-Set `RUDRA_PYTHON` to an interpreter you already have, a ComfyUI environment
-for instance, and the launcher uses that instead of building a second one and
-downloading another copy of torch. To skip the launcher:
-
-```bash
-python ui/server.py                                  # finds a checkpoint, opens a browser
-python ui/server.py --checkpoint sdr2hdr_image_v6.pt # or any committed model by name
-```
-
-Without `--checkpoint` it looks for the newest model in your data directory,
-then falls back to the one committed here, then to demo mode. `?frame=<url>`
-loads a frame from the server; `?demo=1` loads the bundled sample, which is how
-the screenshot above is made rather than staged.
-
-Needs WebGL2 and float render targets. Any current browser will do.
+*Frames rail, viewer, scopes and the reconstruction controls. Every number on
+screen is measured from the composite you are looking at, not from a preview.*
 
 ---
 
-## Install
+## Start here
 
-Python 3.10 to 3.13. If you only want the viewer, clone and run
-`run_studio.bat` or `./run_studio.sh` and skip the rest of this section: the
-launcher does the install itself.
+Double-click **`run_studio.bat`** on Windows, or run **`./run_studio.sh`**
+anywhere else. The first run builds its own environment and installs what it
+needs; after that it goes straight to the viewer. A browser window opens on its
+own.
+
+Nothing else to set up. Six models ship inside the repo, so a fresh clone can
+reconstruct a frame without downloading anything.
+
+### Your first shot, in three moves
+
+1. **Open it.** Type a path into **Open shot** at the foot of the Frames rail:
+   a folder of frames, or a movie (`.mov`, `.mp4`, `.mxf`, `.mkv`, `.avi`,
+   `.m2ts`, `.webm`). You can also drag stills onto the window. Nothing is
+   uploaded: RUDRA runs on the same machine as the footage and reads it where
+   it sits, so a 1.4 GB ProRes never moves. Frames decode as you scrub.
+2. **Look at it.** Hold **B** to flip to the plain inverse tone map, or press
+   **W** to wipe. That comparison is the honest one, because it shows what
+   RUDRA added over doing the obvious thing.
+3. **Deliver it.** **Master EXR** writes a full-resolution scene-linear file
+   with an HDR10 sidecar. `M` is the shortcut.
+
+Press **?** for the rest of the keyboard.
+
+---
+
+## Does it actually help?
+
+![Degraded input, four methods](docs/compare/hard_deployment.png)
+
+Three held-out frames, all four methods, on the condition that looks like real
+work: unknown tone curve, 4:2:0 chroma, banding, JPEG. The HDR columns are
+stopped down by whole stops so the highlight range lands where a browser can
+show it, and the exposure is picked from the **reference** alone, so no method
+is flattered by its own output. The analytic inverse tone map has a hard ceiling
+and clips into it, so its sky is a flat plate. RUDRA keeps the roll-off the
+reference has.
+
+429 held-out frames, whole scenes held out so nothing appears on both sides:
+
+| condition | metric | plain inverse tone map | **RUDRA, as shipped** |
+|---|---|---:|---:|
+| clean, well-graded input | PU21-PSNR | 45.99 dB | **46.06 dB** |
+| clean | ColorVideoVDP | 9.448 JOD | **9.561 JOD** |
+| hard, real-world input | PU21-PSNR | 25.92 dB | **27.15 dB** |
+| hard | ColorVideoVDP | 7.362 JOD | **7.751 JOD** |
+
+The shipped model is the only configuration measured that beats the plain
+inverse tone map in **both** conditions on **both** metrics. On clean,
+well-graded input the gap is small, because that input is a job the analytic
+curve already does well. On degraded input, which is most footage, it is +1.2 dB and
++0.39 JOD.
+
+Against published work, ExpandNet on the same frames and the same reference,
+see [the comparison strip](#comparing-against-published-work) further down.
+
+Everything above is reproducible: [**Reproducing the numbers**](#reproducing-the-numbers).
+
+### The three controls that matter
+
+| control | what it does | when to move it |
+|---|---|---|
+| **Mode**: All / Highlights / Shadows / Off | which regions the learned part is allowed to touch | Highlights if you only want blown areas opened up and the rest left alone |
+| **Residual strength** | how far the learned correction goes, 0 to 2× | back it off if recovered highlights look invented |
+| **Display peak** | what your monitor is pretending to be, 100 to 10 000 nits | set it to your actual mastering display; it changes the view, never the file |
+
+**Preserve outside masks** is on by default and should stay on. With it off you
+see the network's raw prediction everywhere, including regions it was never
+meant to touch.
+
+### Two delivery switches, and why they exist
+
+Both live in the Deliver rail and both are on by default. They apply to
+**Master EXR**, not to the live view.
+
+**Anchor to source exposure.** RUDRA's analytic baseline carries a fixed +1 stop
+that comes from how the training corpus was built. On a frame from that corpus
+it is correct. On your plate it is not. Measured on a real image, mid-grey came
+back **+1.43 stops**, and 89% of the picture that was never clipped had been
+re-exposed. Anchoring puts unclipped picture back exactly where it was and lets
+only the highlights expand. Turn it **off** only if your source came out of
+`prepare_training_data.py`.
+
+**Carry source chroma.** The expansion runs per channel and is steep near white,
+so two 8-bit codes one step apart in red come out far apart, which shows up as
+coloured flecks in a smooth sky. This takes hue from the source below the clip
+and keeps the model's own above it. Measured chroma noise dropped from 16.6 to
+7.0 against the source's own 3.1.
+
+---
+
+## Feed it good pixels
+
+This is the single biggest thing you control, and it is upstream of RUDRA.
+
+**Save 16-bit, not 8-bit.** The expansion multiplies whatever fine detail it is
+given by roughly 30×, quantisation included. Same sky, same curve, only the
+source's depth changing:
+
+| source | grain in the output | colour flecking |
+|---|---:|---:|
+| 8-bit | 2.36% | 1.53 |
+| 10-bit | 1.04% | 0.67 |
+| 12-bit | 0.85% | 0.50 |
+| float | 0.83% | 0.49 |
+
+Roughly two thirds of the sparkle in an 8-bit sky is the eight bits, and it is
+gone by ten. In a ComfyUI graph the VAE decodes to float and the frame is
+quantised on the way to a PNG, one step before RUDRA is asked to put back what
+the quantiser removed. Save 16-bit PNG or EXR from that decode instead.
+
+RUDRA reads 8- and 16-bit PNG and TIFF and display-encoded float, and every
+response reports `source_bits` so you can see what it actually received. It
+refuses a float file that peaks above 1.0: that is already HDR.
+
+---
+
+## Check the result
+
+```bash
+python training/qc_reconstruction.py --sdr plate.png --hdr plate_rudra.exr
+```
+
+PASS, FAIL, or UNMEASURED per check, with the number and the threshold beside
+it. A metric that could not be measured counts as a failure, never a pass. The
+thresholds live in [`configs/qc_reconstruction.json`](configs/qc_reconstruction.json),
+each with the reason it holds that value; change them deliberately and say why.
+
+For a sequence, `--sdr-dir`/`--hdr-dir` with `--representative` scores first,
+25%, 50%, 75% and last. Exit code is 0 only on PASS, so it can gate a build.
+
+---
+
+## What RUDRA actually does, and what it does not
+
+It **expands** an SDR frame into an HDR container and **estimates** what belongs
+above white. Doing nothing at all leaves clipped highlights about 3.2 stops too
+dark, so the expansion is unambiguously worth doing.
+
+It does **not** recover data that was destroyed. A pixel clipped at 255 has lost
+its value; what comes back is a plausible estimate, not the original. On the
+frames measured so far the learned model lands about 0.07 stops from the
+ground truth on clipped pixels against the analytic curve's 0.14. A real edge,
+on a small sample. [`training/measure_clipping.py`](training/measure_clipping.py)
+settles it across the whole test split, and
+[`STATUS.md`](STATUS.md) records what has and has not been measured.
+
+Say "expands SDR into HDR". Do not say "reconstructs the original data".
+
+---
+
+## Command line
+
+The viewer is one way in. Everything it does is available without it:
+
+```bash
+# reconstruct a frame or a folder
+python training/infer_sdr2hdr.py input/ --output-dir out/ \
+    --checkpoint checkpoints/sdr2hdr_shadow_v1.pt
+
+# inspect, master and deliver -- no GPU needed
+rudra info out/ --nits-scale 203                                           # nits, PQ codes, percentiles
+rudra metadata out/ --nits-scale 203 --output out/master --peak-nits 1000  # Dolby Vision L1 + HDR10+
+rudra aces out/ --output delivery/aces --ocio                              # ACES EXR + OCIO config
+rudra grade in.exr --output graded/ --region 400:2000:1.0:0.5              # +1 EV over 400-2000 nits
+rudra bench bench_root/ --output results.json                              # PU21-PSNR / CVVDP
+```
+
+Train it on your footage: [**Train on your own footage**](#train-on-your-own-footage).
+
+---
+
+## Installing by hand
+
+Only needed if you are not using the launcher.
+
+Python 3.10 to 3.13.
 
 ```bash
 git clone https://github.com/fxtdstudios/RUDRA.git && cd RUDRA
@@ -105,59 +201,36 @@ pip install -e ".[test]" && pytest tests/
 CUDA is only needed for training and inference. `rudra/delivery/` is torch-free,
 so render and mastering machines need Python and numpy and nothing else.
 
-Six checkpoints ship with the repo, 38 MB, so a fresh clone can reconstruct a
-frame and reproduce the tables below without downloading anything:
+Video needs `ffmpeg` on `PATH` (`winget install Gyan.FFmpeg`); a folder of
+frames needs nothing.
 
 ```bash
-sha256sum -c checkpoints/SHA256SUMS
+sha256sum -c checkpoints/SHA256SUMS     # the six shipped models, 38 MB
 ```
 
-`checkpoints/models.json` is the registry the server reads.
-[checkpoints/README.md](checkpoints/README.md) says what each file is and how to
-load one. Training pairs and HDR sources stay out of git.
+`checkpoints/models.json` is the registry the server reads, and
+[checkpoints/README.md](checkpoints/README.md) says what each file is. Training
+pairs and HDR sources stay out of git.
 
-### ComfyUI decoders
-
-Download the decoder for your backbone into `ComfyUI/models/radiance/`, enable
-`rudra_decoder` in the *Radiance HDR VAE Decode* node, pick a `decoder_size`.
-
-```bash
-huggingface-cli download fxtdstudios/RUDRA --include "rudra_*_decoder_*.safetensors" \
-    --local-dir "ComfyUI/models/radiance"
-```
-
-| backbone | VAE latent | recommended | PSNR_log |
-|---|---|---|---:|
-| Flux.1 | 16ch / 8x | full | 29.77 |
-| Wan | 16ch / 8x | full | 32.45 |
-| LTX | 128ch / 8x | full | 25.47 |
-| SDXL | 4ch / 8x | turbo | 33.86 |
-| Qwen-Image | 16ch / 8x | turbo | 26.67 |
-| Flux.2 Klein | 128ch / 16x | turbo | 28.57 |
+Needs WebGL2 and float render targets in the browser. Any current one will do.
 
 ---
 
-## Use it
+## The rest
 
-Reconstruct a frame or a sequence:
+Three separate things share the name RUDRA, and [`STATUS.md`](STATUS.md) keeps
+them apart. The production ComfyUI decoders are done. The research pipeline's
+Stage 3 was never trained. The SDR to HDR model, the one this page is about,
+is measured and written up.
 
-```bash
-python training/infer_sdr2hdr.py input/ --output-dir out/ \
-    --checkpoint checkpoints/sdr2hdr_shadow_v1.pt
-```
+The diffusion side: RUDRA decodes latents straight to scene-linear HDR and
+conditions the backbone on a radiometric descriptor, so luminance, exposure and
+wide-gamut colour survive generation. That is the paper's subject.
 
-Master and deliver. No GPU required:
-
-```bash
-rudra info out/ --nits-scale 203                                           # nits, PQ codes, percentiles
-rudra metadata out/ --nits-scale 203 --output out/master --peak-nits 1000  # DoVi L1 + HDR10+
-rudra aces out/ --output delivery/aces --ocio                              # ACES EXR + OCIO
-rudra grade in.exr --output graded/ --region 400:2000:1.0:0.5              # +1 EV, 400-2000 nits
-rudra bench bench_root/ --output results.json                              # PU21-PSNR / CVVDP
-```
-
-Train it on your own footage: [**Train on your own footage**](#train-on-your-own-footage).
-
+Paper: [`paper/main.pdf`](paper/main.pdf), *What an 8-Bit Frame Can and Cannot
+Say About the Scene Behind It*, 15 pages, mirrored at
+[`research/RUDRA_HDR_2026.pdf`](research/RUDRA_HDR_2026.pdf).
+Weights: [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main).
 
 ---
 
@@ -489,13 +562,13 @@ your delivery ceilings will beat a general one on your material, and the data
 never leaves your machine. Nothing here phones home.
 
 Training on footage you own also sidesteps the licence on the released weights
-entirely — see [Licence](#licence). Your model, your data, your terms.
+entirely. See [Licence](#licence). Your model, your data, your terms.
 
 ### What you need
 
 **HDR ground truth. This is not optional.** RUDRA learns to invert a tone map,
 so it needs to see the answer. The SDR half of every pair is *generated* from
-your HDR by the pipeline — you do not supply it, and you cannot train from SDR
+your HDR by the pipeline. You do not supply it, and you cannot train from SDR
 alone. If all you have is SDR, there is nothing here to learn from.
 
 Anything with real range works:
@@ -512,7 +585,7 @@ Formats the scanner accepts: `.exr .hdr .tif .tiff .dpx .png .jxl .avif .heic`
 and `.mxf .mov .mp4 .mkv .avi .m2ts .ts .webm`.
 
 **How much.** The shipped model saw ~28,500 records. Scene *diversity* matters
-far more than frame count — 926 clips drawn from 11 scenes is 11 scenes, and
+far more than frame count. 926 clips drawn from 11 scenes is 11 scenes, and
 the model will overfit to them no matter how many crops you cut. As a rough
 floor: 20+ distinct scenes and a few thousand records before the numbers mean
 anything. Below that you are measuring your test split.
@@ -592,15 +665,15 @@ python training/train_shadow_gate.py --manifest work/sdr_hdr_manifest.jsonl \
     --output-dir work/checkpoints/shadow --seed 20260901
 ```
 
-The backbone is the long stage — the shipped model is step 81,000. Everything
+The backbone is the long stage, and the shipped model is step 81,000. Everything
 after it is minutes.
 
 ### Reading the log
 
 Every eval scores two conditions, and the distinction is the whole point:
 
-- `clean_*` — the held-out frame as prepared. A well-graded plate.
-- `hard_*` — the same frame under a seeded camera and codec degradation.
+- `clean_*`: the held-out frame as prepared. A well-graded plate.
+- `hard_*`: the same frame under a seeded camera and codec degradation.
 
 **Only the hard numbers describe deployment, and only they choose `best.pt`.**
 A model that wins on clean and loses on hard is a model that will disappoint
@@ -636,7 +709,7 @@ export RUDRA_CHECKPOINT_ROOTS=/path/to/work/checkpoints    # or set on Windows
 
 That root is searched before this repo's `checkpoints/`, so your model wins
 without touching the repo. To have it appear by name in the Studio picker, add
-an entry to `models.json` beside the checkpoint — `file`, `kind: sdr2hdr`,
+an entry to `models.json` beside the checkpoint: `file`, `kind: sdr2hdr`,
 `title`, and a `note` saying what it is and what it measured. The registry
 exists because discovery-by-newest-file once picked a temporal refiner and tried
 to load it as an image model.
@@ -653,7 +726,7 @@ checks only help if you read what they say.
    use a fresh `--dst` rather than arguing with it.
 2. **Two different meanings of 1.0.** The network's output is `1.0 = 10,000
    nits`. Storage and EXR are `1.0 = diffuse white = 203 nits`. Conflating them
-   is a 5.6-stop error that produces entirely plausible-looking numbers — ours
+   is a 5.6-stop error that produces entirely plausible-looking numbers. Ours
    read 11.53 dB where the truth was 46.
 3. **Not declaring the grade ceiling.** See above. The model learns to cap.
 4. **Frame-held-out splits.** Two crops of one frame on both sides of a split
@@ -662,8 +735,8 @@ checks only help if you read what they say.
    any one scene may be.
 5. **Reporting one seed.** The shipped gate first looked like a large win on
    seed 1 and a small one on seeds 2 and 3. Train three, report the spread.
-6. **Judging on clean.** RUDRA is near-neutral on well-graded input by design —
-   there is nothing to recover. Optimising the clean number optimises for the
+6. **Judging on clean.** RUDRA is near-neutral on well-graded input by design,
+   because there is nothing to recover. Optimising the clean number optimises for the
    case that did not need you.
 
 ---
@@ -858,7 +931,7 @@ validation and 5 test clips of one scene each, which is too small to report.
 
 No temporal model was trained beyond it, and that is a measurement rather than
 a plan that ran out of time. `training/gate_temporal_oracle.py` asks what a
-*perfectly* aligned temporal model could win before one is built — exact
+*perfectly* aligned temporal model could win before one is built: exact
 correspondence from the renderer's camera poses, omniscient per-pixel
 selection among the aligned neighbours. On 40 rendered camera-move clips under
 a real H.264 round trip it comes back at **+0.03 JOD achievable against a +0.5
@@ -867,9 +940,9 @@ threshold**, with the unreachable bound itself at +0.17.
 The reason is in the corpus rather than in video. Those clips are pure camera
 rotations through a static panorama, tone mapped with one fixed curve, so a
 scene point carries the same 8-bit code in every frame it appears in and a
-neighbour has nothing to add. Rendering fifty panoramas **twice** — identical
-camera paths, identical compression, the SDR exposure the only difference —
-separates the two claims:
+neighbour has nothing to add. Rendering fifty panoramas **twice**, with
+identical camera paths, identical compression and the SDR exposure the only
+difference, separates the two claims:
 
 | exposure | achievable (3 seeds) | ceiling |
 | --- | --- | --- |
@@ -878,12 +951,13 @@ separates the two claims:
 
 Every drifted arm clears the +0.5 threshold; every fixed-exposure arm is an
 order of magnitude below it. So the information a temporal model would fetch
-is *exposure variation* — present when the exposure moved between neighbours,
+is *exposure variation*: present when the exposure moved between neighbours,
 close to absent when it did not.
 
 That is measured with the camera angles the renderer wrote down, and a plate
 has none. Re-scoring the same clips with the correspondence **estimated** from
-the pixels — what a deployed model actually holds — is what closed the line:
+the pixels, which is what a deployed model actually holds, is what closed the
+line:
 
 | alignment | achievable | oracle ceiling |
 | --- | --- | --- |
@@ -893,15 +967,15 @@ the pixels — what a deployed model actually holds — is what closed the line:
 
 The threshold was +0.5, fixed before any of it was measured. A learned
 estimator recovers 57% of what exact poses give and still misses. One
-combiner was declared and tried — weighting each neighbour by its
-forward-backward residual instead of averaging equally — and moved the number
+combiner was declared and tried, weighting each neighbour by its
+forward-backward residual instead of averaging equally, and it moved the number
 by 0.001.
 
 The reason is worth carrying away from this project. The flow is *accurate*:
 0.04–0.09 px median against the analytic poses. It fails in flat regions, and
 forward-backward consistency cannot detect that failure, because any
 displacement round-trips perfectly through a constant area. **The bad matches
-are not low-confidence — they are confident and wrong**, in exactly the blown
+are not low-confidence, they are confident and wrong**, in exactly the blown
 sky a temporal model would be asked to reconstruct.
 
 So RUDRA is a per-frame model by measurement, not for want of trying. No
