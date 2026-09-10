@@ -69,6 +69,24 @@ except ImportError:                             # imported as `ui.server`
 DIFFUSE_WHITE_NITS = 203.0
 NETWORK_PEAK_NITS = 10_000.0
 
+from rudra.decode import decode_sdr  # noqa: E402
+
+
+def _fit(rgb, max_side: int):
+    """Downscale a float frame, staying in float.
+
+    PIL's LANCZOS works on 8-bit, so resizing through an Image quantises --
+    which would give back the depth this whole path exists to keep. cv2 resizes
+    float32 directly.
+    """
+    import cv2
+    height, width = rgb.shape[:2]
+    if max_side <= 0 or max(height, width) <= max_side:
+        return rgb
+    ratio = max_side / max(height, width)
+    size = (max(1, int(width * ratio)), max(1, int(height * ratio)))
+    return cv2.resize(rgb, size, interpolation=cv2.INTER_AREA)
+
 # Opened shots, by job id. In memory only: this is a local viewer, and a job
 # that outlived a restart would point at a frame list nobody asked for.
 SEQUENCES: dict[str, Sequence] = {}
@@ -370,20 +388,13 @@ def scopes(hdr_chw, columns: int = 230, bins: int = 76) -> dict:
 
 
 def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
-    import numpy as np
     import torch
-    from PIL import Image
 
     from training.infer_sdr2hdr import predict_image
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    max_side = int(params.get("max_side", 1600))
-    if max(image.size) > max_side:
-        ratio = max_side / max(image.size)
-        image = image.resize((max(1, int(image.width * ratio)),
-                              max(1, int(image.height * ratio))), Image.LANCZOS)
-    sdr = np.asarray(image, dtype=np.float32) / 255.0
+    decoded = decode_sdr(image_bytes)
+    sdr = _fit(decoded.rgb, int(params.get("max_side", 1600)))
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     strength = float(params.get("strength", 1.0))
@@ -406,8 +417,10 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     base_np = baseline[0].cpu().numpy()
     metrics = measure(hdr_np, base_np, highlight, shadow)
     metrics["elapsed_s"] = round(time.time() - started, 2)
-    metrics["source_resolution"] = f"{image.width}x{image.height}"
-    metrics["resolution"] = f"{image.width}x{image.height}"
+    metrics["source_resolution"] = f"{sdr.shape[1]}x{sdr.shape[0]}"
+    metrics["resolution"] = f"{sdr.shape[1]}x{sdr.shape[0]}"
+    metrics["source_bits"] = decoded.bits
+    metrics["source_distinct_codes"] = decoded.distinct_codes
     metrics["display_nits"] = round(display_nits, 1)
     return {
         "ok": True,
@@ -442,21 +455,19 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
     """
     import numpy as np
     import torch
-    from PIL import Image
 
     from training.infer_sdr2hdr import predict_fields
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    source = f"{image.width}x{image.height}"
-    max_side = int(params.get("max_side", 1600))
-    if max(image.size) > max_side:
-        ratio = max_side / max(image.size)
-        image = image.resize((max(1, int(image.width * ratio)),
-                              max(1, int(image.height * ratio))), Image.LANCZOS)
+    decoded = decode_sdr(image_bytes)
+    source = f"{decoded.rgb.shape[1]}x{decoded.rgb.shape[0]}"
 
-    sdr_u8 = np.asarray(image, dtype=np.uint8)
-    sdr = sdr_u8.astype(np.float32) / 255.0
+    # The browser's compositor takes an 8-bit texture and always will -- that
+    # is the wire format. INFERENCE does not have to. Decoding at full depth
+    # and quantising only the preview means a 16-bit plate is reconstructed
+    # from 16 bits even though the picture on screen is 8.
+    sdr = _fit(decoded.rgb, int(params.get("max_side", 1600)))
+    sdr_u8 = (np.clip(sdr, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     tile_size = int(params.get("tile_size", 0))
@@ -539,7 +550,6 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     """
     import numpy as np
     import torch
-    from PIL import Image
 
     from rudra.delivery import metadata as dm
     from rudra.delivery.aces import write_aces_exr
@@ -548,15 +558,9 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     from training.infer_sdr2hdr import predict_image
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    decoded = decode_sdr(image_bytes)
     # Full resolution: a master is the one output that must not be downsampled.
-    limit = int(params.get("master_max_side", 4096))
-    if max(image.size) > limit:
-        ratio = limit / max(image.size)
-        image = image.resize((max(1, int(image.width * ratio)),
-                              max(1, int(image.height * ratio))), Image.LANCZOS)
-
-    sdr = np.asarray(image, dtype=np.float32) / 255.0
+    sdr = _fit(decoded.rgb, int(params.get("master_max_side", 4096)))
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     def _predict(tile_size: int):
@@ -611,6 +615,17 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         nits = anchor_to_sdr(nits, sdr.astype(np.float64),
                              knee=float(params.get("anchor_knee", 0.9)))
 
+    # Then the hue. inverse_aces_approx runs per channel and is steep near
+    # white, so codes one step apart in red and level in green come out far
+    # apart: measured chroma noise in hsky.png's flat sky was 16.60 against the
+    # source's 3.09. Carrying the source's chromaticity below the clip puts it
+    # back -- 16.60 -> 7.01 -- and cannot move luminance, so it composes with
+    # the anchor above rather than competing with it.
+    if bool(params.get("carry_chroma", True)):
+        from rudra.chroma import carry_source_chroma
+        nits = carry_source_chroma(nits, sdr.astype(np.float64),
+                                   knee=float(params.get("chroma_knee", 0.99)))
+
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
     stats = dm.analyze_frame(nits, index=0)
@@ -628,6 +643,7 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "rudra:regionEV": json.dumps(regions) if graded else "neutral",
         "rudra:tiled": str(bool(tile_size)),
         "rudra:anchored": str(bool(params.get("anchor", True))),
+        "rudra:chromaCarried": str(bool(params.get("carry_chroma", True))),
     }
     if container == "aces":
         out = MASTER_DIR / f"{stem}_rudra_aces.exr"
@@ -642,7 +658,8 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     sidecar.write_text(json.dumps({
         "maxcll_nits": maxcll, "maxfall_nits": maxfall,
         "peak_nits": round(float(nits.max()), 1),
-        "resolution": [image.width, image.height],
+        "resolution": [sdr.shape[1], sdr.shape[0]],
+        "source_bits": decoded.bits,
         "container": "ACES 2065-1 (AP0)" if container == "aces" else "scene-linear Rec.2020",
         "transfer": "linear", "diffuse_white_nits": DIFFUSE_WHITE_NITS,
         "checkpoint": params.get("checkpoint", ""),
@@ -663,7 +680,8 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "maxcll": maxcll,
         "maxfall": maxfall,
         "peak_nits": round(float(nits.max()), 1),
-        "resolution": f"{image.width}x{image.height}",
+        "resolution": f"{sdr.shape[1]}x{sdr.shape[0]}",
+        "source_bits": decoded.bits,
         "container": "ACES 2065-1" if container == "aces" else "Linear Rec.2020",
         "graded": graded,
         "tiled": bool(tile_size),

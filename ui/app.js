@@ -31,7 +31,7 @@
   var state = {
     live: false, busy: false,
     frames: [], index: -1, playing: false, playTimer: null,
-    mode: "all", strength: 1, peakEv: 0, preserve: true, anchor: true,
+    mode: "all", strength: 1, peakEv: 0, preserve: true, anchor: true, carryChroma: true,
     show: "model", flipHeld: false,
     // Wipe: null when off, otherwise 0..1 across the plate. The baseline is on
     // the left, the reconstruction on the right.
@@ -781,7 +781,8 @@
                     {name: current().name,
                      container: state.container,
                      master_max_side: 4096,
-                     anchor: state.anchor}, seqRef())))},
+                     anchor: state.anchor,
+                     carry_chroma: state.carryChroma}, seqRef())))},
       body: current().file || null
     }).then(function (r) { return r.json(); }).then(function (d) {
       busy(false);
@@ -1079,6 +1080,15 @@
       $("anchorHint").textContent = state.anchor ? "conform" : "raw ITM level";
       log("master will " + (state.anchor ? "anchor to the source exposure"
                                          : "keep the inverse tone map's own level"));
+    });
+
+    $("carryChroma").addEventListener("click", function () {
+      state.carryChroma = !state.carryChroma;
+      this.classList.toggle("on", state.carryChroma);
+      $("chromaHint").textContent = state.carryChroma ? "below the clip" : "per-channel";
+      log("master will " + (state.carryChroma
+          ? "take hue from the source below the clip"
+          : "keep the per-channel expansion's own hue"));
     });
 
     $("preserve").addEventListener("click", function () {
