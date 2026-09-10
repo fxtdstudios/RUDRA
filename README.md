@@ -277,11 +277,6 @@ week, is in [**docs/TRAINING.md**](docs/TRAINING.md).
 
 ## Going deeper
 
-- [**docs/RESULTS.md**](docs/RESULTS.md) how it was measured, what the numbers
-  mean, where the two metrics disagree, and what we got wrong on the way.
-- [**docs/TRAINING.md**](docs/TRAINING.md) training on your own footage, in full.
-- [**docs/INTERNALS.md**](docs/INTERNALS.md) the corpus, the repo layout, how the
-  build is checked, and the working notes.
 - [**STATUS.md**](STATUS.md) what is finished, what is measured, what is open.
   Three separate things share the name RUDRA and this keeps them apart.
 - [`paper/main.pdf`](paper/main.pdf) *What an 8-Bit Frame Can and Cannot Say
