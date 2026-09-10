@@ -12,6 +12,12 @@ Now it serves two endpoints beside the static files:
   POST /api/frame                one forward pass -> raw fields, for the GPU
                                  compositor in ui/compositor.js
   POST /api/infer                run SDR2HDRNet on an uploaded image
+  POST /api/sequence/open        open a shot BY PATH: a folder of frames, or
+                                 a video file. Nothing is uploaded -- the
+                                 server reads the footage where it sits.
+  GET  /api/sequence/frame       one frame of an opened shot, in exactly the
+                                 format /api/frame returns, so the page's
+                                 existing decode and compositor are unchanged.
 
 What the numbers mean, precisely, because the mock's did not:
 
@@ -55,8 +61,19 @@ REPO = UI_DIR.parent
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+try:                                            # run as `python ui/server.py`
+    from sequence import Sequence, SequenceError
+except ImportError:                             # imported as `ui.server`
+    from ui.sequence import Sequence, SequenceError  # type: ignore[no-redef]
+
 DIFFUSE_WHITE_NITS = 203.0
 NETWORK_PEAK_NITS = 10_000.0
+
+# Opened shots, by job id. In memory only: this is a local viewer, and a job
+# that outlived a restart would point at a frame list nobody asked for.
+SEQUENCES: dict[str, Sequence] = {}
+
+
 def checkpoint_roots() -> tuple[Path, ...]:
     """Where to look for a model, in order of preference.
 
@@ -680,7 +697,99 @@ def make_handler(args):
             self.end_headers()
             self.wfile.write(body)
 
+        def _sequence_bytes(self, params: dict) -> bytes:
+            """Frame bytes for a request that names a shot instead of sending one.
+
+            Master and infer POST the File object the user dropped. A frame of
+            an opened shot has no File object behind it -- the footage is on
+            this machine -- so those requests arrive with an empty body and
+            seq_job/seq_index in the params instead. Without this, Master EXR
+            on an opened plate failed with "empty body", which is a strange
+            way to learn that the plate you are looking at cannot be delivered.
+            """
+            job = str(params.get("seq_job") or "")
+            if not job:
+                return b""
+            sequence = SEQUENCES.get(job)
+            if sequence is None:
+                raise SequenceError("that shot is not open any more; open it again")
+            return sequence.frame_bytes(int(params.get("seq_index", 0)))
+
+        def _sequence_frame(self):
+            """One frame of an opened shot, as /api/frame would return it."""
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(self.path).query)
+            job = (query.get("job") or [""])[0]
+            sequence = SEQUENCES.get(job)
+            if sequence is None:
+                return self._json({"ok": False,
+                                   "error": "that shot is not open any more; "
+                                            "open it again"}, status=404)
+            try:
+                index = int((query.get("i") or ["0"])[0])
+            except ValueError:
+                return self._json({"ok": False, "error": "bad frame index"}, status=400)
+
+            model, info = ensure_model(args)
+            if model is None:
+                return self._json({"ok": False, "demo": True,
+                                   "error": "No model loaded: "
+                                            + str(info.get("reason", "unknown"))},
+                                  status=503)
+            try:
+                params = json.loads(self.headers.get("X-Rudra-Params", "{}") or "{}")
+                requested = params.get("checkpoint")
+                info_used = info
+                if requested and Path(requested).exists() and Path(requested).resolve() \
+                        != Path(str(info.get("checkpoint", ""))).resolve():
+                    model, info_used = model_for(requested, args)
+                params.setdefault("checkpoint_name", info_used.get("name"))
+                header, body = run_frame(model, sequence.frame_bytes(index), params, args)
+                header["checkpoint"] = (info_used.get("name")
+                                        or info_used.get("checkpoint"))
+                header["step"] = info_used.get("step")
+                header["gpu"] = info_used.get("gpu")
+                header["frame_index"] = index
+                header["frame_name"] = sequence.name_of(index)
+                return self._binary(header, body)
+            except SequenceError as exc:
+                return self._json({"ok": False, "error": str(exc)}, status=400)
+            except Exception as exc:                          # noqa: BLE001
+                traceback.print_exc()
+                return self._json({"ok": False,
+                                   "error": f"{type(exc).__name__}: {exc}"}, status=500)
+
+        def _sequence_open(self):
+            """Open a shot by path. The body is JSON: {"path": "..."}."""
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length) if length > 0 else b"{}"
+                wanted = (json.loads(raw.decode("utf-8")) or {}).get("path", "")
+                sequence = Sequence.open(wanted)
+            except SequenceError as exc:
+                # A path the user can fix, not a server fault.
+                return self._json({"ok": False, "error": str(exc)}, status=400)
+            except Exception as exc:                          # noqa: BLE001
+                traceback.print_exc()
+                return self._json({"ok": False,
+                                   "error": f"{type(exc).__name__}: {exc}"}, status=500)
+
+            job = f"seq{len(SEQUENCES) + 1}_{int(time.time())}"
+            SEQUENCES[job] = sequence
+            # One shot at a time is how the page uses this; holding older jobs
+            # would keep their extraction caches alive for a session.
+            for stale in [k for k in SEQUENCES if k != job]:
+                SEQUENCES.pop(stale, None)
+            payload = {"ok": True, "job": job}
+            payload.update(sequence.describe())
+            print(f"   opened {payload['kind']} {payload['name']} "
+                  f"-- {payload['count']} frame(s)")
+            return self._json(payload)
+
         def do_GET(self):
+            if self.path.startswith("/api/sequence/frame"):
+                return self._sequence_frame()
             if self.path.startswith("/api/checkpoints"):
                 return self._json({
                     "default": registry()["default"],
@@ -751,6 +860,8 @@ def make_handler(args):
             self.wfile.write(payload)
 
         def do_POST(self):
+            if self.path.startswith("/api/sequence/open"):
+                return self._sequence_open()
             if not self.path.startswith(("/api/infer", "/api/master", "/api/frame")):
                 return self.send_error(404, "no such endpoint")
             model, info = ensure_model(args)
@@ -761,10 +872,12 @@ def make_handler(args):
                      "demo": True}, status=503)
             try:
                 length = int(self.headers.get("Content-Length", 0))
-                if length <= 0:
-                    return self._json({"ok": False, "error": "empty body"}, status=400)
-                raw = self.rfile.read(length)
+                raw = self.rfile.read(length) if length > 0 else b""
                 params = json.loads(self.headers.get("X-Rudra-Params", "{}") or "{}")
+                if not raw:
+                    raw = self._sequence_bytes(params)
+                if not raw:
+                    return self._json({"ok": False, "error": "empty body"}, status=400)
                 requested = params.get("checkpoint")
                 info_used = info
                 if requested and Path(requested).resolve() != Path(
@@ -789,6 +902,9 @@ def make_handler(args):
                 payload["checkpoint"] = info_used.get("name") or info_used.get("checkpoint")
                 payload["step"] = info_used.get("step")
                 return self._json(payload)
+            except SequenceError as exc:
+                # Something the user can fix, not a server fault.
+                return self._json({"ok": False, "error": str(exc)}, status=400)
             except Exception as exc:
                 traceback.print_exc()
                 return self._json({"ok": False,

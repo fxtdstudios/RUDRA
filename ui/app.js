@@ -580,13 +580,18 @@
     busy(true);
     var started = performance.now();
     log("forward pass " + frame.name);
-    fetch("/api/frame", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {"Content-Type": "application/octet-stream",
-                "X-Rudra-Params": JSON.stringify(params())},
-      body: frame.file
-    }).then(function (r) {
+    /* A dropped file travels as bytes; a frame of an opened shot does not.
+       The server already has that footage on disk, so it is fetched by index
+       and comes back in exactly the same format -- everything downstream of
+       here, adopt() included, cannot tell the two apart. */
+    var request = frame.src
+      ? {method: "GET", signal: controller.signal,
+         headers: {"X-Rudra-Params": JSON.stringify(params())}}
+      : {method: "POST", signal: controller.signal,
+         headers: {"Content-Type": "application/octet-stream",
+                   "X-Rudra-Params": JSON.stringify(params())},
+         body: frame.file};
+    fetch(frame.src || "/api/frame", request).then(function (r) {
       var head = r.headers.get("X-Rudra-Frame");
       if (!r.ok || !head) {
         return r.json().then(function (d) { throw new Error(d.error || ("HTTP " + r.status)); });
@@ -624,6 +629,75 @@
     log("added " + files.length + " frame" + (files.length === 1 ? "" : "s"));
     drawFrames();
     select(state.frames.length === files.length ? 0 : start);
+  }
+
+  /* ---- open a shot by path ---------------------------------------------
+     The rail could already PLAY a sequence -- scrubber, transport, wipe, all
+     of it worked on a list. What it could not do was acquire one: every frame
+     had to be dragged on, and a dropped .mov did nothing because the page
+     expects images. The server sits on the same machine as the footage, so
+     the page sends a path and the server reads it where it is. A 1.4 GB
+     ProRes never crosses the socket. */
+  function seqNote(text, isError) {
+    var node = $("seqNote");
+    if (!node) { return; }
+    node.textContent = text || "";
+    node.classList.toggle("err", !!isError);
+    node.hidden = !text;
+  }
+
+  /* A dropped frame carries its own bytes; a frame of an opened shot is a
+     reference into footage the server already has. Anything that POSTs the
+     picture -- Master EXR above all -- has to name it instead. */
+  function seqRef() {
+    var f = current();
+    if (!f || !f.src) { return {}; }
+    var query = f.src.split("?")[1] || "";
+    var out = {};
+    query.split("&").forEach(function (pair) {
+      var kv = pair.split("=");
+      out[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1] || "");
+    });
+    return {seq_job: out.job, seq_index: Number(out.i)};
+  }
+
+  function openSequence(path) {
+    if (!path || !path.trim()) { seqNote("Type a folder or a video file first.", true); return; }
+    seqNote("opening " + path + " ...");
+    fetch("/api/sequence/open", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({path: path})
+    }).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok || !d.ok) { throw new Error(d.error || ("HTTP " + r.status)); }
+        return d;
+      });
+    }).then(function (d) {
+      closeAll();
+      /* Stubs, not frames. Nothing is decoded until the transport asks for
+         it, so a 900-frame plate opens as fast as a 3-frame one. */
+      for (var i = 0; i < d.count; i++) {
+        state.frames.push({
+          src: "/api/sequence/frame?job=" + encodeURIComponent(d.job) + "&i=" + i,
+          /* The server's own name for the frame: the file name for a folder,
+             shot_000123 for a video. It is what the rail shows and what a
+             master is named after, so a made-up "folder 12" would put twelve
+             different frames in one EXR file name. */
+          name: (d.names && d.names[i]) || (d.name + " " + (i + 1)),
+          file: null, header: null, buf: null,
+          loading: false, peak: null, aboveDW: null
+        });
+      }
+      seqNote(d.kind + " · " + d.count + " frame" + (d.count === 1 ? "" : "s")
+              + (d.fps ? " · " + Number(d.fps).toFixed(2) + " fps" : ""));
+      log("opened " + d.kind + " " + d.name + " -- " + d.count + " frames");
+      drawFrames();
+      select(0);
+    }).catch(function (e) {
+      seqNote(e.message, true);
+      log("open shot failed: " + e.message, "err");
+    });
   }
 
   function closeAll() {
@@ -703,10 +777,11 @@
     fetch("/api/master", {
       method: "POST",
       headers: {"Content-Type": "application/octet-stream",
-                "X-Rudra-Params": JSON.stringify(params({name: current().name,
-                                                         container: state.container,
-                                                         master_max_side: 4096}))},
-      body: current().file
+                "X-Rudra-Params": JSON.stringify(params(Object.assign(
+                    {name: current().name,
+                     container: state.container,
+                     master_max_side: 4096}, seqRef())))},
+      body: current().file || null
     }).then(function (r) { return r.json(); }).then(function (d) {
       busy(false);
       if (!d.ok) { log("master failed: " + (d.error || "unknown"), "err"); return; }
@@ -911,6 +986,15 @@
     });
 
     /* transport */
+    $("seqOpen").addEventListener("click", function () {
+      openSequence($("seqPath").value);
+    });
+    $("seqPath").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); openSequence($("seqPath").value); }
+      // The window listens for single-key shortcuts; a path is full of them.
+      e.stopPropagation();
+    });
+
     $("btnPrev").addEventListener("click", function () { stopPlay(); step(-1); });
     $("btnNext").addEventListener("click", function () { stopPlay(); step(1); });
     $("btnPlay").addEventListener("click", togglePlay);

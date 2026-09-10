@@ -98,5 +98,12 @@ NEXT_*.md
 AGENTS.md
 .agents/
 
-# Agent scratch delivered into the repo by the Cowork app.
+# Scratch delivered into the repo by the desktop assistant app. The pattern
+# has to match the folder's real name on disk, so it stays as written.
 Claude outputs/
+
+# Local helper scripts: they carry absolute paths from this machine and are
+# regenerated per task. Not part of the project.
+COMMIT_*.ps1
+AUDIT_*.ps1
+SCRUB_TRAILERS.txt

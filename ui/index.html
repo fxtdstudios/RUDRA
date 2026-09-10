@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div class="app">
@@ -111,7 +111,14 @@
         <span style="width:26px"></span>
       </div>
       <div id="shots"></div>
-      <div class="empty-rail" id="framesEmpty">Drop frames anywhere, or File ▸ Open</div>
+      <div class="empty-rail" id="framesEmpty">Drop frames anywhere, or open a shot below</div>
+      <div class="seq-open">
+        <input type="text" id="seqPath" spellcheck="false"
+               placeholder="D:\plates\shot_010  or  shot.mov"
+               title="A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits." />
+        <button type="button" class="tbtn" id="seqOpen" title="Open the shot at that path">Open shot</button>
+      </div>
+      <div class="seq-note" id="seqNote" hidden></div>
       <div class="spacer"></div>
       <div class="rail-foot">
         <div><span class="k">Storage</span><span class="v">log2_extended</span></div>
@@ -235,6 +242,6 @@
 
 <input type="file" id="file" accept="image/*" multiple hidden>
 <script src="compositor.js?v=2"></script>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
