@@ -1,0 +1,53 @@
+{
+  "_comment": "Thresholds for rudra/qc.py. Every one carries the reason it is what it is, because a number nobody can justify gets widened the first time a shot fails it. Change these deliberately and say why in the commit message; never widen one to make a frame pass.",
+  "_provenance": "Set 10 Sep 2026 from the hsky.png measurements. NONE are validated against a corpus yet -- a starting point that fails loudly, not received wisdom.",
+  "do_no_harm_median_max": {
+    "value": 1.05,
+    "reason": "Unclipped picture must come back where it was. Measured 1.98x before rudra/anchor.py existed, which is a global re-exposure of material nobody asked to change. 1.05 is about 0.07 stops -- inside what a colourist would not notice, outside what a bug produces. Applies to anchored output only -- see _scope."
+  },
+  "do_no_harm_within_1pct_min": {
+    "value": 0.75,
+    "reason": "A median can read 1.00 while half the frame moves. Three quarters of unclipped pixels inside 1% catches that. Not higher: the knee band legitimately transitions and is a real fraction of a bright frame."
+  },
+  "chroma_shift_median_max_uv": {
+    "value": 0.008,
+    "reason": "CIE uv distance, roughly 2 JND. Unclipped pixels were never clipped, so their hue was not the thing needing reconstruction. Measured 0.039 -- some 10 JND -- before the chroma carry."
+  },
+  "hf_excess_max": {
+    "value": 2.5,
+    "reason": "High-frequency energy in flat regions over what the source's own noise, amplified by the transfer curve's LOCAL SLOPE, accounts for. 1.0 would demand a curve that amplifies nothing. Measured 1.92 on an 8-bit generated image; set above that deliberately so this fails on a REGRESSION rather than on the known state, and tighten it when the luma work lands."
+  },
+  "clip_gain_min": {
+    "value": 1.5,
+    "reason": "Clipped pixels must actually gain headroom, or the reconstruction did nothing and the file is an expensive copy of the SDR."
+  },
+  "clip_structure_min_pct": {
+    "value": 5.0,
+    "reason": "Relative spatial variation inside the clipped region. A uniform scale of a blown area is not recovery; this asks whether anything was put back."
+  },
+  "nan_max": {
+    "value": 0,
+    "reason": "A NaN reaches a compositor as black or as a hole. Never acceptable."
+  },
+  "inf_max": {
+    "value": 0,
+    "reason": "The same, and it poisons every downstream average."
+  },
+  "negative_max": {
+    "value": 0,
+    "reason": "Scene-linear radiance cannot be negative. A negative is a sign error, not a dark pixel."
+  },
+  "at_ceiling_max_pct": {
+    "value": 0.01,
+    "reason": "Pixels pinned at the model's max_hdr ceiling are clipped a second time, in the HDR. Above a hundredth of a percent the ceiling is being hit, not approached."
+  },
+  "flat_region_min_px": {
+    "value": 4096,
+    "reason": "Below this the noise statistics are a guess. A frame with no flat region reports the noise metrics UNMEASURED, which counts as a failure -- never as a pass."
+  },
+  "clipped_min_px": {
+    "value": 256,
+    "reason": "A frame with almost nothing clipped cannot answer whether clipping was recovered. UNMEASURED, and it fails closed so a person decides rather than a default."
+  },
+  "_scope": "These thresholds assume the reconstruction was ANCHORED to its source -- the studio case, a graded plate nobody exposed down first. Corpus frames are different: prepare_training_data.py exposes the SDR down a stop before the ACES curve, so a CORRECT reconstruction of one sits about 2.8x above its own SDR and do_no_harm_median would fail every frame. Scoring bench output with this file is a category error, not a red build."
+}
