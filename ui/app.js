@@ -31,7 +31,7 @@
   var state = {
     live: false, busy: false,
     frames: [], index: -1, playing: false, playTimer: null,
-    mode: "all", strength: 1, peakEv: 0, preserve: true,
+    mode: "all", strength: 1, peakEv: 0, preserve: true, anchor: true,
     show: "model", flipHeld: false,
     // Wipe: null when off, otherwise 0..1 across the plate. The baseline is on
     // the left, the reconstruction on the right.
@@ -780,7 +780,8 @@
                 "X-Rudra-Params": JSON.stringify(params(Object.assign(
                     {name: current().name,
                      container: state.container,
-                     master_max_side: 4096}, seqRef())))},
+                     master_max_side: 4096,
+                     anchor: state.anchor}, seqRef())))},
       body: current().file || null
     }).then(function (r) { return r.json(); }).then(function (d) {
       busy(false);
@@ -1068,6 +1069,18 @@
       $("peakVal").textContent = Math.round(displayNits()).toLocaleString("en-US");
       present();
     });
+    /* Delivery-time only. The viewer composes on the GPU from raw fields and
+       does not apply the anchor yet, so the master can differ from what is on
+       screen by the source's own exposure -- the hint says so rather than
+       letting someone discover it in Resolve. */
+    $("anchor").addEventListener("click", function () {
+      state.anchor = !state.anchor;
+      this.classList.toggle("on", state.anchor);
+      $("anchorHint").textContent = state.anchor ? "conform" : "raw ITM level";
+      log("master will " + (state.anchor ? "anchor to the source exposure"
+                                         : "keep the inverse tone map's own level"));
+    });
+
     $("preserve").addEventListener("click", function () {
       pushUndo();
       state.preserve = !state.preserve;

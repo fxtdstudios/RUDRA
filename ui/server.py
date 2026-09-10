@@ -595,6 +595,22 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         ceiling = float(getattr(model, "max_hdr", 4.0)) * NETWORK_PEAK_NITS
         nits = np.clip(apply_region_ev(nits, regions, softness), 0.0, ceiling)
 
+    # Anchor the level to the source before anything is measured or written.
+    # sdr_to_baseline_hdr carries a factor of two -- the -1 EV that
+    # prepare_training_data.py applies before the ACES curve -- which is right
+    # for a corpus frame and wrong for a plate nobody exposed down first. On
+    # hsky.png, 10 Sep 2026, it put mid-grey +1.43 stops and lifted 89% of the
+    # frame that was never clipped. Anchoring puts unclipped picture back on
+    # the source and keeps the reconstruction above the knee.
+    #
+    # Default ON here because a master goes onto someone's timeline next to a
+    # graded SDR. The benchmark path leaves it off, so the measured numbers in
+    # the paper and STATUS.md still reproduce.
+    if bool(params.get("anchor", True)):
+        from rudra.anchor import anchor_to_sdr
+        nits = anchor_to_sdr(nits, sdr.astype(np.float64),
+                             knee=float(params.get("anchor_knee", 0.9)))
+
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
     stats = dm.analyze_frame(nits, index=0)
@@ -611,6 +627,7 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "rudra:preserveOutside": str(bool(params.get("preserve_outside", True))),
         "rudra:regionEV": json.dumps(regions) if graded else "neutral",
         "rudra:tiled": str(bool(tile_size)),
+        "rudra:anchored": str(bool(params.get("anchor", True))),
     }
     if container == "aces":
         out = MASTER_DIR / f"{stem}_rudra_aces.exr"
