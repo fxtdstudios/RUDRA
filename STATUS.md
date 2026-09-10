@@ -10,7 +10,7 @@
 > | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
-> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **passes with exact poses (+0.51 JOD), collapses to +0.02 with estimated flow** — oracle bound under flow is −0.005, so no headroom; one RAFT run decides whether v02 continues |
+> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
 > the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
@@ -184,13 +184,52 @@
 > seam between them. A softer weighting is not worth trying — the oracle row
 > bounds every weighting there is.
 >
-> **Line D remaining — one experiment, then a decision.** DIS is a fast
-> classical estimator and a learned flow (RAFT and successors) is markedly
-> better in low-texture regions, which is precisely where this failed. Re-run
-> the flow arm with one: it is the single experiment that could reopen v02.
-> If it also comes back flat, v02 as specified is finished, and the corpus
-> re-render, the architecture ladder and the video split all come off the
-> board. Line B's Stage 3 is then the better use of the GPU.
+> **The learned estimator, and the close (10 Sep 2026).** DIS is a fast
+> classical estimator, so the flow arm was re-run with RAFT-large — markedly
+> better in exactly the low-texture regions where DIS failed, 0.35 px against
+> 2.61 px on an open-sky clip. Seed 20260906, 40 drifted clips, same clips
+> every row:
+>
+> | arm | per-frame | aligned | oracle | **achievable** | ceiling |
+> |---|---|---|---|---|---|
+> | pose (exact) | 5.925 | 6.528 | 7.063 | **+0.603** | +1.090 |
+> | flow (DIS) | 5.925 | 5.856 | 6.115 | **−0.069** | +0.122 |
+> | flow (RAFT) | 5.925 | 6.266 | 6.659 | **+0.341** | +0.671 |
+>
+> RAFT recovers 57% of what exact poses give and **misses the threshold** —
+> +0.341 against the +0.5 set before any of this was measured. Not the flat
+> zero DIS gave: the ceiling moved from +0.122 to +0.671, so there was room a
+> better combiner might have reached.
+>
+> One combiner was declared and tried, *before* it was run — weight each
+> neighbour by its forward-backward residual instead of averaging equally.
+> On the same clips: **mean +0.351, confidence +0.350.** Nothing.
+>
+> The reason is the same wall from a third angle. RAFT's forward-backward
+> drift is 0.04–0.09 px on nearly every pixel that passes, so the weight is ~1
+> everywhere and the signal has no dynamic range. **The failures are not
+> low-confidence matches — they are confident wrong ones**, in flat regions
+> where any displacement round-trips perfectly. That is precisely what
+> forward-backward consistency cannot see, and therefore what weighting by it
+> cannot fix.
+>
+> **Line D is closed.** Three alignment arms and two combiners against a
+> threshold fixed in advance: exact camera poses clear it, nothing a plate can
+> supply does. The +0.603 belongs to the renderer's angles. No temporal model
+> was trained because there is nothing measurable for one to learn — **that is
+> the result, not the absence of one**, and it is worth more than the month it
+> would have taken to find out the other way.
+>
+> The corpus re-render, the architecture ladder and the video split are off
+> the board. What would reopen it is a corpus whose neighbouring frames carry
+> information these do not — real parallax, moving subjects, genuine
+> multi-exposure capture — not a better estimator and not a better
+> architecture. The gate would have to be re-run from scratch on it.
+>
+> **Still open, neither a training run:** `sdr2hdr_temporal_v1.pt` ships in
+> `models.json` marked *"Unevaluated"* and belongs to the closed line — pull
+> it or measure it. And v6 (4× capacity, moved neither condition) is a keep
+> or drop.
 >
 > ---
 >

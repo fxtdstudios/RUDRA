@@ -242,3 +242,41 @@ def test_a_scaled_estimate_never_goes_below_raft_s_minimum():
     flow = estimate_flow(to_matching_gray(src), to_matching_gray(src),
                          backend="dis", scale=0.25)
     assert flow.shape == (256, 256, 2)
+
+
+# --------------------------------------------------------------------------
+# The confidence combiner. Declared and tested before it was run on the
+# corpus, so the result it produces is a measurement and not a search.
+# --------------------------------------------------------------------------
+
+def test_drift_and_valid_agree_with_each_other():
+    """`forward_backward_valid` is the threshold applied to the drift field.
+
+    They were one function until the combiner needed the residual itself; if
+    they ever disagree, a pixel could be weighted by a drift it was not
+    admitted on.
+    """
+    from rudra.flow_warp import forward_backward_drift
+    src = texture(12, size=(192, 256), scale=32)
+    dst = np.roll(src, 9, axis=1)
+    gs, gd = to_matching_gray(src), to_matching_gray(dst)
+    flow, back = estimate_flow(gd, gs), estimate_flow(gs, gd)
+    drift, inside = forward_backward_drift(flow, back)
+    for tolerance in (0.2, 1.5, 4.0):
+        assert np.array_equal(forward_backward_valid(flow, back, tolerance),
+                              inside & (drift <= tolerance))
+
+
+def test_confidence_falls_off_with_round_trip_error():
+    """The property the weighting exists for, stated as a monotonicity."""
+    from rudra.flow_warp import forward_backward_drift
+    src = texture(13, size=(192, 256), scale=32)
+    dst = np.roll(src, 9, axis=1)
+    gs, gd = to_matching_gray(src), to_matching_gray(dst)
+    drift, _ = forward_backward_drift(estimate_flow(gd, gs), estimate_flow(gs, gd))
+    sigma = 0.75
+    weight = np.exp(-0.5 * (drift / sigma) ** 2)
+    assert weight.max() <= 1.0 + 1e-6
+    good, poor = drift < 0.1, drift > 1.4
+    if good.any() and poor.any():
+        assert weight[good].mean() > 4.0 * weight[poor].mean()

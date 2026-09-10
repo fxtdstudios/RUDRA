@@ -39,7 +39,8 @@ import cv2
 import numpy as np
 
 __all__ = ["to_matching_gray", "estimate_flow", "warp_with_flow",
-           "forward_backward_valid", "texture_energy", "BACKENDS"]
+           "forward_backward_valid", "forward_backward_drift",
+           "texture_energy", "BACKENDS"]
 
 # DIS is the right estimator here: dense, accurate enough for sub-pixel
 # alignment, and fast enough that 72 ordered pairs of a nine-frame 720p clip
@@ -230,6 +231,26 @@ def _sample(field: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
                      borderMode=cv2.BORDER_REPLICATE)
 
 
+def forward_backward_drift(flow: np.ndarray,
+                           back: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(round-trip error in pixels, in-frame mask) for every destination pixel.
+
+    Factored out of `forward_backward_valid` because the drift is worth more
+    than the threshold applied to it. A pixel that round-trips to 0.1 px is a
+    better correspondence than one that scrapes in at 1.4 px, and a combiner
+    that averages them equally throws that away -- which is what the aligned
+    mean did, and part of why estimated alignment fell short of the poses.
+    """
+    h, w = flow.shape[:2]
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    px, py = xs + flow[..., 0], ys + flow[..., 1]
+    inside = (px >= 0) & (px <= w - 1) & (py >= 0) & (py <= h - 1)
+    round_trip = np.stack((px + _sample(back[..., 0], px, py),
+                           py + _sample(back[..., 1], px, py)), axis=-1)
+    drift = np.hypot(round_trip[..., 0] - xs, round_trip[..., 1] - ys)
+    return drift.astype(np.float32), inside
+
+
 def forward_backward_valid(flow: np.ndarray, back: np.ndarray,
                            tolerance: float = 1.5,
                            energy: np.ndarray | None = None,
@@ -244,13 +265,7 @@ def forward_backward_valid(flow: np.ndarray, back: np.ndarray,
     `texture_energy`. Pass the destination frame's energy, since that is the
     grid the flow is defined on and the region being reconstructed.
     """
-    h, w = flow.shape[:2]
-    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-    px, py = xs + flow[..., 0], ys + flow[..., 1]
-    inside = (px >= 0) & (px <= w - 1) & (py >= 0) & (py <= h - 1)
-    round_trip = np.stack((px + _sample(back[..., 0], px, py),
-                           py + _sample(back[..., 1], px, py)), axis=-1)
-    drift = np.hypot(round_trip[..., 0] - xs, round_trip[..., 1] - ys)
+    drift, inside = forward_backward_drift(flow, back)
     valid = inside & (drift <= tolerance)
     if texture_floor > 0.0:
         if energy is None:
