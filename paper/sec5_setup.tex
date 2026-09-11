@@ -1,0 +1,113 @@
+\section{Experimental setup}
+\label{sec:setup}
+
+\subsection{Corpus and splits}
+\label{sec:corpus}
+
+The corpus holds \num{27678} training, \num{435} validation and \num{429} test
+records; validation and test are 97 scenes each at $1280 \times 720$. Sampling is
+scene-balanced with 40\% video mass. The only publicly redistributable component
+is the HDM-HDR-2014 set of Froehlich et al.~\citep{froehlich2014}, 9 scenes and
+\num{11007} frames at a median \num{5.99} stops of measured dynamic range; the
+remainder is proprietary footage, which is why \cref{sec:reproducibility} ships
+the manifests and the scoring harness rather than the corpus. The manifest is
+pinned by SHA-256 in every checkpoint's configuration, so a run can be tied to
+the exact record set it saw.
+
+\subsection{An unintended distribution shift}
+\label{sec:shift}
+
+The held-out splits are not drawn from the training distribution
+(\cref{tab:shift}). The band in which the model fails, below
+\SI{400}{\nits}, is 45.2\% of the test split and 27.2\% of what the sampler
+draws. We report this because it is a confound in our own results;
+\cref{sec:ceiling} argues that it is not the binding constraint, and
+\cref{sec:limitations} records that we have not retrained under a matched
+sampler to prove that.
+
+\begin{table}[htbp]
+\centering
+\caption{The held-out splits are lower in dynamic range than the training
+distribution the sampler draws from. Peak is the reference peak luminance of the
+frame.}
+\label{tab:shift}
+\begin{tabular}{lrrrr}
+\toprule
+ & median peak & $<$ \SI{1000}{\nits} & $<$ \SI{400}{\nits} & video share \\
+\midrule
+train, as sampled & \SI{1713}{\nits} & 42.2\% & \textbf{27.2\%} & 40.0\% \\
+validation        & \SI{548}{\nits}  & 69.0\% & 38.2\% & 33.8\% \\
+test              & \SI{546}{\nits}  & 58.0\% & \textbf{45.2\%} & 32.9\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training configuration}
+\label{sec:training}
+
+\Cref{tab:training} gives the shipped configuration (v5) and the capacity
+ablation (v6), which differ only in width. Both were trained on a single NVIDIA
+RTX 4080 SUPER.
+
+\begin{table}[htbp]
+\centering
+\caption{Training configuration. v6 differs from v5 only in base width, and is
+the capacity ablation of \cref{sec:capacity}.}
+\label{tab:training}
+\begin{tabular}{lp{0.44\linewidth}p{0.16\linewidth}}
+\toprule
+ & v5 (shipped) & v6 (capacity) \\
+\midrule
+base channels & 32 & 64 \\
+parameters & \num{1196197} & \num{4770117} \\
+crop & 384 & 384 \\
+batch $\times$ grad-accum & $2 \times 2$ & same \\
+optimiser & AdamW, lr $2\!\times\!10^{-4}$, wd $10^{-4}$, cosine to 5\% & same \\
+gradient clip & 1.0 & same \\
+degradation probability & 0.65 & same \\
+scene-balanced sampling & yes, 40\% video mass & same \\
+steps & \num{100000} & \num{100000} \\
+evaluation & every \num{1000} steps, 256 held-out crops, both conditions & same \\
+selection & trailing median of \texttt{composite\_gain} (\cref{sec:selection}) & same \\
+seed & \num{20260715} & \num{20260715} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Conditions, metrics and protocol}
+\label{sec:protocol}
+
+\paragraph{Conditions.} \textsc{clean} is the held-out frame as prepared, a
+well-graded plate. \textsc{hard} applies a seeded camera and codec degradation
+to the same frame: an unknown tone curve, 4:2:0 chroma subsampling, banding and
+JPEG. \textsc{hard} is the deployment condition; \textsc{clean} is the condition
+in which the analytic baseline is already strong.
+
+\paragraph{Reference.} Both conditions are scored against the same
+\emph{unclamped} reference. Clamping the reference at the network's own ceiling
+would score the model against a ground truth cropped to its own limits, which
+flatters it exactly where it is weakest.
+
+\paragraph{Metrics.} PU21-PSNR \citep{pu21} in decibels and ColorVideoVDP
+\citep{cvvdp} in JOD, both at \texttt{--nits-scale 203}. A JOD is a
+just-noticeable difference unit; differences well below \num{0.1}~JOD are not
+expected to be visible. Reporting the two together is not redundancy:
+\cref{sec:disagreement} shows they can put a substantial penalty and a
+perceptually negligible one on the same comparison. The two are in different
+units and are not directly comparable as numbers; what is comparable is whether
+each calls a difference significant.
+
+\paragraph{Reported quantity.} Unless stated otherwise, every number is a
+\emph{paired difference} against the analytic baseline of \cref{eq:baseline} on
+the same frame under the same condition, so corpus difficulty cancels. ``Frames
+won'' counts frames on which that paired difference is positive, out of 429.
+
+\paragraph{Statistical protocol.} The headline comparisons are over all 429
+held-out frames, paired, and we report the mean and median of the per-frame
+difference rather than the difference of means. The oracle and ceiling analyses
+of \cref{sec:bound} use one frame per scene (27 and 51 frames respectively) for
+cost reasons, and \cref{sec:limitations} quantifies the bias that introduces.
+Where a result rests on a margin comparable to run-to-run variation, we retrain
+and report mean $\pm$ standard deviation across seeds: \cref{sec:seeds} does
+this for the gate with $n = 3$. Three runs support the claim that a sign is
+stable; they do not support a confidence interval, and we do not present one.

@@ -1,0 +1,105 @@
+\begin{thebibliography}{13}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Eilertsen et~al.(2017)Eilertsen, Kronander, Denes, Mantiuk, and
+  Unger]{eilertsen2017}
+Gabriel Eilertsen, Joel Kronander, Gyorgy Denes, Rafa{\l}~K. Mantiuk, and Jonas
+  Unger.
+\newblock {HDR} image reconstruction from a single exposure using deep {CNNs}.
+\newblock \emph{ACM Transactions on Graphics}, 36\penalty0 (6), 2017.
+\newblock \doi{10.1145/3130800.3130816}.
+\newblock SIGGRAPH Asia.
+
+\bibitem[Endo et~al.(2017)Endo, Kanamori, and Mitani]{endo2017}
+Yuki Endo, Yoshihiro Kanamori, and Jun Mitani.
+\newblock Deep reverse tone mapping.
+\newblock \emph{ACM Transactions on Graphics}, 36\penalty0 (6), 2017.
+\newblock \doi{10.1145/3130800.3130834}.
+\newblock SIGGRAPH Asia.
+
+\bibitem[Froehlich et~al.(2014)Froehlich, Grandinetti, Eberhardt, Walter,
+  Schilling, and Brendel]{froehlich2014}
+Jan Froehlich, Stefan Grandinetti, Bernd Eberhardt, Simon Walter, Andreas
+  Schilling, and Harald Brendel.
+\newblock Creating cinematic wide gamut {HDR}-video for the evaluation of tone
+  mapping operators and {HDR}-displays.
+\newblock In \emph{Proc.\ SPIE 9023, Digital Photography X}, page 90230X, 2014.
+\newblock \doi{10.1117/12.2040003}.
+
+\bibitem[ITU-R BT.2100()]{bt2100}
+ITU-R BT.2100.
+\newblock {Recommendation ITU-R BT.2100} --- image parameter values for high
+  dynamic range television for use in production and international programme
+  exchange.
+\newblock International Telecommunication Union, 2018.
+
+\bibitem[ITU-R BT.2408()]{bt2408}
+ITU-R BT.2408.
+\newblock {Report ITU-R BT.2408} --- operational practices in high dynamic
+  range television production.
+\newblock International Telecommunication Union, 2023.
+
+\bibitem[Kalantari and Ramamoorthi(2017)]{kalantari2017}
+Nima~Khademi Kalantari and Ravi Ramamoorthi.
+\newblock Deep high dynamic range imaging of dynamic scenes.
+\newblock \emph{ACM Transactions on Graphics}, 36\penalty0 (4), 2017.
+\newblock \doi{10.1145/3072959.3073609}.
+\newblock SIGGRAPH.
+
+\bibitem[Liu et~al.(2020)Liu, Lai, Chen, Kao, Yang, Chuang, and Huang]{liu2020}
+Yu-Lun Liu, Wei-Sheng Lai, Yu-Sheng Chen, Yi-Lung Kao, Ming-Hsuan Yang, Yung-Yu
+  Chuang, and Jia-Bin Huang.
+\newblock Single-image {HDR} reconstruction by learning to reverse the camera
+  pipeline.
+\newblock In \emph{IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition (CVPR)}, 2020.
+
+\bibitem[Mantiuk and Azimi(2021)]{pu21}
+Rafa{\l}~K. Mantiuk and Maryam Azimi.
+\newblock {PU21}: A novel perceptually uniform encoding for adapting existing
+  quality metrics for {HDR}.
+\newblock In \emph{Picture Coding Symposium (PCS)}, 2021.
+\newblock \url{https://github.com/gfxdisp/pu21}.
+
+\bibitem[Mantiuk et~al.(2024)Mantiuk, Hanji, Ashraf, Asano, and Chapiro]{cvvdp}
+Rafa{\l}~K. Mantiuk, Param Hanji, Maliha Ashraf, Yuta Asano, and Alexandre
+  Chapiro.
+\newblock {ColorVideoVDP}: A visual difference predictor for image, video and
+  display distortions.
+\newblock \emph{ACM Transactions on Graphics}, 43\penalty0 (4), 2024.
+\newblock \doi{10.1145/3658144}.
+\newblock SIGGRAPH.
+
+\bibitem[Marnerides et~al.(2018)Marnerides, Bashford-Rogers, Hatchett, and
+  Debattista]{marnerides2018}
+Demetris Marnerides, Thomas Bashford-Rogers, Jonathan Hatchett, and Kurt
+  Debattista.
+\newblock {ExpandNet}: A deep convolutional neural network for high dynamic
+  range expansion from low dynamic range content.
+\newblock \emph{Computer Graphics Forum}, 37\penalty0 (2), 2018.
+\newblock \doi{10.1111/cgf.13340}.
+\newblock Eurographics.
+
+\bibitem[Santos et~al.(2020)Santos, Ren, and Kalantari]{santos2020}
+Marcel~Santana Santos, Tsang~Ing Ren, and Nima~Khademi Kalantari.
+\newblock Single image {HDR} reconstruction using a {CNN} with masked features
+  and perceptual loss.
+\newblock \emph{ACM Transactions on Graphics}, 39\penalty0 (4), 2020.
+\newblock SIGGRAPH.
+
+\bibitem[SMPTE ST 2065-4()]{st20654}
+SMPTE ST 2065-4.
+\newblock {SMPTE ST 2065-4:2013} --- {ACES} image container file layout.
+\newblock Society of Motion Picture and Television Engineers, 2013.
+
+\bibitem[SMPTE ST 2084()]{st2084}
+SMPTE ST 2084.
+\newblock {SMPTE ST 2084:2014} --- high dynamic range electro-optical transfer
+  function of mastering reference displays.
+\newblock Society of Motion Picture and Television Engineers, 2014.
+
+\end{thebibliography}

@@ -1,9 +1,27 @@
-We train a compact (1.2M-parameter) network for single-image SDR-to-HDR reconstruction and evaluate it against its own analytic inverse tone map on 429 held-out frames in PU21-PSNR and ColorVideoVDP JOD. On degraded input the model gains +1.43 dB and +0.44 JOD, winning 81% of frames. On clean, well-graded input it loses 3.0 dB of PU21-PSNR while CVVDP puts the same gap at -0.046 JOD: a two-order-of-magnitude disagreement between the metrics that is itself a result.
+We treat single-image inverse tone mapping as a question about information
+rather than about model capacity. A compact residual model on an analytic
+inverse tone map is scored against that same analytic map on 429 held-out
+frames, in PU21-PSNR and in ColorVideoVDP (CVVDP) JOD. On degraded input, the condition
+real footage arrives in, it gains 1.43 dB and 0.44 JOD on 348 of 429 frames. On clean, well-graded input it loses 3.0 dB of PU21-PSNR for
+a perceptually invisible -0.046 JOD, the two metrics disagreeing sharply about
+the practical significance of the same difference, which is itself one of our
+results. The regression is carried by low-dynamic-range frames: the model has no
+representation of how much headroom a frame has, so it cannot decide to do
+nothing.
 
-The clean regression concentrates in low-dynamic-range frames. The 60 worst average -10.76 dB at a median ground-truth peak of 238 nits; the 60 best +3.41 dB at 19,590 nits. The model has no representation of how much headroom a frame has, and so cannot decide to do nothing.
+We then measure what repairing that is worth and whether it can be repaired. An
+oracle per-frame scale on the residual is worth +5.84 dB on clean and +0.29 dB
+on degraded input at the same time, and no constant achieves it. But a linear
+readout of the features such a gate would see explains 3% of that scale's
+variance, and 79% of the variance lies within a condition rather than between
+conditions, so even a perfect clean-versus-degraded classifier is capped at
+R^2 = 0.213. Capacity, corpus and objective were each varied by a factor of four
+to six and none moved the result. We report this as an empirical identifiability
+bound on the representations we tested, not an information-theoretic one.
 
-We measure what fixing that is worth and whether it can be fixed. An oracle per-frame scale on the residual is worth +5.84 dB on clean and +0.29 dB on degraded simultaneously, and no constant achieves it. But a linear readout of the features such a gate would use explains only 3% of that scale's variance, and 79% of the variance is within a condition rather than between, so even a perfect clean-versus-degraded classifier caps at R^2 0.213.
-
-That bound is a property of the question, not the problem: posed as a continuous scale it is unreachable, posed as a binary decision on the detectable axis it is reachable. A 21,121-parameter gate on the shadow arm moves clean input by +3.41 +/- 0.32 dB and +0.135 +/- 0.023 JOD over the shipped model for 0.30 +/- 0.15 dB and 0.091 +/- 0.041 JOD on degraded input, over three seeds, all positive on all four measures against the analytic baseline.
-
-Against ExpandNet on the same 429 frames, run from the authors' released weights, RUDRA is +18.56 dB and +2.03 JOD. Both metrics agree there, so the disagreement above is a property of small differences, not of the instruments.
+That bound is a property of the question. Posed as a continuous per-frame scale
+it is unreachable; posed as a binary decision on the one axis that is
+detectable, it is reachable. A 21,121-parameter gate on the shadow arm of the
+reconstruction converts the clean regression into a gain of 3.41 +/- 0.32 dB and
+0.135 +/- 0.023 JOD over the shipped model, for 0.30 +/- 0.15 dB and
+0.091 +/- 0.041 JOD given up on degraded input, across three seeds.

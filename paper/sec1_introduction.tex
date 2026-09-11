@@ -1,0 +1,91 @@
+\section{Introduction}
+\label{sec:introduction}
+
+An 8-bit delivery frame is the end of a lossy chain. Scene radiance spanning
+perhaps twenty stops was metered, exposed, graded through a tone curve chosen by
+a colourist, clipped at both ends and quantised to 256 levels per channel.
+Single-image inverse tone mapping asks for the radiance back. The task is
+attractive because the input is abundant and the output is what every high
+dynamic range (HDR) pipeline needs, and it is hard for a reason that is easy to
+state and easy to forget: the forward map is not injective, and no amount of
+model does anything about that.
+
+The literature has largely treated the problem as one of architecture and
+training. We treat it as one of information, and the distinction turns out to be
+load-bearing. This paper reports a compact model, the conditions under which it
+helps and hurts, a measurement of the ceiling on adapting it per frame, and a
+component that reaches a particular part of that ceiling by asking a different
+question of the same input.
+
+\paragraph{Position of this work.}
+Our model is deliberately small (\num{1196197} parameters) and is a residual on
+an analytic inverse tone map rather than a direct predictor. That choice is what
+makes the paper's central question askable at every point in training and
+evaluation: \emph{does the network beat doing nothing?} A direct predictor has
+no ``nothing'' to be compared against, and in practice a great deal of what a
+learned inverse tone mapper appears to contribute is recoverable analytically.
+Every number in this paper is a difference against that analytic baseline on
+identical inputs.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+\item \textbf{A conditional characterisation of when learned inverse tone
+  mapping helps.} On degraded input the model gains \SI{1.43}{\decibel}
+  PU21-PSNR and \num{0.44}~JOD over the analytic baseline, on 81\% of held-out
+  frames. On clean input it loses \SI{3.0}{\decibel} PU21-PSNR for
+  $-0.046$~JOD. Reporting either condition alone misrepresents the method
+  (\cref{sec:results}).
+
+\item \textbf{A characterised disagreement between the two standard HDR
+  metrics.} On the same frames and the same models, PU21-PSNR reports a
+  substantial fidelity penalty where CVVDP reports a perceptually negligible
+  difference, and the two agree decisively when the difference is large. The
+  two are not commensurable as numbers, which is the point: what differs is the
+  practical significance each assigns to a small reconstruction difference on
+  well-graded input. We localise that divergence, show it is only partly carried
+  by the error tail, and show it reappearing inside a checkpoint-selection rule
+  that touches neither metric
+  (\cref{sec:results,sec:failure,sec:methodology}).
+
+\item \textbf{A localisation of the failure to a specific mechanism.} The clean
+  regression is not invented highlights, which was our own first two hypotheses.
+  It is the shadow arm of the residual gate firing on scenes that need no
+  reconstruction, and disabling that arm inverts the regression
+  (\cref{sec:failure}).
+
+\item \textbf{A measured bound on per-frame adaptation.} An oracle per-frame
+  residual scale is worth \SI{+5.84}{\decibel} on clean and
+  \SI{+0.29}{\decibel} on degraded input simultaneously, and is poorly
+  identifiable from the input we have: a linear readout of the features the gate
+  sees explains \num{3}\% of its variance, and \num{79}\% of the variance lies
+  within a condition rather than between, which caps \emph{any}
+  condition-detection architecture at $R^2 = \num{0.213}$ regardless of how it
+  is built. Capacity, corpus and objective were each varied by a factor of four
+  to six without moving it. We are careful to claim an empirical identifiability
+  result and not an information-theoretic one; \cref{sec:bound} separates what
+  the measurements establish from what they suggest.
+
+\item \textbf{A component that reaches the reachable part of that bound.} Posed
+  as a binary decision on the detectable axis rather than as a continuous scale,
+  the problem is tractable. A \num{21121}-parameter gate on the shadow arm
+  delivers $+3.41 \pm 0.32$~dB and $+0.135 \pm 0.023$~JOD on clean input
+  for $0.30 \pm 0.15$~dB and $0.091 \pm 0.041$~JOD on degraded input
+  across three seeds, and is the only configuration we scored that is positive
+  on all four measures (\cref{sec:gate}).
+
+\item \textbf{Three defects in our own evaluation harness, reported rather than
+  quietly repaired.} Checkpoint selection on the maximum of a noisy series, an
+  evaluation that silently read the alphabetical front of its split, and a
+  viewer that presented every frame upside down beneath tests that compared only
+  float buffers. Each corrupted a result we believed, and each is available to
+  any comparable pipeline (\cref{sec:methodology}).
+\end{enumerate}
+
+\paragraph{Scope.}
+This paper reports a direct SDR-pixel to scene-linear-radiance image model. It
+does not report the DRE-transformer and cross-attention architecture described
+in an earlier manuscript from this group: that design was never trained, and the
+results attributed to it were aspirational. Both are withdrawn.
+\Cref{sec:withdrawal} states what was withdrawn and why, so that a reader who
+has seen the earlier document can reconcile the two. What follows is the system
+that exists, measured with the metrics that exist.

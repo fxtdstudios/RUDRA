@@ -1,0 +1,150 @@
+\section{The shadow gate: reaching the reachable part of the bound}
+\label{sec:gate}
+
+\subsection{Reformulating the question}
+\label{sec:reformulation}
+
+\Cref{sec:bound} asks a hard question: predict a continuous per-frame scale, of
+which only 21\% of the variance is explained by the clean/degraded distinction
+and only 3\% by the available features. \Cref{sec:ablation} makes a different
+question available. The shadow arm is a \emph{binary} decision, and its correct
+setting is \emph{exactly} the clean-versus-degraded axis, which is the part that
+is partially detectable at 75.5\%.
+
+The consequence is arithmetic. At that measured accuracy, a switch on the shadow
+arm alone is worth \SI{+2.65}{\decibel} of clean for \SI{0.27}{\decibel} of hard
+(\cref{tab:prediction}). That was the prediction we set out to test.
+
+\begin{table}[htbp]
+\centering
+\caption{Predicted value of a switch on the shadow arm at the measured 75.5\%
+classifier accuracy, against the shipped configuration.}
+\label{tab:prediction}
+\begin{tabular}{lrr}
+\toprule
+ & clean & hard \\
+\midrule
+shipped                      & \SI{-3.00}{\decibel} & \SI{+1.43}{\decibel} \\
+75.5\%-accurate arm switch   & \textbf{\SI{-0.35}{\decibel}} & \textbf{\SI{+1.16}{\decibel}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The gate, trained}
+\label{sec:gate-trained}
+
+\textsc{ShadowGate} is \num{21121} parameters on the frozen v5 backbone,
+predicting the single weight $\sw$ of \cref{eq:prior} per frame. By construction
+$\sw = 1$ reproduces the shipped configuration exactly and $\sw = 0$ reproduces
+the ablated configuration exactly, so it interpolates between the two measured
+endpoints of \cref{tab:ablation} and nothing else. It is supervised by binary
+cross-entropy against the degradation label, and unlike the residual scale of
+\cref{sec:bound} that target needs no oracle: at training time we know whether
+we degraded the frame.
+
+\begin{table}[htbp]
+\centering
+\caption{Gain over the analytic baseline, 429 held-out frames. The gated
+configuration is the only row that is positive on all four measures.}
+\label{tab:gate}
+\begin{tabular}{lrrrr}
+\toprule
+method & clean dB & clean JOD & hard dB & hard JOD \\
+\midrule
+v5, as shipped            & $-3.00$ & $-0.046$ & \textbf{$+1.43$} & \textbf{$+0.443$} \\
+v5, shadow arm off        & $+0.51$ & $-0.017$ & $+0.33$ & $+0.134$ \\
+v6, $4\times$ capacity    & $-2.75$ & $+0.004$ & $+0.96$ & $+0.344$ \\
+\textbf{v5 + shadow gate} & \textbf{$+0.07$} & \textbf{$+0.113$} & \textbf{$+1.24$} & \textbf{$+0.389$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The gate beat the prediction on both axes: predicted \SI{-0.35}{\decibel} clean
+and \SI{+1.16}{\decibel} hard, delivered $+0.07$ and $+1.24$ on the first seed
+(\cref{tab:gate}) and $+0.41 \pm 0.33$ and $+1.12 \pm 0.15$ across three
+(\cref{sec:seeds}). Against the shipped model that is
+$+3.41 \pm 0.32$~dB and $+0.135 \pm 0.023$~JOD on clean for
+$0.30 \pm 0.15$~dB and $0.091 \pm 0.041$~JOD on hard: it converts the
+clean regression into a win while keeping most of the degraded-input gain.
+
+Two properties deserve stating precisely. First, it is the only configuration we
+scored that is positive on all four measures; every other row buys one column
+with another. Second, its clean CVVDP of \num{9.561} exceeds \emph{both ends of
+the ablation it interpolates} (\num{9.402} with the arm on, \num{9.431} with it
+off) and every fixed alternative including the $4\times$ capacity model. A hard
+switch could not do that. The gate is emitting intermediate weights and finding
+per-frame settings that neither extreme reaches, which is more than the binary
+framing that motivated it predicted.
+
+\subsection{Three seeds}
+\label{sec:seeds}
+
+The \SI{+0.07}{\decibel} clean margin above is small enough that one run proves
+nothing, so we trained two further gates on the same backbone, changing only the
+seed, and scored them on the same 429 frames (\cref{tab:seeds}).
+
+\begin{table}[htbp]
+\centering
+\caption{Three gate seeds, gain over the analytic baseline. CVVDP and frames won
+are on clean, out of 429; the shipped v5 wins 115 for comparison.}
+\label{tab:seeds}
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{clean} & \multicolumn{2}{c}{hard} & clean & clean \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+seed & dB & JOD & dB & JOD & CVVDP & frames won \\
+\midrule
+\num{20260901} & $+0.07$ & $+0.113$ & $+1.24$ & $+0.389$ & 9.561 & 251 (59\%) \\
+2              & $+0.71$ & $+0.068$ & $+0.96$ & $+0.308$ & 9.516 & 315 (73\%) \\
+3              & $+0.45$ & $+0.089$ & $+1.18$ & $+0.358$ & 9.537 & 280 (65\%) \\
+\midrule
+\textbf{mean $\pm$ sd} & \bm{$+0.41$} & \bm{$+0.090$} & \bm{$+1.12$} & \bm{$+0.352$} & & \\
+ & \bm{$\pm 0.33$} & \bm{$\pm 0.023$} & \bm{$\pm 0.15$} & \bm{$\pm 0.041$} & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All three seeds are positive on all four measures, and all three reach a clean
+CVVDP above every fixed alternative we scored (best of those: \num{9.452}). The
+result is a property of the method rather than of a seed.
+
+It is worth recording which way the single-run report erred. Seed
+\num{20260901} is the \emph{worst} of the three on clean PU21 ($+0.07$ against a
+mean of $+0.41$) and the \emph{best} on clean CVVDP ($+0.113$ against
+$+0.090$). Reporting it alone understated the decibel result by a factor of six
+and overstated the JOD result by a quarter. The honest headline is the mean with
+its spread, and that is what the abstract carries.
+
+\subsection{An observation about the selection criterion}
+\label{sec:selection-observation}
+
+Each gate's checkpoint is chosen by a trailing median over
+degradation-classification accuracy on validation: 69.5\%, 64.1\% and 64.8\% for
+seeds \num{20260901}, 2 and 3. Ranked by that accuracy, the three runs come out
+in exactly the order of their clean CVVDP and in exactly the reverse order of
+their clean PU21 (\cref{tab:rank}).
+
+\begin{table}[htbp]
+\centering
+\caption{Validation classification accuracy against clean-condition outcome,
+three seeds. With $n = 3$, a perfect agreement or inversion arises by chance
+with $p = 1/6$; this is an observation, not a result.}
+\label{tab:rank}
+\begin{tabular}{lrrrrrr}
+\toprule
+seed & val accuracy & rank & clean JOD & rank & clean dB & rank \\
+\midrule
+\num{20260901} & 69.5\% & 1 & $+0.113$ & 1 & $+0.07$ & 3 \\
+3              & 64.8\% & 2 & $+0.089$ & 2 & $+0.45$ & 2 \\
+2              & 64.1\% & 3 & $+0.068$ & 3 & $+0.71$ & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We report it because it is the disagreement of \cref{sec:disagreement} appearing
+a third time, after the metrics themselves and after the selection rule of
+\cref{sec:selection}, now in a criterion that touches neither metric. Whatever
+the gate learns that makes a frame classifiable also makes it look better and
+measure worse. Three seeds cannot settle that; it is the first thing we would
+test with thirty.

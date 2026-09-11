@@ -1,0 +1,65 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{A note on how these references are used.}
+Every reference below was checked against the publisher or author page for
+authors, title, venue and year, and the one-line method descriptions are at the
+level the titles and abstracts support. No number in this paper is attributed to
+any of them. We compare against our own analytic baseline and against ExpandNet
+run from its authors' released weights (\cref{sec:expandnet});
+\cref{sec:limitations} states which comparisons are still missing. The failure
+mode this caution replaces, placeholder tables presented as measurements, is
+documented in \cref{sec:withdrawal}.
+
+\paragraph{Single-image inverse tone mapping.}
+The dominant framing learns a mapping from an 8-bit frame to a higher-range one,
+typically with an encoder-decoder and a loss in a perceptual or log domain, and
+typically evaluated on synthetically clipped data. Eilertsen et
+al.~\citep{eilertsen2017} predict a log-domain reconstruction of the saturated
+regions with a U-Net and blend it back through a saturation mask; Marnerides et
+al.~\citep{marnerides2018} combine three branches at different receptive fields;
+Endo et al.~\citep{endo2017} instead synthesise a bracketed exposure stack from
+the single input and merge it; Liu et al.~\citep{liu2020} decompose the task into
+learned inverses of the individual camera-pipeline stages. Our architecture is
+deliberately smaller than this line of work and is a residual on an analytic
+inverse tone map rather than a direct predictor, which is what makes ``does the
+network beat doing nothing?'' a question we can ask at every step of training.
+
+\paragraph{Highlight and clipped-region reconstruction.}
+A related family treats the problem as inpainting the saturated regions
+specifically, rather than remapping the whole frame. Santos et
+al.~\citep{santos2020} make the clipped area explicit by masking it out of the
+network's own features and adding a perceptual loss, and the masked blend of
+Eilertsen et al.~\citep{eilertsen2017} serves the same end. Our highlight and
+shadow masks share that purpose but are predicted jointly with the residual and
+gated by a luminance prior rather than by a detected saturation mask.
+\Cref{sec:failure} is a direct criticism of that choice: our own failures are
+not in the clipped highlights at all.
+
+\paragraph{Evaluation of HDR reconstruction.}
+PU21 \citep{pu21} and ColorVideoVDP \citep{cvvdp} are the two public measuring
+sticks we use, the first an encoding that makes existing metrics such as PSNR
+applicable to absolute-luminance HDR, the second a calibrated visible-difference
+predictor reporting in JOD. \Cref{sec:results} reports a case where they diverge sharply in the practical
+significance they assign to the same difference on the same frames, and
+\cref{sec:failure} shows the PU21 penalty is only partly tail-carried. We are
+not aware of that disagreement having been characterised for this task, and
+consider it a contribution independent of the model.
+
+\paragraph{Training data for HDR.}
+The scarcity of paired SDR/HDR footage shapes every result here. Public HDR
+video with cinematic production values remains small enough to enumerate: the
+HDM-HDR-2014 set of Froehlich et al.~\citep{froehlich2014} contributes 9 scenes
+and \num{11007} frames to our corpus, and the widely used HDR still sets
+\citep{kalantari2017} are bracketed-exposure captures rather than graded footage.
+The remainder of our corpus is proprietary. \Cref{sec:corpus} documents a
+distribution shift between our own training and held-out splits that we did not
+design and that a reader should weigh.
+
+\paragraph{What we compare against.}
+ExpandNet \citep{marnerides2018} is scored on our split in \cref{sec:expandnet},
+using the authors' own model and released weights and their own pre- and
+post-processing. Our benchmark harness scores any third-party output against the
+same reference, so the remaining comparisons are a matter of running published
+code rather than of building anything; \cref{sec:limitations} says which are
+outstanding.
