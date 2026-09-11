@@ -19,10 +19,11 @@ from pathlib import Path
 
 import numpy as np
 
-from .colorspace import AP0_CHROMATICITIES, convert, rgb_to_rgb_matrix
+from .colorspace import (AP0_CHROMATICITIES, AP1_CHROMATICITIES, convert,
+                         rgb_to_rgb_matrix)
 from .exr import write_exr
 
-__all__ = ["write_aces_exr", "generate_ocio_config"]
+__all__ = ["write_aces_exr", "write_acescg_exr", "generate_ocio_config"]
 
 
 def write_aces_exr(
@@ -51,6 +52,34 @@ def write_aces_exr(
     if provenance:
         attrs["rudra:provenance"] = json.dumps(provenance, sort_keys=True)
     return write_exr(path, aces, half=True, chromaticities=AP0_CHROMATICITIES, attributes=attrs)
+
+
+def write_acescg_exr(
+    rgb_linear: np.ndarray,
+    path: str | Path,
+    source_space: str = "rec2020",
+    exposure_scale: float = 1.0,
+    provenance: dict | None = None,
+) -> Path:
+    """Write an (H, W, 3) linear frame as an ACEScg (AP1) EXR.
+
+    Same maths as the AP0 container, a different primary set. AP0 is the
+    archival wrapper; AP1 is the space a comp is actually built in, so a
+    pipeline handed AP0 usually converts straight out of it. Offering both
+    saves that round trip and matches what competing tools emit.
+    """
+    cg = convert(np.asarray(rgb_linear, dtype=np.float32) * float(exposure_scale),
+                 source_space, "ap1")
+    attrs = {
+        "rudra:container": "ACEScg (AP1)",
+        "rudra:sourceSpace": source_space,
+        "rudra:exposureConvention": "0.18 = 18% grey (scene), diffuse white = 1.0",
+        "rudra:exposureScale": repr(float(exposure_scale)),
+    }
+    if provenance:
+        attrs["rudra:provenance"] = json.dumps(provenance, sort_keys=True)
+    return write_exr(path, cg, half=True, chromaticities=AP1_CHROMATICITIES,
+                     attributes=attrs)
 
 
 def _matrix_yaml(matrix: np.ndarray, indent: int = 8) -> str:

@@ -20,6 +20,20 @@ knee so the two halves meet. So: unclipped picture unchanged, highlights get
 the headroom, and the ratio between them -- the part the network actually
 reconstructed -- survives.
 
+WHEN IT IS WRONG. Measured 10 Sep 2026 against the bench's own ground truth
+(dikhololo_sunset, 3 frames): the reference HDR sits 2.81x above its own SDR on
+unclipped pixels, because prepare_training_data.py MADE that SDR by exposing
+down a stop before the ACES curve. On corpus data the factor of two is correct
+and anchoring is catastrophic -- PU21-PSNR 53.4 dB plain, 22.5 dB anchored, a
+loss of 30.9 dB.
+
+So this is a MODE, not a repair. Whether it applies depends on how the source
+was exposed, which cannot be read out of the pixels. Anchor a graded plate that
+was never exposed down; do not anchor a frame the corpus produced. The bench
+path leaves it off, which is why the paper's numbers are unaffected, and it
+cannot be used to validate this either way -- it would penalise a fix that is
+right for a plate.
+
 WHAT IT DOES NOT DO. It cannot repair the curve's SHAPE, only its level. A
 single frame's correction is a function of the source code value, so it is
 exact wherever the source is valid and frozen where the source is clipped.
@@ -32,6 +46,8 @@ from __future__ import annotations
 import numpy as np
 
 DIFFUSE_WHITE_NITS = 203.0
+# Rec.2020: the working space the reconstruction is written in.
+LUMA_REC2020 = np.array([0.2627, 0.6780, 0.0593])
 # 0.9 in sRGB is 160 nits: comfortably inside the SDR's valid range, above the
 # grade's working mid-tones, and below where 8-bit codes start to run out.
 DEFAULT_KNEE = 0.9
@@ -53,9 +69,20 @@ def anchor_gain(sdr_srgb: np.ndarray, hdr_nits: np.ndarray,
     if not 0.0 < knee < 1.0:
         raise ValueError(f"knee must be inside (0, 1), got {knee}")
 
-    weights = np.array([0.2126, 0.7152, 0.0722])          # Rec.709, sRGB source
-    target = srgb_to_linear(sdr_srgb) @ weights * DIFFUSE_WHITE_NITS
-    actual = hdr_nits @ weights
+    # ONE luminance definition, used on both sides. This module first used
+    # Rec.709 weights while rudra/chroma.py used Rec.2020, so the anchor
+    # equalised one quantity and the QC measured another: unclipped pixels
+    # inside 1% read 89.5% after anchoring alone and 52.5% once the chroma
+    # carry ran, with neither module wrong on its own terms.
+    #
+    # Rec.2020, because that is the working space the reconstruction is
+    # written in and what the EXR is tagged with. Note that the pipeline does
+    # NOT convert the sRGB source's primaries on the way in -- sdr_to_baseline_hdr
+    # expands sRGB values in place -- so source and output are treated as the
+    # same space throughout. That assumption is older than this module and is
+    # worth revisiting; what matters here is that everything agrees on it.
+    target = srgb_to_linear(sdr_srgb) @ LUMA_REC2020 * DIFFUSE_WHITE_NITS
+    actual = hdr_nits @ LUMA_REC2020
     # The knee is driven by the MAX channel, not luma. Clipping happens per
     # channel: a saturated red at 255,40,30 has a luma of 0.29 and is every
     # bit as clipped as white. Keyed on luma it would be treated as ordinary

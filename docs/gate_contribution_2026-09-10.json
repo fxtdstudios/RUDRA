@@ -1,0 +1,66 @@
+{
+  "summary": {
+    "frames": 1,
+    "shadow_weight": {
+      "mean": 0.9111601710319519,
+      "std": 0.0,
+      "min": 0.9111601710319519,
+      "max": 0.9111601710319519,
+      "cv_pct": 0.0
+    },
+    "gate_vs_constant": {
+      "max_nits": {
+        "median": 45.5859375,
+        "worst": 45.5859375
+      },
+      "pu21_db": {
+        "median": 66.00900854182153,
+        "worst": 66.00900854182153
+      }
+    },
+    "gated_vs_ungated": {
+      "max_nits": {
+        "median": 1.9172286987304688,
+        "worst": 1.9172286987304688
+      },
+      "pu21_db": {
+        "median": 53.3467484517256,
+        "worst": 53.3467484517256
+      }
+    },
+    "gated_vs_also1": {
+      "max_nits": {
+        "median": 1.9765625,
+        "worst": 1.9765625
+      },
+      "pu21_db": {
+        "median": 52.61519498143691,
+        "worst": 52.61519498143691
+      }
+    },
+    "gated_vs_also2": {
+      "max_nits": {
+        "median": 1.586212158203125,
+        "worst": 1.586212158203125
+      },
+      "pu21_db": {
+        "median": 54.90305539861037,
+        "worst": 54.90305539861037
+      }
+    }
+  },
+  "rows": [
+    {
+      "frame": "hsky.png",
+      "gate_vs_constant_max_nits": 45.5859375,
+      "gate_vs_constant_p99_nits": 6.832489490509033,
+      "gate_vs_constant_pu21_db": 66.00900854182153,
+      "vs_ungated_max_nits": 1.9172286987304688,
+      "vs_ungated_pu21_db": 53.3467484517256,
+      "vs_also1_max_nits": 1.9765625,
+      "vs_also1_pu21_db": 52.61519498143691,
+      "vs_also2_max_nits": 1.586212158203125,
+      "vs_also2_pu21_db": 54.90305539861037
+    }
+  ]
+}
