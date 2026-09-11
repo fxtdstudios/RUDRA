@@ -19,7 +19,7 @@ import numpy as np
 
 __all__ = [
     "PRIMARIES", "WHITE_POINTS", "npm", "bradford_cat",
-    "rgb_to_rgb_matrix", "convert", "AP0_CHROMATICITIES",
+    "rgb_to_rgb_matrix", "convert", "AP0_CHROMATICITIES", "AP1_CHROMATICITIES",
 ]
 
 # (rx, ry, gx, gy, bx, by)
@@ -43,6 +43,11 @@ WHITE_POINTS: dict[str, tuple[float, float]] = {
 # ST 2065-4 / ACES container chromaticities attribute, in EXR field order:
 # redX, redY, greenX, greenY, blueX, blueY, whiteX, whiteY.
 AP0_CHROMATICITIES = (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767)
+
+# ACEScg (AP1). AP0 is an archival container that working pipelines convert
+# OUT of; AP1 is where Nuke, Blender and most comps actually sit, and it is
+# what a colorist means by "give me ACES".
+AP1_CHROMATICITIES = (0.713, 0.293, 0.165, 0.830, 0.128, 0.044, 0.32168, 0.33767)
 
 _BRADFORD = np.array([
     [0.8951, 0.2664, -0.1614],
