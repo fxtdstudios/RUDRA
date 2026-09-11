@@ -1,0 +1,67 @@
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Held-out size.} 429 test frames over 97 scenes. The oracle and
+ceiling analyses of \cref{sec:bound} use 27 and 51 frames respectively, one per
+scene; that sample runs approximately \SI{1.15}{\decibel} pessimistic on clean
+against the full set (\SI{-4.15}{\decibel} at $\alpha = 1$ where the full 429
+read \SI{-3.00}{\decibel}). Ordering is reliable; absolute values will move.
+
+\paragraph{Distribution shift.} The train/test shift of \cref{sec:shift} is a
+confound in the clean result. \Cref{sec:ceiling} argues it is not the binding
+constraint, but we have not retrained under a matched sampler to prove it.
+
+\paragraph{The oracle is an upper bound.} It reads the ground truth.
+
+\paragraph{Single-image only.} The temporal refiner is not evaluated here; its
+held-out set is 4 validation and 5 test clips of one scene each, too small to
+report.
+
+\paragraph{The analytic baseline is privileged on clean corpus frames.}
+\Cref{eq:baseline} is the exact inverse of the transform that rendered the
+corpus SDR side, so on clean frames it is being handed the forward pipeline. It
+is an unusually strong control, which is what makes the comparison sharp, and it
+is also unusually strong in a way no baseline would be on footage from elsewhere.
+A clean-condition regression against it should be read as ``worse than knowing
+the exact forward transform'', not as a general statement about learned inverse
+tone mapping against whatever baseline a real pipeline would have. The degraded
+condition does not have this property, since no analytic inverse knows the
+degradation.
+
+\paragraph{One degradation model, and a gate supervised on it.} \textsc{hard}
+is our own seeded camera and codec pipeline, not a corpus of real degraded
+footage. This bears harder on the gate than on the model: the gate is trained by
+binary cross-entropy against \emph{our} degradation label, so what it learns may
+be the signature of this generator, JPEG blocking, 4:2:0 chroma, the particular
+banding and tone-curve family, rather than the property we want, which is that a
+frame's shadows need reconstruction. Nothing in our evaluation separates the
+two, because the test condition is generated the same way as the training
+condition. The experiment that would separate them is to hold out a degradation
+family entirely, train on the rest and test on it, and better still to score
+real degraded footage that our pipeline never touched. Until that is run, the
+gate's 75.5\% should be read as accuracy on this degradation model.
+
+\paragraph{One published method, not four.} ExpandNet is scored on our split
+(\cref{sec:expandnet}); Santos et al., Eilertsen et al.~and Liu et al.~have
+public code and are not. One comparison answers ``compared to what?'' and does
+not rank the field, and the caveats of \cref{sec:expandnet}, namely
+training-domain mismatch, an unclamped reference and a per-frame exposure fit,
+apply to the one row we have.
+
+\paragraph{No claim here rests on a reimplementation of prior work.}
+\Cref{sec:related} places the result among families of methods and cites them
+bibliographically; it does not reproduce their numbers, and we did not run their
+code.
+
+\paragraph{Three seeds is a spread, not a distribution.} The gate is positive on
+all four measures in all three runs, but $n = 3$ supports ``the sign is stable'',
+not a confidence interval. The clean PU21 spread ($+0.07$ to $+0.71$) is wide
+relative to its mean.
+
+\paragraph{Deployment carries the gate as a scalar only.} The interactive viewer
+receives the predicted shadow weight per frame and multiplies the shadow prior
+by it in the compositing shader; CPU/GPU parity holds to
+$8.4 \times 10^{-6}$ relative error across 11 cases spanning $\sw = 0$ to
+$\sw = 1$. The weight cannot be folded into the residual the way a scalar
+residual scale can, because it enters inside the $\max$ of \cref{eq:prior} and
+is not linear in the residual.

@@ -1,0 +1,92 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Analytic baseline}
+\label{sec:baseline}
+
+The baseline is an analytic inverse of the transform used to render the corpus
+SDR side,
+\begin{equation}
+\base(\sdr) \;=\; \operatorname{ACES}^{-1}\!\big(\operatorname{sRGB}^{-1}(\sdr)\big)
+\cdot \frac{2 \cdot 203}{\num{10000}},
+\label{eq:baseline}
+\end{equation}
+in network units. The factor $203/\num{10000}$ places diffuse white, and the
+factor $2$ is the \SI{-1}{EV} the corpus preparation applies before the ACES
+curve. \Cref{eq:baseline} is therefore \emph{exact} for corpus frames and
+approximate for SDR produced by any other pipeline, which is a property of the
+baseline and not of the model; the learned component is what absorbs other
+camera and tone curves. Every comparison in this paper is against
+\cref{eq:baseline} on identical inputs, so the exposure convention cancels.
+
+\subsection{Composite}
+\label{sec:composite}
+
+A compact U-Net $f_\theta$ (\num{1196197} parameters, \SI{4.6}{MiB} in float32)
+takes the SDR frame and its baseline and predicts three fields: a log-domain
+residual $\resid$, a highlight mask $\hmask$ and a shadow mask $\smask$. Let
+$y = \operatorname{luma}(\sdr)$ be Rec.709 luma of the SDR frame. The residual is
+applied through a fixed per-pixel prior
+\begin{align}
+p_{\mathrm{h}} &= \sigma\big(24\,(y - 0.82)\big), &
+p_{\mathrm{s}} &= \sigma\big(24\,(0.10 - y)\big), &
+\gate &= \max\big(p_{\mathrm{h}},\; \sw \cdot p_{\mathrm{s}}\big),
+\label{eq:prior}
+\end{align}
+where $\sw \in [0,1]$ is a per-frame weight on the shadow arm, fixed at $1$ for
+the shipped model and predicted by the gate of \cref{sec:gate}. The composite is
+\begin{align}
+\ell(\pred) &= \operatorname{clip}_{[0,\;\ell(\maxhdr)]}\Big(\ell\big(\base(\sdr)\big) + \resid \cdot \gate\Big),
+\label{eq:composite}\\
+\pred &= \ell^{-1}\big(\ell(\pred)\big),
+\qquad \ell(x) = \log(1 + \lscale x),\; \lscale = 16 .
+\end{align}
+Outside the recovery region the baseline is restored explicitly,
+\begin{equation}
+\pred \;\leftarrow\; \base(\sdr) + \max(\hmask, \smask)\cdot\big(\pred - \base(\sdr)\big),
+\label{eq:preserve}
+\end{equation}
+so that the physically grounded analytic inverse survives through ordinary
+midtones and learned capacity is spent where \cref{eq:forward} was not
+invertible.
+
+Two properties of \cref{eq:prior} carry the rest of the paper. First, the prior
+is a function of \emph{one pixel's brightness and nothing else}: it has no access
+to the frame, and therefore no representation of how much headroom the scene
+has. \Cref{sec:failure} shows this is the mechanism behind the clean regression.
+Second, the two arms are separable, and $\sw = 1$ and $\sw = 0$ reproduce
+exactly the two configurations that \cref{sec:ablation} measures, which is what
+makes the gate of \cref{sec:gate} an interpolation between measured endpoints
+rather than a new model.
+
+\subsection{Training objective}
+\label{sec:objective}
+
+Write $e$ for the censored per-pixel error of \cref{eq:censored}, $h$ and $s$
+for the ground-truth highlight and shadow masks, and
+$\rho = \max(h, s)$ for the recovery region. The objective is
+\begin{multline}
+\mathcal{L} = \underbrace{\overline{e}}_{\text{log } L_1}
+\;+\; 0.50\,\mathcal{L}_{\mathrm{hi}}
+\;+\; 0.20\,\mathcal{L}_{\mathrm{sh}}
+\;+\; 0.10\,\mathcal{L}_{\mathrm{chroma}}
+\;+\; \lambda_{\mathrm{sc}}\,\mathcal{L}_{\mathrm{shadow\text{-}chroma}}
+\;+\; \lambda_{\mathrm{ss}}\,\mathcal{L}_{\mathrm{shadow\text{-}smooth}}\\
+\;+\; 0.10\,\mathcal{L}_{\mathrm{edge}}
+\;+\; 0.05\,\mathcal{L}_{\mathrm{mask}}
+\;+\; 0.05\,\mathcal{L}_{\mathrm{outside}}
+\;+\; 0.10\,\mathcal{L}_{\mathrm{resid\text{-}outside}},
+\label{eq:loss}
+\end{multline}
+where $\mathcal{L}_{\mathrm{hi}}$ and $\mathcal{L}_{\mathrm{sh}}$ are $e$
+averaged over the highlight and shadow masks, $\mathcal{L}_{\mathrm{chroma}}$ is
+an $L_1$ on normalised chromaticity, $\mathcal{L}_{\mathrm{shadow\text{-}chroma}}$
+is an $L_1$ on opponent channels within the shadow mask (chromaticity ratios are
+poorly conditioned near black, where they force legitimate shadows toward
+neutral grey), $\mathcal{L}_{\mathrm{shadow\text{-}smooth}}$ penalises residual
+gradients inside the shadow mask, $\mathcal{L}_{\mathrm{edge}}$ is a gradient
+term on log radiance, $\mathcal{L}_{\mathrm{mask}}$ is binary cross-entropy on
+the two predicted masks, and the last two terms charge error and residual
+magnitude \emph{outside} $\rho$, which is what holds \cref{eq:preserve} honest
+during training. The two $\lambda$ weights are schedule parameters; the
+remainder are fixed.

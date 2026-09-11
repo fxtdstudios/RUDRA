@@ -1,0 +1,86 @@
+\section{Problem formulation}
+\label{sec:formulation}
+
+\subsection{Units and storage}
+\label{sec:units}
+
+Absolute units are not a presentation detail in this problem; conflating two
+conventions is a multi-stop error that produces entirely plausible numbers. We
+therefore fix them once. HDR targets are stored in a \texttt{log2\_extended}
+encoding covering \SI{0.005}{\nits} to \SI{1000000}{\nits} at \num{2377} codes
+per stop. \emph{Network units} are \si{\nits} divided by \num{10000}, so
+$\Lsc = 1.0$ denotes \SI{10000}{\nits} and diffuse white, taken at
+\SI{203}{\nits} after ITU-R BT.2408 \citep{bt2408}, is $\Lsc = \num{0.0203}$.
+The network clamps its output at $\maxhdr = 4.0$, that is \SI{40000}{\nits}.
+Storage elsewhere in the pipeline uses the delivery convention in which $1.0$ is
+diffuse white; the two differ by a factor of \num{49.26} and are never mixed
+within a computation.
+
+\subsection{The forward map, and where it is not invertible}
+\label{sec:forward}
+
+Let $\Lsc \in \mathbb{R}^{H \times W \times 3}_{\ge 0}$ be scene radiance in
+network units. An 8-bit delivery frame $\sdr \in [0,1]^{H \times W \times 3}$ is
+produced by
+\begin{equation}
+\sdr \;=\; Q_{8}\!\left(\operatorname{clip}_{[0,1]}\big(T(\Lsc)\big)\right),
+\label{eq:forward}
+\end{equation}
+where $T$ is a display-referred transform, in general an unknown composition of
+exposure, a creative grade and a tone curve; $\operatorname{clip}$ is the
+delivery range limit; and $Q_{8}$ is quantisation to 256 levels per channel.
+
+Two distinct failures of injectivity follow, and the distinction matters for
+everything after \cref{sec:results}. Where $T(\Lsc) \ge 1$ the frame is
+\emph{clipped}: all radiances above the clipping point share one code.
+Where $T(\Lsc)$ falls below the first few codes the frame is \emph{crushed}: a
+range of low radiances shares a small number of codes, and quantisation noise
+there is large relative to the signal. Inverting \cref{eq:forward} exactly is
+possible only on the interior, where $T$ is monotone and the quantisation step
+is small relative to the local slope.
+
+\subsection{Censored observations}
+\label{sec:censoring}
+
+Graded HDR sources carry a delivery ceiling $c$: \SI{4000}{\nits} for
+HDM-HDR-2014, approximately \SI{1000}{\nits} for Rec.2100 PQ 1K,
+\SI{10000}{\nits} for Chimera. A target pixel sitting on that ceiling states
+$\Lsc \ge c$, not $\Lsc = c$. Treating it as an equality trains the model to cap
+its own highlights, which is the specific failure the ceiling-aware loss exists
+to prevent, and 78\% of the image corpus and 84\% of the video corpus are graded
+to such a ceiling.
+
+We therefore treat those pixels as right-censored observations. Writing
+$\ell(x) = \log(1 + \lscale x)$ for the log-radiance encoding with
+$\lscale = 16$, the per-pixel error is
+\begin{equation}
+e \;=\;
+\begin{cases}
+\big[\ell(\Lsc) - \ell(\pred)\big]_{+} \;+\; \big[\ell(\pred) - \ell\big(\min(2^{3}c,\, 10^{6})\big)\big]_{+}
+  & \text{if } \Lsc \ge c(1 - 10^{-3}),\\[4pt]
+\big|\,\ell(\pred) - \ell(\Lsc)\,\big| & \text{otherwise,}
+\end{cases}
+\label{eq:censored}
+\end{equation}
+with $[\,\cdot\,]_{+} = \max(0, \cdot)$. Under-prediction of a censored pixel is
+charged; over-prediction is free for
+$\texttt{CENSORED\_HEADROOM\_STOPS} = 3$ stops above the ceiling and charged
+beyond. Without that second term a purely one-sided loss has no upper anchor and
+the cheapest behaviour for a censored pixel is to run to $\maxhdr$. Three stops
+takes a \SI{4000}{\nits} graded clip to \SI{32000}{\nits}, which covers real
+specular highlights without licensing invention. The $10^{-3}$ relative slack
+absorbs a \texttt{uint16} log round trip in the stored target.
+
+Censoring is a small effect on the evaluation corpus even though it shapes
+training: the mean censored fraction is \num{0.0003}.
+
+\subsection{What ``reconstruction'' can and cannot mean here}
+\label{sec:claim}
+
+Given \cref{eq:forward}, a method that maps $\sdr$ to $\pred$ is not recovering
+$\Lsc$ on the clipped set; it is estimating a plausible value consistent with
+the observation $\Lsc \ge c$. On the interior it is inverting a transform, which
+is a different and far better-posed operation. The results in
+\cref{sec:results,sec:bound} are best read with that split in mind: the analytic
+baseline is strong precisely because most pixels of most frames are interior,
+and the learned component earns its place where they are not.

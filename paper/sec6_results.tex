@@ -1,0 +1,144 @@
+\section{Results}
+\label{sec:results}
+
+\subsection{The model against its own analytic baseline}
+\label{sec:headline}
+
+\Cref{tab:headline} gives absolute scores for every configuration on the 429
+held-out frames, and \cref{tab:paired} the paired per-frame differences for the
+shipped model.
+
+\begin{table}[htbp]
+\centering
+\caption{Absolute scores on 429 held-out frames. The shipped model (v5) is the
+best configuration on degraded input and the worst on clean; only the gated
+configuration of \cref{sec:gate} is at or above the analytic baseline on both.}
+\label{tab:headline}
+\begin{tabular}{llrr}
+\toprule
+Condition & Method & PU21-PSNR (dB) & CVVDP (JOD) \\
+\midrule
+clean & analytic baseline            & \textbf{45.99} & 9.448 \\
+clean & v5 (32 ch, step \num{81000}) & 42.99 & 9.402 \\
+clean & v6 (64 ch)                   & 43.24 & 9.452 \\
+clean & \textbf{v5 + shadow gate}    & \textbf{46.06} & \textbf{9.561} \\
+\midrule
+hard  & analytic baseline            & 25.92 & 7.362 \\
+hard  & \textbf{v5}                  & \textbf{27.34} & \textbf{7.805} \\
+hard  & v6                           & 26.88 & 7.706 \\
+hard  & v5 + shadow gate             & 27.15 & 7.751 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Paired per-frame difference, v5 against the analytic baseline, 429
+frames. The clean PU21 loss of \SI{3.0}{\decibel} corresponds to
+$-0.046$~JOD, far below a just-noticeable difference.}
+\label{tab:paired}
+\begin{tabular}{lrrrrr}
+\toprule
+ & mean $\Delta$ PU21 & median $\Delta$ & frames won & mean $\Delta$ JOD & median $\Delta$ JOD \\
+\midrule
+hard  & \textbf{+1.427 dB} & +0.609 & \textbf{348 / 429 (81\%)} & \textbf{+0.443} & +0.134 \\
+clean & $-2.999$ dB        & $-2.131$ & 115 / 429 (27\%)        & \textbf{$-0.046$} & $-0.040$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Fidelity penalty, perceptual indifference}
+\label{sec:disagreement}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig3_metric_disagreement.pdf}
+\caption{Per-frame gain over the analytic baseline, 429 held-out frames;
+vertical rules mark the means. The clean distribution is broad and left-shifted
+in PU21-PSNR and collapses onto zero in CVVDP. The same frames, the same models,
+two metrics, one calling the difference substantial and the other calling it
+invisible.}
+\label{fig:disagreement}
+\end{figure}
+
+A \SI{3.0}{\decibel} PU21-PSNR loss corresponds to $-0.046$~JOD
+(\cref{fig:disagreement}), far below a just-noticeable difference. What the
+model adds to well-graded input is highlight energy that PU21-PSNR punishes and
+that no viewer sees. The clean PU21 row should never be reported without the JOD
+beside it. \Cref{sec:expandnet} shows the converse case, in which the two agree
+decisively, and \cref{sec:selection} shows the disagreement reappearing inside a
+selection rule that touches neither metric.
+
+\subsection{A published method on the same split}
+\label{sec:expandnet}
+
+Every number above is against our own analytic baseline, which has been this
+paper's largest gap since the first draft. It is now closed for one method.
+ExpandNet \citep{marnerides2018} was run on the same 429 frames using the
+authors' released weights rather than a reimplementation, with their
+pre-processing and post-processing unchanged, on the exact 8-bit frames our model
+was given (\cref{tab:expandnet}).
+
+\begin{table}[htbp]
+\centering
+\caption{Clean condition, 429 frames. ExpandNet is \SI{-18.56}{\decibel} and
+$-2.029$~JOD against our deployed configuration, winning 1 of 429 frames on
+PU21 and 16 on CVVDP.}
+\label{tab:expandnet}
+\begin{tabular}{lrr}
+\toprule
+Method (clean, 429 frames) & PU21 (dB) & CVVDP (JOD) \\
+\midrule
+\textbf{RUDRA + gate, as deployed} & \textbf{46.06} & \textbf{9.561} \\
+RUDRA + gate, exposure-aligned     & 46.61 & 9.558 \\
+analytic inverse-ACES baseline     & 45.99 & 9.448 \\
+v5 backbone, no gate               & 42.99 & 9.402 \\
+ExpandNet                          & 27.50 & 7.532 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{The exposure alignment, and what it is worth to each side.}
+ExpandNet ends in a sigmoid and its released post-processing min-max normalises
+each frame to $[0,1]$, so it predicts \emph{relative} radiance with no absolute
+anchor. Scoring that directly against a reference in \si{\nits} would measure its
+exposure guess. We therefore fit one global scalar per frame on the pixels the
+SDR input neither clipped nor crushed. That is a free parameter and it is not
+free to grant: ExpandNet's fitted scale has a \textbf{$35.5\times$} spread across
+frames (p10 \num{0.49}, p90 \num{17.45}), where ours is $1.0\times$ (p10
+\num{0.9993}, p90 \num{1.018}) because our model predicts absolute
+\si{\nits}. Put through the same fit our model gains \SI{0.55}{\decibel} and
+\emph{loses} \num{0.0025}~JOD, so the row we report for ourselves is the
+unaligned one.
+
+The alignment is not what costs ExpandNet its score. Given the \emph{best
+possible} per-frame exposure, chosen to maximise its own PU21, it recovers
+\SI{+0.39}{\decibel}.
+
+\paragraph{Three caveats, because a gap this size invites the question.}
+ExpandNet is run outside its training domain: our SDR frames come from an ACES
+approximation at a \SI{-1}{EV} offset, not the curve its corpus used. Our
+reference is unclamped and reaches roughly a million \si{\nits}, a range no
+method trained on display-referred targets was built for. And ExpandNet
+compresses dynamic range by a median factor of $2.3\times$ against the reference
+where ours is within $1.32\times$, which contributes to but does not explain
+\SI{18}{\decibel}. The row should be read as \emph{this method, unmodified, on
+this corpus}, not as a ranking of the field. Santos et
+al.~\citep{santos2020}, Eilertsen et al.~\citep{eilertsen2017} and Liu et
+al.~\citep{liu2020} have public code and have not been run.
+
+\paragraph{What this settles about \cref{sec:disagreement}.}
+The two metrics part company on our model against its own baseline and agree
+decisively here: \SI{18.6}{\decibel} and \num{2.03}~JOD say the same thing, and
+\num{2}~JOD is two just-noticeable differences. The divergence is a property of
+\emph{small} differences on well-graded input, not a defect in either
+instrument. When the difference is real, both see it.
+
+\subsection{Capacity is not the constraint}
+\label{sec:capacity}
+
+v6 quadruples width to \num{4770117} parameters. It is better on clean
+(\SI{+0.25}{\decibel}, $+0.05$~JOD) and worse on hard (\SI{-0.46}{\decibel},
+$-0.10$~JOD) than v5: movement in both directions, and smaller than the spread
+between conditions. \Cref{sec:levers} places this beside the corpus and
+objective ablations.

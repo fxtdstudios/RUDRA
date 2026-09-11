@@ -1,0 +1,160 @@
+\section{A bound on per-frame adaptation}
+\label{sec:bound}
+
+\subsection{What an oracle gate is worth}
+\label{sec:oracle}
+
+Give the composite a single global scale $\alpha$ on the residual, so that
+$\gate \leftarrow \alpha\,\gate$ in \cref{eq:composite}, and let an oracle choose
+it per frame (\cref{tab:alpha}, 27 held-out scenes).
+
+\begin{table}[htbp]
+\centering
+\caption{PU21 gain over the analytic baseline as a function of a global residual
+scale $\alpha$, 27 held-out scenes. Per-frame adaptation beats the shipped
+configuration on both conditions at once, which is not a trade-off at all.}
+\label{tab:alpha}
+\begin{tabular}{lrr}
+\toprule
+$\alpha$ & clean & hard \\
+\midrule
+$1.0$, as shipped           & \textbf{$-4.15$} & $+1.08$ \\
+$0.125$, best single constant & $+0.83$ & \textbf{$+0.17$} \\
+per-frame oracle            & \textbf{$+1.69$} & \textbf{$+1.37$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig2_alpha_sweep.pdf}
+\caption{Mean gain as a function of the global residual scale $\alpha$. The
+curves cross: every $\alpha$ that helps one condition hurts the other, and the
+shipped $\alpha = 1$ is near-optimal for degraded input and near-worst for
+clean.}
+\label{fig:alpha}
+\end{figure}
+
+The two conditions want opposite settings. Clean improves monotonically as
+$\alpha$ falls to $\approx 0.125$, hard as it rises to $\approx 1.1$, and no
+constant serves both: the constant that repairs clean discards 85\% of the
+degraded-input gain. Per-frame adaptation beats the shipped configuration by
+\SI{5.84}{\decibel} on clean and \SI{0.29}{\decibel} on hard simultaneously.
+
+The oracle's choice is also legible (\cref{tab:oracle-alpha}). On clean input it
+is near-binary in headroom; on degraded input it wants full strength regardless,
+because degradation destroys information the baseline cannot recover whatever
+the scene's range. A gate would need to see headroom \emph{and} condition
+together.
+
+\begin{table}[htbp]
+\centering
+\caption{Median oracle $\alpha$, split by reference peak.}
+\label{tab:oracle-alpha}
+\begin{tabular}{lrr}
+\toprule
+ & peak $<$ \SI{1000}{\nits} & $\ge$ \SI{1000}{\nits} \\
+\midrule
+clean & \textbf{0.125} & 0.969 \\
+hard  & 1.250 & 1.094 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The ceiling}
+\label{sec:ceiling}
+
+We built that gate, a pooled-feature head predicting $\alpha$
+(\num{21121} parameters), and trained it three times: twice through the
+reconstruction loss, \num{16000} steps in total, and once by direct supervision
+on the oracle. All three produced a near-constant output. The trained head emits
+$\alpha \in [\num{1.0125}, \num{1.0802}]$ with correlation $-0.037$ against
+$\log_2$ of the reference peak, where the oracle wanted \num{0.125}.
+
+Rather than attempt a fourth variant we measured the ceiling directly. On 51
+held-out frames, each clean and degraded, giving 102 samples, we fit a linear
+readout on exactly the features the head receives, cross-validated \emph{by
+frame} so that a clean/degraded pair can never straddle the split
+(\cref{tab:ceiling}).
+
+\begin{table}[htbp]
+\centering
+\caption{Predicting the oracle $\alpha$ from what the gate can see.
+Frame-grouped cross-validation, 102 samples.}
+\label{tab:ceiling}
+\begin{tabular}{lrr}
+\toprule
+knowing & MAE on oracle $\alpha$ & $R^2$ \\
+\midrule
+nothing (predict the mean)          & 0.501 & 0.000 \\
+the features, via a linear readout  & 0.487 & \textbf{$+0.031$} \\
+the condition, \emph{perfectly}     & 0.409 & \textbf{$+0.213$} \\
+the oracle itself                   & 0.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two numbers close the question. The features explain 3\% of the target's
+variance. And 79\% of that variance is \emph{within} a condition and only 21\%
+\emph{between} (clean $\alpha$: mean \num{0.436}, sd \num{0.471}; degraded: mean
+\num{0.925}, sd \num{0.469}), so a perfect clean-versus-degraded classifier,
+which is the most any condition-detection architecture could buy, is capped at
+$R^2 = \num{0.213}$. Since 55\% of frames want $\alpha$ at one end of the grid,
+the target is close to a binary decision per frame.
+
+The remaining 79\% asks whether \emph{this} frame's clipped region was a
+\SI{200}{\nits} lamp or a \SI{20000}{\nits} sun, which is a question about
+scene radiance that the delivery frame may not settle.
+
+\paragraph{What this does and does not establish.} It is worth separating the
+two, because the temptation to state the stronger version is exactly the error
+\cref{sec:corrections} records us making twice already.
+
+\emph{Established.} The variance decomposition is a property of the oracle
+target and the condition labels, not of any model: 79\% of the variance in
+$\alpha$ lies within a condition, so no architecture that works by detecting the
+condition, however good, can explain more than $R^2 = \num{0.213}$. That ceiling
+is real and holds for any method of that shape.
+
+\emph{Measured, but of one representation.} The $3\%$ figure is what a
+\emph{linear} readout of the pooled features \emph{this particular head sees}
+recovers, on 102 samples from 51 frames. It bounds that readout and that
+representation. It does not bound what some other representation might hold: the
+signal could be nonlinear in these features, or spatial where these are pooled,
+or semantic, or present in the frame and absent from anything we extracted.
+
+\emph{Not established.} That the information is absent from the 8-bit frame. We
+varied capacity, corpus and objective by a factor of four to six
+(\cref{sec:levers}) and nothing moved, which is evidence against a trivial
+architecture fix and is not a proof of unidentifiability. A formal statement
+would need a bound we have not derived. What we claim is the empirical version:
+\emph{the oracle scale is poorly identifiable from the single-frame
+representations we tested}, and the \SI{5.84}{\decibel} it is worth stayed out
+of reach of every attempt we made to predict it.
+
+\paragraph{What \emph{is} detectable.} The one axis that carries signal is the
+condition itself. A frame-grouped cross-validated classifier on the same
+features reaches \textbf{75.5\%} accuracy at separating clean from degraded,
+against 3\% of the variance explained for the continuous target. That asymmetry
+is the whole opening, and \cref{sec:gate} walks through it.
+
+\subsection{Three levers, one bound}
+\label{sec:levers}
+
+The bound is not an artefact of any one design choice. Each of the three levers
+usually reached for was varied by a factor of four to six (\cref{tab:levers}).
+
+\begin{table}[htbp]
+\centering
+\caption{None of the three standard levers moves the bound.}
+\label{tab:levers}
+\begin{tabular}{lll}
+\toprule
+lever varied & change & effect \\
+\midrule
+capacity  & \num{1.20}M $\rightarrow$ \num{4.77}M parameters & $\pm$\SI{0.5}{\decibel}, sign varies (\cref{sec:capacity}) \\
+corpus    & $6\times$ footage & \SI{+0.03}{\decibel} \\
+objective & censored loss; oracle supervision & no movement in $\alpha$ \\
+\bottomrule
+\end{tabular}
+\end{table}

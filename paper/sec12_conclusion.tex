@@ -1,0 +1,43 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+A \num{1.2}M-parameter residual on an analytic inverse tone map is worth
+\SI{+1.43}{\decibel} and $+0.44$~JOD on degraded input, on 81\% of held-out
+frames, and costs \SI{3.0}{\decibel} of PU21-PSNR on clean input for a
+perceptually invisible $-0.046$~JOD. Its defect is that it does not know when to
+do nothing.
+
+We measured what repairing that is worth, an oracle per-frame scale being
+\SI{+5.84}{\decibel} on clean, and then measured how much of that scale is
+predictable from what the model can see. A linear readout of the features the
+gate receives explains 3\% of its variance, and 79\% of the variance lies within
+a condition rather than between, so even a perfect clean-versus-degraded
+classifier is capped at $R^2 = \num{0.213}$. Capacity, corpus and objective were
+each varied by a factor of four to six; none moved it. The ceiling on
+condition-detection is a property of the target and holds for any architecture
+of that shape; the 3\% is a statement about one representation and one linear
+readout, and we do not claim to have shown the information is absent from the
+frame.
+
+The bound is a property of the question. Asked for a continuous scale, the input
+cannot answer. Asked a binary question on the axis that \emph{is} detectable,
+whether this frame arrived clean or degraded, it can. Locating the failure in
+the shadow arm rather than in the highlights made that decomposition available,
+and a \num{21121}-parameter gate on that arm delivers
+$+3.41 \pm 0.32$~dB and $+0.135 \pm 0.023$~JOD on clean for
+$0.30 \pm 0.15$~dB and $0.091 \pm 0.041$~JOD on hard across three seeds:
+the only configuration we scored that is positive on all four measures, in every
+run, with a clean CVVDP that exceeds both ends of the ablation it interpolates.
+
+The lesson we would carry to another problem is not about tone mapping. Four of
+the things that cost us most in this work were measurement defects rather than
+model defects. Three are in \cref{sec:methodology}: selection on the maximum of
+a noisy series, an evaluation that read the alphabetical front of its split, and
+a viewer that presented every frame upside down beneath tests that only ever
+compared float buffers. The fourth is in \cref{sec:seeds}, and is the one we
+would warn a reader about first: our initial report of the gate quoted a single
+seed that happened to be the weakest of three on one metric and the strongest on
+the other. We would not have known without running the other two.
+
+The ceiling we could prove was real, the one we could only measure held against
+everything we threw at it, and so were the ways we nearly failed to see either.
