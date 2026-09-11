@@ -455,6 +455,32 @@ Commit-Group -Paths $uiNew                   -Message $msgUi    -Label "ui"
 Commit-Group -Paths $corpusNew               -Message $msgCorpus -Label "corpus"
 Commit-Group -Paths ($scriptsNew + $scriptsGone) -Message $msgScripts -Label "scripts"
 
+# ---- 4. leave the index exactly as HEAD ----------------------------------
+# Commit-Group empties the index BEFORE each `git add`, never after the last
+# commit. So anything staged outside the five path lists -- HF_MODEL_CARD.md,
+# newly un-ignored by the .gitignore fix, is the real case -- survives the whole
+# run as a staged addition nobody committed. Nothing notices until the rebase
+# refuses to start with "uncommitted changes to tracked files", three scripts
+# later, where it looks like a git problem rather than this one.
+git reset --quiet
+$leftover = git --no-optional-locks status --porcelain --untracked-files=no
+if ($leftover) {
+    Write-Host ""
+    Write-Host "Tracked files still differ from HEAD after the five commits:" -ForegroundColor Yellow
+    $leftover | ForEach-Object { Write-Host "   $_" }
+    Write-Host "The rebase will refuse to start until these are committed." -ForegroundColor Yellow
+}
+
+# Files the .gitignore fix un-ignores but no path list claims. ls-files
+# --others --exclude-standard reads the NEW .gitignore, so this is the exact
+# set the blanket *.md rule was hiding and the negations now expose.
+$unignored = git --no-optional-locks ls-files --others --exclude-standard
+if ($unignored) {
+    Write-Host ""
+    Write-Host "Un-ignored but untracked -- decide whether these belong in the repo:" -ForegroundColor Yellow
+    $unignored | ForEach-Object { Write-Host "   $_" }
+}
+
 Write-Host ""
 Write-Host "Five commits made locally. NOT pushed." -ForegroundColor Green
 Write-Host "The branch is still one behind origin and the README rebase is" -ForegroundColor Cyan
