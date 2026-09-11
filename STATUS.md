@@ -13,7 +13,8 @@
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
-> the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
+> the earlier manuscript, which was about line B; what was withdrawn from that
+> one and why is Appendix D of the paper. Line B's
 > completion path is unchanged and is listed below; nothing since 22 Aug has
 > advanced it.
 >
@@ -314,7 +315,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 
 ## Code health
 
-All P0/P1/P2 review items closed (see `RUDRA_TECHNICAL_REVIEW.md`). Real HDR metric is
+All P0/P1/P2 review items closed. Real HDR metric is
 ColorVideoVDP (`rudra/hdrvdp.py`); the old hand-rolled "HDR-VDP-3 ≈ 80" numbers were a
 placeholder and must not be reported. `pytest tests/` covers curve round-trips, the freeze
 guarantee, conditioning, and the metric backend.
