@@ -14,7 +14,7 @@ and it reconstructs what the tone map threw away. Most of this README is about
 that path, because it is the part we finished measuring.
 
 Paper: [`paper/main.pdf`](paper/main.pdf), *What an 8-Bit Frame Can and Cannot
-Say About the Scene Behind It*, 15 pages. The same file is mirrored at
+Say About the Scene Behind It*, 23 pages. The same file is mirrored at
 [`research/RUDRA_HDR_2026.pdf`](research/RUDRA_HDR_2026.pdf).
 Weights: [huggingface.co/fxtdstudios/RUDRA](https://huggingface.co/fxtdstudios/RUDRA/tree/main).
 
@@ -22,6 +22,25 @@ Three separate things share the name RUDRA, and [`STATUS.md`](STATUS.md) keeps
 them apart. The production decoders are done. The research pipeline's Stage 3
 was never trained. The SDR to HDR model is measured and written up, and it is
 what most of this file is about.
+
+### Where everything is written down
+
+| document | what is in it |
+|---|---|
+| this README | how to run it, what it does, what it scores |
+| [`STATUS.md`](STATUS.md) | which of the three RUDRAs is finished, and what is left on each |
+| [`paper/main.pdf`](paper/main.pdf) | the measured write-up of the SDR to HDR model |
+| [`docs/RESULTS.md`](docs/RESULTS.md) | every benchmark table, and how to recompute it |
+| [`docs/TRAINING.md`](docs/TRAINING.md) | training on your own footage, end to end |
+| [`docs/INTERNALS.md`](docs/INTERNALS.md) | the composite, the units, the gate, the corpus |
+| [`docs/CORPUS.md`](docs/CORPUS.md) | what the training set has to contain, and what was wrong with the last one |
+| [`checkpoints/README.md`](checkpoints/README.md) | the model registry and the weights licence |
+
+That is the whole set. Nineteen dated working notes used to sit beside this
+file, audits, retrain runbooks, review findings, superseded training guides and
+an earlier paper draft. They were a record of how the project got here rather
+than of what it does, and a reader could not tell which of them were still true.
+They are removed; `git log` has them if you need one.
 
 ---
 
@@ -33,8 +52,20 @@ Drop in a frame or a whole sequence. The network runs once per frame on the GPU
 and hands the page its raw fields. Everything after that is composed on your own
 GPU, so the controls move at frame rate instead of at one round trip each.
 
-For a real plate, type its path into **Open shot** at the foot of the Frames
-rail: a folder of frames, or a video file (`.mov`, `.mp4`, `.mxf`, `.mkv`,
+The window has four parts. **Frames** on the left: drop footage on it, or open a
+path. The **viewer** in the middle, with its own toolbar for what you are
+looking at, how it compares against the baseline, framing guides and zoom. The
+**inspector** on the right, in three tabs: Reconstruct for the recovery
+controls, Grade for Region EV, Deliver for the container and the conform
+switches. **Scopes** across the bottom: waveform, histogram and every measured
+number.
+
+Two workspaces, top right. **Simple** hides the scopes, the log and the
+explanatory notes and leaves open, look, compare, render. **Full** is
+everything. Simple hides nothing that is the only way to reach a behaviour:
+every control it removes is also on a menu.
+
+For a real plate, type its path into **Open shot** in the Frames rail: a folder of frames, or a video file (`.mov`, `.mp4`, `.mxf`, `.mkv`,
 `.avi`, `.m2ts`, `.webm`). Nothing is uploaded -- the server is on the same
 machine as the footage and reads it where it sits, so a 1.4 GB ProRes never
 crosses the socket and a 900-frame plate opens as fast as a 3-frame one. Frames
@@ -221,9 +252,11 @@ project is for.
 
 On clean input the same model loses 3.0 dB of PU21-PSNR and wins only 115
 frames. CVVDP puts the same gap at -0.046 JOD, far below a just-noticeable
-difference. The two instruments are two orders of magnitude apart on identical
-frames. What RUDRA adds to well-graded input is highlight energy that PU21-PSNR
-punishes and no viewer sees.
+difference. One instrument calls that a substantial loss of fidelity and the
+other calls it invisible, on identical frames. The two numbers are in different
+units and are not comparable as magnitudes; what differs is whether each treats
+the difference as significant at all. What RUDRA adds to well-graded input is
+highlight energy that PU21-PSNR punishes and no viewer sees.
 
 Do not report the clean PSNR row without the JOD beside it.
 
@@ -271,13 +304,18 @@ cross-validated by frame:
 The features explain 3% of the target's variance. 79% of that variance sits
 within a condition rather than between conditions, so a perfect
 clean-versus-degraded classifier caps out at R2 0.213. That is everything a
-condition stem could ever buy. The remaining 79% asks whether this frame's
-clipped region was a 200-nit lamp or a 20,000-nit sun, and an 8-bit frame does
-not carry the evidence.
+condition stem could ever buy, and it holds for any architecture built that way,
+because it is a property of the target rather than of a model. The remaining 79%
+asks whether this frame's clipped region was a 200-nit lamp or a 20,000-nit sun.
 
-This is the information limit of single-image inverse tone mapping, measured
-rather than asserted. Capacity (4x), corpus (6x) and objective were each varied
-and none of them moved it.
+Be precise about what that measures. The 3% is what a linear readout of the
+features this gate sees recovers, on 102 samples. It bounds that readout and
+that representation, not the frame: the signal could be nonlinear in those
+features, or spatial where they are pooled, or simply not in anything we
+extracted. Capacity (4x), corpus (6x) and objective were each varied and none of
+them moved it, which is evidence against a cheap architectural fix rather than
+proof that the information is gone. The paper states it as an empirical
+identifiability result and does not claim an information-theoretic one.
 
 ### The gate that did work
 
@@ -405,22 +443,25 @@ reports mean and spread everywhere.
 ## The paper
 
 [**`paper/main.pdf`**](paper/main.pdf) is the write-up of the SDR to HDR model:
-15 pages, 11 sections, three figures, every number traceable to a command. The
-PDF is committed, and so is the LaTeX it is built from, so a clone with no
-LaTeX toolchain still has the document and a clone with one can rebuild it.
+23 pages, 12 sections and four appendices, three figures, 18 tables, every
+number traceable to a command. The PDF is committed, and so is the LaTeX it is
+built from, so a clone with no LaTeX toolchain still has the document and a
+clone with one can rebuild it.
 
 ```bash
 bash paper/build.sh      # -> paper/main.pdf
 bash paper/mkarxiv.sh    # -> paper/rudra-arxiv.tar.gz, verified to build flat
 ```
 
-`paper/main.tex` is the entry point. `paper/_body.tex` and `paper/_abstract.tex`
-are generated, so do not edit them by hand. `paper/ABSTRACT_ARXIV.txt` is a
-trimmed abstract for the submission form, which caps at 1,920 characters where
-the PDF's abstract runs longer.
+`paper/main.tex` is the entry point and inputs one file per section. Nothing in
+`paper/` is generated any more: the paper used to be converted from a markdown
+draft, which could not express equations, numbered floats or cross-references,
+and the converter and its output are gone. Edit the LaTeX.
+`paper/ABSTRACT_ARXIV.txt` is a trimmed abstract for the submission form, which
+caps at 1,920 characters where the PDF's abstract runs longer.
 
-Every derived number in sections 5, 6 and 6.1 to 6.2 can be recomputed on
-demand by two scripts that exit non-zero on any drift: 58 claims from the
+Every derived number in the results, failure and gate sections can be
+recomputed on demand by two scripts that exit non-zero on any drift: 58 claims from the
 benchmark files and five more from the headroom join. Commands are below.
 
 Two limits the paper states and this README should repeat. One published method
@@ -638,8 +679,8 @@ rudra bench bench/hard --output results.json
 ```
 
 PU21-PSNR and ColorVideoVDP JOD, against the same unclamped reference. Read the
-JOD. [The two metrics disagree](#the-two-metrics-disagree) by two orders of
-magnitude on small differences, and the JOD is the one calibrated against human
+JOD. [The two metrics disagree](#the-two-metrics-disagree) about how much a
+small difference matters, and the JOD is the one calibrated against human
 observers.
 
 ### Deploy it
@@ -779,8 +820,10 @@ ui/               RUDRA Studio: the page, its GPU compositor, the inference
 run_studio.bat    One-file launchers: set up on the first run, check and start
 run_studio.sh     on every run after that
 paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
-docs/             Paper figures, the Studio screenshot, the comparison strips
-                  and make_compare.py, which rebuilds them from a scored bench
+docs/             RESULTS.md, TRAINING.md, INTERNALS.md and CORPUS.md; paper
+                  figures, the
+                  Studio screenshot, the comparison strips and make_compare.py,
+                  which rebuilds them from a scored bench
 checkpoints/      Every SDR to HDR model, plus models.json, the registry the
                   viewer reads (see its README)
 config/, configs/ VAE registry and training recipes
