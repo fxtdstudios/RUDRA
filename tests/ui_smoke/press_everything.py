@@ -212,6 +212,14 @@ def main(URL, FRAMES):
                pg.inner_text("#strengthVal"))
 
         # ---- Region EV ----------------------------------------------------
+        # The inspector is tabbed. A panel that is not showing has no layout,
+        # so bounding_box() on a region returns None and inner_text() returns
+        # "" -- both of which read as a broken control rather than a hidden
+        # one. Bring the tab forward the way a user would.
+        pg.click("#tabGrade"); pg.wait_for_timeout(150)
+        record("Inspector ▸ Grade tab",
+               pg.eval_on_selector('.ipanel[data-panel="grade"]',
+                                   "e => e.classList.contains('on')"))
         record("Region rows rendered", len(pg.query_selector_all("#regions .region")) == 3)
         before = canvas()
         ev = pg.query_selector("#regions .region:nth-child(1) .ev").bounding_box()
@@ -240,6 +248,9 @@ def main(URL, FRAMES):
 
         # ---- Deliver menu --------------------------------------------------
         menu_click("container-linear")
+        record("Deliver menu opens its tab",
+               pg.eval_on_selector('.ipanel[data-panel="deliver"]',
+                                   "e => e.classList.contains('on')"))
         record("Deliver ▸ Container linear",
                "linear Rec.2020" in pg.inner_text("#containerField") and
                pg.inner_text("#primariesField") == "Rec.2020",
@@ -325,6 +336,15 @@ def main(URL, FRAMES):
                "window.__pwned=" + str(pwned))
         record("...and renders as text", any("<img" in n for n in names),
                " | ".join(n[:38] for n in names))
+
+        # ---- workspace ---------------------------------------------------------
+        pg.click("#wsSimple"); pg.wait_for_timeout(200)
+        record("Workspace ▸ Simple hides the scopes",
+               pg.eval_on_selector("body", "e => e.classList.contains('ws-simple')") and
+               pg.eval_on_selector("#scopes", "e => e.offsetParent === null"))
+        pg.click("#wsFull"); pg.wait_for_timeout(200)
+        record("Workspace ▸ Full brings them back",
+               pg.eval_on_selector("#scopes", "e => e.offsetParent !== null"))
 
         # ---- File ▸ Close all --------------------------------------------------
         menu_click("close")
