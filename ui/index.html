@@ -188,6 +188,14 @@
           <button type="button" id="wipeBtn" title="Wipe: baseline left, RUDRA right (W)">Wipe</button>
         </div>
         <span class="vsep"></span>
+        <span class="vlabel">LAYER</span>
+        <div class="seg" id="viewLayer">
+          <button type="button" data-layer="0" class="on" title="The composed picture">Image</button>
+          <button type="button" data-layer="1" title="Luminance zones, in nits">False colour</button>
+          <button type="button" data-layer="2" title="What the network changed, and where it did not">Difference</button>
+        </div>
+        <button type="button" class="tbtn" id="probeBtn" title="Read one pixel: baseline, RUDRA, and whether the SDR clipped there">Probe</button>
+        <span class="vsep"></span>
         <button type="button" class="tbtn" id="guideBtn" title="Framing guides, 90% and 80%">Guides</button>
         <span class="spacer"></span>
         <span class="vlabel">ZOOM</span>
@@ -195,6 +203,7 @@
           <button type="button" data-zoom="fit" class="on">Fit</button>
           <button type="button" data-zoom="actual">100%</button>
         </div>
+        <span class="vstatic num" id="zoomVal" title="Scroll to zoom, middle-drag to pan, double-click to fit">100%</span>
       </div>
 
       <div class="viewer" id="viewer">
@@ -210,6 +219,19 @@
           <span class="badge" style="right:8px;bottom:8px" id="plateHint">Hold B, or the image, to flip</span>
           <span class="badge num" style="right:8px;top:8px" id="peakBadge">Display peak 203 nits</span>
         </div>
+        <div class="fclegend" id="fcLegend" hidden>
+          <i style="background:#2b1f3d"></i><span>0.1</span>
+          <i style="background:#2f4b8f"></i><span>1</span>
+          <i style="background:#2f8fb8"></i><span>10</span>
+          <i style="background:#33a06a"></i><span>100</span>
+          <i style="background:#9aa7b2"></i><span>160</span>
+          <i style="background:#e9edf1"></i><span>250</span>
+          <i style="background:#e8c34a"></i><span>1k</span>
+          <i style="background:#e8873a"></i><span>4k</span>
+          <i style="background:#d0432f"></i><span>10k</span>
+          <i style="background:#c74ac7"></i><span>over</span>
+        </div>
+        <div class="probebox num" id="probeBox" hidden></div>
       </div>
 
       <div class="transport">
