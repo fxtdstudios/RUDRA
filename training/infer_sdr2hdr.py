@@ -98,13 +98,22 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     # would predict from its own window and a patch of sky inside a dim
     # interior would reconstruct as if the whole frame were a sunset.
     scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+    # The shadow gate is the same kind of thing and was missing here until
+    # 16 Sep 2026: forward() computed it from whatever it was handed, so a
+    # tiled frame got one weight per tile (seams in the shadows of a master
+    # the viewer never showed) and an untiled 1280x720 frame got a weight
+    # from full-resolution pooled features the gate was never trained on --
+    # training and the Studio both feed it the 512-px view that
+    # predict_shadow_weight builds. Computed once, from the whole frame, and
+    # handed to every tile, exactly like the residual scale above.
+    shadow = model.predict_shadow_weight(sdr) if hasattr(model, "predict_shadow_weight") else None
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if sdr.is_cuda else contextlib.nullcontext()
         with amp:
             return model(sdr, preserve_outside=preserve_outside,
                          recovery_mode=recovery_mode,
                          residual_strength=recovery_strength,
-                         residual_scale=scale).hdr.float()
+                         residual_scale=scale, shadow_weight=shadow).hdr.float()
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
     result = torch.zeros((1, 3, height, width), device=sdr.device, dtype=torch.float32)
@@ -117,7 +126,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                 prediction = model(tile, preserve_outside=preserve_outside,
                                    recovery_mode=recovery_mode,
                                    residual_strength=recovery_strength,
-                                   residual_scale=scale).hdr.float()
+                                   residual_scale=scale, shadow_weight=shadow).hdr.float()
             weight = _tile_weight(tile.shape[-2], tile.shape[-1], overlap, y, x,
                                   height, width, sdr.device)
             result[..., y:y + tile.shape[-2], x:x + tile.shape[-1]] += prediction * weight
@@ -151,13 +160,22 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
     _, _, height, width = sdr.shape
 
     scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+    # The three fields do not depend on the shadow weight (it scales the
+    # prior in the composite, after them), so this only saves forward() an
+    # encode it would otherwise run per tile. The weight itself is what
+    # ui/server.py sends the page beside the fields.
+    # (Named in full: `shadow` is the stitched mask further down, and a
+    # closure reads the name at call time, not at definition.)
+    shadow_weight = model.predict_shadow_weight(sdr) \
+        if hasattr(model, "predict_shadow_weight") else None
 
     def _run(tile: torch.Tensor):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda \
             else contextlib.nullcontext()
         with amp:
             out = model(tile, preserve_outside=False, recovery_mode="all",
-                        residual_strength=1.0, residual_scale=scale)
+                        residual_strength=1.0, residual_scale=scale,
+                        shadow_weight=shadow_weight)
         residual = out.log_residual.float()
         # The viewer composes from these three fields alone and knows nothing
         # about a conditioning head, so the per-frame scale is folded into the
@@ -366,8 +384,12 @@ def main() -> None:
                         help="Spatial tile size for bounded VRAM use; <=0 disables tiling")
     parser.add_argument("--tile-overlap", type=int, default=64)
     parser.add_argument("--recovery-mode", choices=("highlights", "all", "shadows", "off"),
-                        default="highlights",
-                        help="Where learned recovery may alter the physical baseline")
+                        default="all",
+                        help="Where learned recovery may alter the physical baseline. "
+                             "`all` is what the shipped gate model was benchmarked "
+                             "and shipped with (export_bench_pairs.py, ui/server.py); "
+                             "`highlights` was the pre-gate default and turns the "
+                             "shadow arm off entirely")
     parser.add_argument("--recovery-strength", type=float, default=1.0)
     parser.add_argument("--no-png16", action="store_true")
     args = parser.parse_args()

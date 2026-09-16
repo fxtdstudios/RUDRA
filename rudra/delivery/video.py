@@ -30,11 +30,12 @@ from pathlib import Path
 
 import numpy as np
 
-from ..hdr10 import pq_oetf
+from ..hdr10 import master_to_peak, pq_oetf
 from .colorspace import convert
 
 __all__ = ["TARGETS", "encode_sequence", "colour_tags", "expected_tags",
-           "prores_frame_tags", "container_colr", "EncodeError"]
+           "prores_frame_tags", "container_colr", "EncodeError",
+           "shoulder_to_peak", "hlg_inverse_ootf"]
 
 DIFFUSE_WHITE_NITS = 203.0
 
@@ -90,6 +91,41 @@ def hlg_oetf(scene_linear: np.ndarray) -> np.ndarray:
     return np.where(x <= 1.0 / 12.0,
                     np.sqrt(np.maximum(3.0 * x, 0.0)),
                     a * np.log(np.maximum(12.0 * x - b, 1e-12)) + c)
+
+
+def hlg_inverse_ootf(display_normalized: np.ndarray, peak_nits: float = 1000.0) -> np.ndarray:
+    """BT.2100 inverse OOTF: display-referred (1.0 = peak) -> scene-referred.
+
+    HLG's OETF expects SCENE light. What RUDRA has is display light -- nits --
+    and the display's OOTF (Y_d = Y_s ** gamma, gamma 1.2 at 1,000 nits and
+    0.42 * log2(peak / 1000) more or less per BT.2100 note 5e) sits between the
+    two. Feeding display light straight to the OETF, which this module did
+    until 16 Sep 2026, put diffuse white 0.46 stop and 18% grey 0.96 stop dark
+    on a 1,000-nit HLG display. The inverse is applied on luminance and the
+    ratio carried to RGB, which is the form the standard gives it in.
+    """
+    d = np.maximum(np.asarray(display_normalized, dtype=np.float64), 0.0)
+    gamma = 1.2 + 0.42 * np.log2(max(float(peak_nits), 1e-6) / 1000.0)
+    y_d = np.sum(d * HLG_LUMA, axis=-1, keepdims=True)
+    y_s = np.power(np.maximum(y_d, 1e-12), 1.0 / gamma)
+    return d * (y_s / np.maximum(y_d, 1e-12))
+
+
+HLG_LUMA = np.array([0.2627, 0.6780, 0.0593], dtype=np.float64)
+
+
+def shoulder_to_peak(rgb_nits: np.ndarray, peak_nits: float) -> np.ndarray:
+    """Hue-preserving roll-off of absolute nits into the mastering peak.
+
+    A PQ stream declares its mastering display; pixels above that peak are
+    not an artistic choice, they are a QC reject, and the analytic baseline
+    puts SDR white at 2,552 nits. Until 16 Sep 2026 `deliver` clipped at
+    10,000 and wrote MaxCLL from the unshouldered pixels, so a plain white
+    shirt produced MaxCLL > MaxMDL. The knee is 75% of peak, as in
+    rudra.hdr10.master_to_peak, whose curve this is.
+    """
+    return master_to_peak(np.asarray(rgb_nits, dtype=np.float64) / 10_000.0,
+                          peak_nits=float(peak_nits)).astype(np.float64)
 
 
 # -- colour tags ----------------------------------------------------------
@@ -310,19 +346,21 @@ def _verify_tags(path: Path, target: str) -> None:
 
 
 def _encode_frame(rgb_nits: np.ndarray, target: Target, peak_nits: float,
-                  source_space: str) -> np.ndarray:
+                  source_space: str, shoulder: bool = True) -> np.ndarray:
     """One scene-linear frame in nits -> 16-bit code values for the pipe."""
     rgb = np.asarray(rgb_nits, dtype=np.float64)
     if source_space != "rec2020":
         rgb = convert((rgb / DIFFUSE_WHITE_NITS).astype(np.float32),
                       source_space, "rec2020").astype(np.float64) * DIFFUSE_WHITE_NITS
+    if shoulder:
+        rgb = shoulder_to_peak(rgb, peak_nits)
     if target.transfer == "pq":
         # pq_oetf takes ABSOLUTE nits. Handing it scene-linear reports a
         # 4,000-nit specular as though it were 20, which is the units slip
         # this repo has made before and written up.
         coded = pq_oetf(np.clip(rgb, 0.0, 10_000.0))
     elif target.transfer == "hlg":
-        coded = hlg_oetf(rgb / max(peak_nits, 1e-6))
+        coded = hlg_oetf(hlg_inverse_ootf(rgb / max(peak_nits, 1e-6), peak_nits))
     else:
         coded = np.clip(rgb / max(peak_nits, 1e-6), 0.0, 1.0)
     return (np.clip(coded, 0.0, 1.0) * 65535.0 + 0.5).astype(np.uint16)
@@ -331,12 +369,18 @@ def _encode_frame(rgb_nits: np.ndarray, target: Target, peak_nits: float,
 def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24.0,
                     peak_nits: float = 1000.0, maxcll: int | None = None,
                     maxfall: int | None = None, source_space: str = "rec2020",
-                    min_nits: float = 0.005, verify_tags: bool = True) -> Path:
+                    min_nits: float = 0.005, verify_tags: bool = True,
+                    shoulder: bool = True) -> Path:
     """Encode an iterable of scene-linear-nits frames to one file.
 
     ``frames`` yields (H, W, 3) float arrays in ABSOLUTE NITS. It is consumed
     lazily and written down a pipe, so a 900-frame 4K sequence never has to be
     held in memory.
+
+    With ``shoulder`` (the default) every frame is rolled off into
+    ``peak_nits`` before encoding, so no pixel exceeds the mastering display
+    the stream declares. Pass ``shoulder=False`` only for frames that were
+    already mastered to that peak; MaxCLL/MaxFALL must then describe those.
 
     With ``verify_tags`` (the default) the finished file is read back and its
     colour tags checked before it is handed over. An untagged Rec.2020 file
@@ -379,6 +423,14 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
     args = ["ffmpeg", "-v", "error", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb48le",
             "-s", f"{width}x{height}", "-r", f"{fps}", "-i", "-",
+            # The RGB -> Y'CbCr conversion is swscale's, inserted automatically
+            # for the pix_fmt change, and the -colorspace flag below only TAGS
+            # the output: it does not tell swscale which coefficients to use.
+            # Left alone, ffmpeg 6.1 encodes with BT.601 (pure red at PQ' 0.75
+            # came out Y'/Cb/Cr 1044/1591/3397 where BT.2020 is 946/1673/3392)
+            # under a bt2020nc tag, and the tag check cannot see it because
+            # the tag is right. This filter makes the matrix what the tag says.
+            "-vf", f"scale=out_color_matrix={MATRIX}:out_range=tv",
             *spec.codec, "-pix_fmt", spec.pix_fmt,
             "-color_primaries", PRIMARIES, "-colorspace", MATRIX,
             "-color_trc", TRANSFER_NAME[spec.transfer],
@@ -431,7 +483,8 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
     try:
         frame = first
         while True:
-            process.stdin.write(_encode_frame(frame, spec, peak_nits, source_space).tobytes())
+            process.stdin.write(_encode_frame(frame, spec, peak_nits, source_space,
+                                              shoulder).tobytes())
             written += 1
             try:
                 frame = np.asarray(next(iterator), dtype=np.float64)

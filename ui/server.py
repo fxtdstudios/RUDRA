@@ -232,6 +232,75 @@ def model_for(path: str, args):
         return model, info
 
 
+# Anything a request can name a path with is a LAN-facing file read, and the
+# checkpoint override is worse: torch.load on a payload dict is a pickle load,
+# so a checkpoint path is code execution. Both were reachable from any host on
+# the network because the server bound 0.0.0.0. Now it binds loopback unless
+# asked, a request body has a ceiling, and a checkpoint override is allowed
+# only from the places the server would look on its own.
+MAX_BODY_BYTES = 256 * 1024 * 1024   # a 4K 16-bit RGB frame is ~50 MB
+
+
+class RequestRefused(ValueError):
+    """A request the server will not serve; the message is safe to return."""
+
+
+def read_body(handler) -> bytes:
+    try:
+        length = int(handler.headers.get("Content-Length", 0) or 0)
+    except ValueError:
+        raise RequestRefused("bad Content-Length") from None
+    if length < 0:
+        raise RequestRefused("bad Content-Length")
+    if length > MAX_BODY_BYTES:
+        raise RequestRefused(f"body of {length} bytes exceeds the "
+                             f"{MAX_BODY_BYTES // (1024 * 1024)} MB limit")
+    return handler.rfile.read(length) if length > 0 else b""
+
+
+def allowed_checkpoint(requested: str) -> Path:
+    """Resolve a checkpoint override to a path the server may load.
+
+    Allowed: the committed registry entries by name or path, and any ``.pt``
+    under one of ``checkpoint_roots()`` -- the same directories a bare start
+    searches. Anything else, including a real file elsewhere on disk, is
+    refused: a path is not an authorisation.
+    """
+    if not requested:
+        raise RequestRefused("empty checkpoint")
+    name = Path(str(requested)).name
+    for m in loadable_models():
+        if name == Path(m["path"]).name:
+            return Path(m["path"])
+    candidate = Path(str(requested))
+    if candidate.suffix.lower() != ".pt":
+        raise RequestRefused("checkpoint override must be a .pt file")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (FileNotFoundError, OSError):
+        raise RequestRefused(f"checkpoint not found: {requested}") from None
+    for root in checkpoint_roots():
+        try:
+            resolved.relative_to(Path(root).resolve())
+            return resolved
+        except (ValueError, OSError):
+            continue
+    raise RequestRefused("checkpoint override must be one of the committed "
+                         "models or live under RUDRA_CHECKPOINT_ROOTS")
+
+
+def select_model(params: dict, info: dict, args):
+    """The model a request asked for, or the loaded one when it did not."""
+    requested = params.get("checkpoint")
+    if not requested:
+        return None
+    path = allowed_checkpoint(str(requested))
+    current = str(info.get("checkpoint", ""))
+    if current and path.resolve() == Path(current).resolve():
+        return None
+    return model_for(str(path), args)
+
+
 def ensure_model(args):
     with _state["lock"]:
         if _state["model"] is not None or _state["info"].get("demo"):
@@ -517,6 +586,11 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
         "shadow_weight": shadow_weight,
         "log_scale": float(getattr(model, "log_scale", 16.0)),
         "max_hdr": float(getattr(model, "max_hdr", 4.0)),
+        # The compositor rebuilds the analytic baseline on the GPU, so it has
+        # to know the exposure the corpus was rendered at. It used to be a
+        # constant in the shader; a 0 EV checkpoint would have previewed one
+        # stop brighter than its own master.
+        "corpus_ev": float(getattr(model, "corpus_ev", -1.0)),
         "peak_nits": NETWORK_PEAK_NITS,
         "diffuse_white_nits": DIFFUSE_WHITE_NITS,
         "source_resolution": source,
@@ -553,6 +627,7 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
 
     from rudra.delivery import metadata as dm
     from rudra.delivery.aces import write_aces_exr
+    from rudra.delivery.colorspace import REC2020_CHROMATICITIES, convert
     from rudra.delivery.controls import DEFAULT_REGION_BANDS, apply_region_ev
     from rudra.delivery.exr import write_exr
     from training.infer_sdr2hdr import predict_image
@@ -628,6 +703,14 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
 
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
+    # The network never changes primaries: an sRGB plate comes out in Rec.709
+    # primaries, whatever its luminance. Until 16 Sep 2026 both containers
+    # were written as though this were Rec.2020 -- the ACES path fed 709
+    # pixels to the 2020->AP0 matrix (skin oversaturated, reds out of gamut)
+    # and the linear path carried no chromaticities at all. `source_space`
+    # says what the plate was; the file says what it is.
+    source_space = str(params.get("source_space", "rec709"))
+
     stats = dm.analyze_frame(nits, index=0)
     maxcll, maxfall = dm.maxcll_maxfall([stats])
 
@@ -644,15 +727,19 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "rudra:tiled": str(bool(tile_size)),
         "rudra:anchored": str(bool(params.get("anchor", True))),
         "rudra:chromaCarried": str(bool(params.get("carry_chroma", True))),
+        "rudra:sourceSpace": source_space,
     }
     if container == "aces":
         out = MASTER_DIR / f"{stem}_rudra_aces.exr"
         # HALF tops out near 65,504; scene-linear here is nits/203, so a
         # 1,000,000-nit sun is ~4,926 -- comfortably inside. Keep half.
-        write_aces_exr(scene_linear, out, source_space="rec2020", provenance=provenance)
+        write_aces_exr(scene_linear, out, source_space=source_space,
+                       provenance=provenance)
     else:
         out = MASTER_DIR / f"{stem}_rudra_linear.exr"
-        write_exr(out, scene_linear, half=True, attributes=provenance)
+        linear_2020 = convert(scene_linear, source_space, "rec2020").astype(np.float32)
+        write_exr(out, linear_2020, half=True,
+                  chromaticities=REC2020_CHROMATICITIES, attributes=provenance)
 
     sidecar = out.with_suffix(".json")
     sidecar.write_text(json.dumps({
@@ -774,11 +861,10 @@ def make_handler(args):
                                   status=503)
             try:
                 params = json.loads(self.headers.get("X-Rudra-Params", "{}") or "{}")
-                requested = params.get("checkpoint")
                 info_used = info
-                if requested and Path(requested).exists() and Path(requested).resolve() \
-                        != Path(str(info.get("checkpoint", ""))).resolve():
-                    model, info_used = model_for(requested, args)
+                chosen = select_model(params, info, args)
+                if chosen is not None:
+                    model, info_used = chosen
                 params.setdefault("checkpoint_name", info_used.get("name"))
                 header, body = run_frame(model, sequence.frame_bytes(index), params, args)
                 header["checkpoint"] = (info_used.get("name")
@@ -787,7 +873,12 @@ def make_handler(args):
                 header["gpu"] = info_used.get("gpu")
                 header["frame_index"] = index
                 header["frame_name"] = sequence.name_of(index)
+                # The page's playback clock reads this. It used to be absent,
+                # so every shot played at the 24 fps default.
+                header["fps"] = sequence.describe().get("fps")
                 return self._binary(header, body)
+            except RequestRefused as exc:
+                return self._json({"ok": False, "error": str(exc)}, status=400)
             except SequenceError as exc:
                 return self._json({"ok": False, "error": str(exc)}, status=400)
             except Exception as exc:                          # noqa: BLE001
@@ -798,10 +889,11 @@ def make_handler(args):
         def _sequence_open(self):
             """Open a shot by path. The body is JSON: {"path": "..."}."""
             try:
-                length = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(length) if length > 0 else b"{}"
+                raw = read_body(self) or b"{}"
                 wanted = (json.loads(raw.decode("utf-8")) or {}).get("path", "")
                 sequence = Sequence.open(wanted)
+            except RequestRefused as exc:
+                return self._json({"ok": False, "error": str(exc)}, status=413)
             except SequenceError as exc:
                 # A path the user can fix, not a server fault.
                 return self._json({"ok": False, "error": str(exc)}, status=400)
@@ -856,7 +948,7 @@ def make_handler(args):
             answered for content that really is identical.
             """
             body = (UI_DIR / "index.html").read_bytes().decode("utf-8")
-            for name in ("style.css", "app.js", "compositor.js"):
+            for name in ("style.css", "theme.css", "app.js", "compositor.js", "shell.js"):
                 stat = (UI_DIR / name).stat()
                 token = hashlib.sha1(
                     f"{name}:{int(stat.st_mtime)}:{stat.st_size}".encode()
@@ -906,22 +998,16 @@ def make_handler(args):
                      "error": "No model loaded: " + str(info.get("reason", "unknown")),
                      "demo": True}, status=503)
             try:
-                length = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(length) if length > 0 else b""
+                raw = read_body(self)
                 params = json.loads(self.headers.get("X-Rudra-Params", "{}") or "{}")
                 if not raw:
                     raw = self._sequence_bytes(params)
                 if not raw:
                     return self._json({"ok": False, "error": "empty body"}, status=400)
-                requested = params.get("checkpoint")
                 info_used = info
-                if requested and Path(requested).resolve() != Path(
-                        str(info.get("checkpoint", ""))).resolve():
-                    if not Path(requested).exists():
-                        return self._json({"ok": False,
-                                           "error": f"checkpoint not found: {requested}"},
-                                          status=400)
-                    model, info_used = model_for(requested, args)
+                chosen = select_model(params, info, args)
+                if chosen is not None:
+                    model, info_used = chosen
                 params.setdefault("checkpoint_name", info_used.get("name"))
                 if self.path.startswith("/api/frame"):
                     header, body = run_frame(model, raw, params, args)
@@ -937,6 +1023,9 @@ def make_handler(args):
                 payload["checkpoint"] = info_used.get("name") or info_used.get("checkpoint")
                 payload["step"] = info_used.get("step")
                 return self._json(payload)
+            except RequestRefused as exc:
+                status = 413 if "limit" in str(exc) else 400
+                return self._json({"ok": False, "error": str(exc)}, status=status)
             except SequenceError as exc:
                 # Something the user can fix, not a server fault.
                 return self._json({"ok": False, "error": str(exc)}, status=400)
@@ -959,6 +1048,9 @@ def main() -> int:
     parser.add_argument("--checkpoint", default=os.environ.get("RUDRA_CHECKPOINT"))
     parser.add_argument("--device", default=os.environ.get("RUDRA_DEVICE", "cuda"))
     parser.add_argument("--port", type=int, default=8422)
+    parser.add_argument("--host", default=os.environ.get("RUDRA_HOST", "127.0.0.1"),
+                        help="Interface to bind. Loopback by default; pass 0.0.0.0 "
+                             "only on a network you trust with your files.")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--preload", action="store_true",
                         help="Load the model at startup instead of on the first request")
@@ -968,6 +1060,9 @@ def main() -> int:
     print("   RUDRA Studio  --  live inference UI")
     print("=" * 66)
     print(f"   http://localhost:{args.port}")
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"   bound to {args.host}: every host that can reach it can open "
+              f"files on this machine")
     found = find_checkpoint(args.checkpoint)
     print(f"   checkpoint : {found if found else 'NONE FOUND -- page will run in demo mode'}")
     print(f"   device     : {args.device}")
@@ -982,7 +1077,7 @@ def main() -> int:
                             webbrowser.open(f"http://localhost:{args.port}")),
             daemon=True).start()
 
-    with ThreadedServer(("", args.port), make_handler(args)) as httpd:
+    with ThreadedServer((args.host, args.port), make_handler(args)) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

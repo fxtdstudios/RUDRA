@@ -669,7 +669,9 @@
     ctx.setParams({shadowWeight: head.shadow_weight === undefined
                                  ? 1.0 : Number(head.shadow_weight)});
     ctx.setFrame({width: head.width, height: head.height,
-                  sdr: sdr, fields: fieldsU16, shadow: shadowU16});
+                  sdr: sdr, fields: fieldsU16, shadow: shadowU16,
+                  log_scale: head.log_scale, max_hdr: head.max_hdr,
+                  corpus_ev: head.corpus_ev});
     ctx.setParams({strength: state.strength, mode: state.mode,
                    preserve: state.preserve, regions: state.regions});
     $("empty").hidden = true;

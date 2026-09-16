@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 5 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 16 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **four separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -37,6 +37,49 @@
 > worse on CVVDP in both conditions; the LaTeX build, the arXiv package and the
 > committed PDF. Related work cited (9 references + 4 standards); no `[CITE]`
 > markers remain.
+>
+> **Line C, 16 Sep 2026 review (engineer / colourist / researcher; the full
+> text is local, `FINAL_REVIEW_2026-09-16.md`).** Fixed the same day, each
+> with a test in `tests/test_review_fixes_2026_09_16.py`:
+>
+> - `rudra deliver` encoded **BT.601 chroma under a bt2020nc tag** — swscale's
+>   default matrix; `-colorspace` only labels. Reproduced on ffmpeg 6.1 (red at
+>   PQ' 0.75 → Y' 1044 where BT.2020 is 946). Fixed with
+>   `-vf scale=out_color_matrix=bt2020nc`. **Anything delivered before this
+>   date should be re-encoded.**
+> - HLG export skipped the inverse OOTF (diffuse white −0.46 st, 18% grey −0.96 st).
+> - `deliver` clipped at 10,000 nits and wrote MaxCLL from those pixels, so SDR
+>   white (2,552 nits from the baseline) exceeded a 1,000-nit MaxMDL. It now
+>   shoulders into the declared peak (hue-preserving) and measures after.
+> - Rec.709 masters were labelled Rec.2020 everywhere: the Studio's ACES path fed
+>   709 primaries to the 2020→AP0 matrix, the linear EXR carried no
+>   chromaticities, and both CLI defaults were `rec2020`. Default is `rec709`
+>   now; the linear container converts and says so in its header.
+> - The Studio bound 0.0.0.0 and would `torch.load(weights_only=False)` any path
+>   a request named. Loopback by default (`--host` to widen), checkpoint
+>   overrides limited to the registry and `RUDRA_CHECKPOINT_ROOTS`, 256 MB body
+>   cap.
+> - `infer_sdr2hdr.py` ran the shadow gate per tile (seams in tiled masters) and,
+>   untiled, from full-resolution features it was never trained on; the paper's
+>   bench went through this path. One whole-frame weight now, as the Studio
+>   does. **The bench should be re-run**; `--recovery-mode` defaults to `all`,
+>   which is what was scored.
+> - `tonemap_ev` was written by the corpus builder and read by nothing, so the
+>   next training run would have built the model against the legacy −1 EV
+>   baseline over a 0 EV corpus. It now travels manifest → `corpus_ev` in the
+>   checkpoint config → frame header → compositor uniform. Phase 0 of the
+>   runbook is closed.
+> - Playback ran at 24 fps for every shot (`fps` was never sent); `theme.css`
+>   and `shell.js` were not cache-stamped; `paper/mdtotex.py` failed the
+>   fresh-clone test and is gone.
+>
+> **Still open from the review, in order:** the synthetic-clip protocol
+> (`measure_clipping.py --score` on 0/+1/+2 EV re-renders — the only measurement
+> of the highlight claim); one out-of-generator degradation beside "hard";
+> per-shot smoothing of the gate, anchor and chroma scalars; a BT.1886 input
+> option and a conforming baseline (a retrain — belongs with the corpus
+> programme); an ExpandNet row on the hard condition; §4 provenance and the
+> weights licence in the paper.
 >
 > **Line C remaining:** nothing measurable. The blockers are the arXiv
 > endorsement (a person has to say yes), the HuggingFace upload, and the

@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/python-3.10%2B-blue">
   <img src="https://img.shields.io/badge/torch-2.x-ee4c2c">
   <img src="https://img.shields.io/badge/weights-noncommercial-orange">
-  <img src="https://img.shields.io/badge/tests-425%20passing-brightgreen">
+  <img src="https://github.com/fxtdstudios/RUDRA/actions/workflows/tests.yml/badge.svg">
 </p>
 
 ---
@@ -24,7 +24,7 @@ An 8-bit frame throws away everything above the clip. RUDRA puts it back where
 the SDR mapping was non-invertible — blown highlights, crushed shadows — and
 leaves every other pixel to the analytic inverse, unchanged.
 
-It ships as a desktop Studio, a CLI, and a ComfyUI node set.
+It ships as a desktop Studio and a delivery CLI.
 
 ---
 
@@ -49,17 +49,23 @@ cd RUDRA
 pip install -e .
 ```
 
-Then open the Studio:
+Then open the Studio — it loads the shipped checkpoint and opens a browser tab:
 
 ```bash
 python ui/server.py
 ```
 
-Or run a frame from the command line:
+Drop a frame or a shot, and **Master** writes a scene-linear OpenEXR. The CLI
+takes it from there, with no GPU:
 
 ```bash
-rudra sdr2hdr plate.png --out master.exr
+rudra info    master.exr --nits-scale 203                         # nits, percentiles
+rudra deliver masters/ --output shot --target prores4444 --fps 24  # or hdr10, hlg
+rudra aces    masters/ --output aces                               # ACES 2065-1 EXR
 ```
+
+Batch inference without the Studio is `python training/infer_sdr2hdr.py`; its
+output is a float TIFF, which the CLI does not read yet.
 
 CUDA is optional — it runs on CPU, slower. `ffmpeg` is needed for video, not
 for stills.
@@ -132,9 +138,9 @@ Full tables, the failure analysis, and how to recompute every number:
 
 ## Licence
 
-Code is Apache 2.0. **The weights are noncommercial** — the training corpus is
-why, and that is not a term FXTD Studios can waive for you. See
-[`NOTICE`](NOTICE).
+Code is Apache 2.0. **The weights are non-commercial** — the training corpus
+is why, and that is not a term FXTD Studios can waive for you. See
+[`checkpoints/LICENSE`](checkpoints/LICENSE) and [`NOTICE`](NOTICE).
 
 ---
 

@@ -140,19 +140,28 @@ def _cmd_deliver(args) -> int:
     # MaxCLL and MaxFALL are measured from the frames themselves, not guessed.
     # A PQ file whose static metadata does not match its pixels makes every
     # display tone-map it differently, and nothing reports the mismatch.
-    stats = [metadata_mod.analyze_frame(_load(p, args.nits_scale), index=i)
-             for i, p in enumerate(paths)]
-    maxcll, maxfall = metadata_mod.maxcll_maxfall(stats)
-
+    #
+    # They are measured AFTER the roll-off into the mastering peak, because
+    # that is what the encoder writes. Measuring the raw frames, as this did
+    # until 16 Sep 2026, produced MaxCLL above the declared display for any
+    # frame with SDR white in it.
     def frames():
         for path in paths:
             yield _load(path, args.nits_scale)
 
+    def mastered():
+        for frame in frames():
+            yield video_mod.shoulder_to_peak(frame, args.peak_nits)
+
+    stats = [metadata_mod.analyze_frame(frame, index=i)
+             for i, frame in enumerate(mastered())]
+    maxcll, maxfall = metadata_mod.maxcll_maxfall(stats)
+
     out = video_mod.encode_sequence(
-        frames(), args.output, target=args.target, fps=args.fps,
+        mastered(), args.output, target=args.target, fps=args.fps,
         peak_nits=args.peak_nits, maxcll=maxcll, maxfall=maxfall,
         source_space=args.source_space, min_nits=args.min_nits,
-        verify_tags=args.verify_tags)
+        verify_tags=args.verify_tags, shoulder=False)
     # The tags go in the report whether or not they were enforced, so a file
     # made with --no-verify-tags still says on the record what it came out as.
     # Both places are reported: ProRes keeps its colour description in the
@@ -182,7 +191,7 @@ def _cmd_bench(args) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rudra", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -220,7 +229,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("aces", help="export ACES 2065-1 container EXR")
     p.add_argument("input", type=Path)
     p.add_argument("--output", required=True, type=Path)
-    p.add_argument("--source-space", default="rec2020", choices=["rec2020", "rec709", "p3d65"])
+    p.add_argument("--source-space", default="rec709", choices=["rec2020", "rec709", "p3d65"],
+                   help="primaries of the frames. RUDRA never converts primaries, so "
+                        "a master from an sRGB plate is rec709 whatever its "
+                        "luminance; pass rec2020 only for a plate that was")
     p.add_argument("--container", default="aces2065-1", choices=["aces2065-1", "acescg"],
                    help="aces2065-1 (AP0, archival) or acescg (AP1, what a comp works in)")
     p.add_argument("--exposure-scale", type=float, default=1.0)
@@ -236,8 +248,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--peak-nits", type=float, default=1000.0,
                    help="mastering display peak, written into the stream (default 1000)")
     p.add_argument("--min-nits", type=float, default=0.005)
-    p.add_argument("--source-space", default="rec2020",
-                   choices=["rec2020", "rec709", "p3d65"])
+    p.add_argument("--source-space", default="rec709",
+                   choices=["rec2020", "rec709", "p3d65"],
+                   help="primaries of the frames (see `aces`). The stream is "
+                        "always Rec.2020; this says what to convert from")
     p.add_argument("--no-verify-tags", dest="verify_tags", action="store_false",
                    help="hand over the file even if its Rec.2020 / PQ colour "
                         "tags did not land. The check runs by default, because "
@@ -256,7 +270,11 @@ def main(argv: list[str] | None = None) -> int:
                         "e.g. --test-dir baseline, against the same ref/.")
     p.set_defaults(fn=_cmd_bench)
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     return args.fn(args)
 
 

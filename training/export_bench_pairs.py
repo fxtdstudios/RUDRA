@@ -253,7 +253,10 @@ def main() -> int:
             path.parent.mkdir(parents=True, exist_ok=True)
             write_exr(path, to_scene_linear(frame), half=True)
         if not (args.no_baseline or args.only_test):
-            base = sdr_to_baseline_hdr(sdr)[0].permute(1, 2, 0).float().cpu().numpy()
+            # The baseline scored against the model is the one the model was
+            # trained over -- same exposure -- or the comparison is between two
+            # different renders of the input.
+            base = sdr_to_baseline_hdr(sdr, model.corpus_ev)[0].permute(1, 2, 0).float().cpu().numpy()
             path = out / "baseline" / scene / f"{asset}.exr"
             path.parent.mkdir(parents=True, exist_ok=True)
             write_exr(path, to_scene_linear(base), half=True)

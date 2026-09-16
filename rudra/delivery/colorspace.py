@@ -20,6 +20,7 @@ import numpy as np
 __all__ = [
     "PRIMARIES", "WHITE_POINTS", "npm", "bradford_cat",
     "rgb_to_rgb_matrix", "convert", "AP0_CHROMATICITIES", "AP1_CHROMATICITIES",
+    "REC2020_CHROMATICITIES",
 ]
 
 # (rx, ry, gx, gy, bx, by)
@@ -48,6 +49,10 @@ AP0_CHROMATICITIES = (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767
 # OUT of; AP1 is where Nuke, Blender and most comps actually sit, and it is
 # what a colorist means by "give me ACES".
 AP1_CHROMATICITIES = (0.713, 0.293, 0.165, 0.830, 0.128, 0.044, 0.32168, 0.33767)
+
+# A linear Rec.2020 EXR with no chromaticities attribute is read as Rec.709 by
+# Resolve and Nuke, which is a quiet desaturation of everything in it.
+REC2020_CHROMATICITIES = (0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290)
 
 _BRADFORD = np.array([
     [0.8951, 0.2664, -0.1614],
