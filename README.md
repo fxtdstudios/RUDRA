@@ -912,9 +912,15 @@ feathering fields and feathering composed predictions are not the same operation
 either side of `expm1`. The viewer and Master both ask for an untiled pass, fall
 back to tiles only on OOM, and report which they used.
 
-The screenshot at the top of this file is generated against a running Studio and
-refuses to overwrite itself with anything under 200 KB, which is the size of an
-error page:
+The screenshot at the top of this file is the wipe: the analytic baseline on the
+left, the reconstruction on the right, both presented at the same 1 000-nit
+display peak so the difference between them is the data and not a grade. On
+that frame the SDR clips on 0.90% of pixels, the two sides differ by a mean of
+687 nits inside that region, and by 0.0000 nits outside it -- which is the
+do-no-harm claim, shown rather than asserted.
+
+It is generated against a running Studio and refuses to overwrite itself with
+anything under 200 KB, which is the size of an error page:
 
 ```bash
 python ui/capture_shot.py
