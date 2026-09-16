@@ -347,13 +347,18 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
         raise EncodeError(f"unknown target {target!r}. Choose from: "
                           + ", ".join(sorted(TARGETS)))
     spec = TARGETS[target]
-    if not shutil.which("ffmpeg"):
-        raise EncodeError("ffmpeg is not on PATH, so nothing can be encoded. "
-                          "Install it (winget install Gyan.FFmpeg) and try again.")
 
-    output = Path(output).with_suffix(spec.suffix)
-    output.parent.mkdir(parents=True, exist_ok=True)
-
+    # ARGUMENTS FIRST, THEN THE ENVIRONMENT, THEN ANYTHING WITH SIDE EFFECTS.
+    #
+    # This used to probe for ffmpeg before it looked at the frames, which meant
+    # an empty sequence on a machine without ffmpeg reported "install ffmpeg"
+    # -- true, and not the problem. The caller passed nothing to encode, and
+    # that is worth saying whether or not a codec is installed. CI has no
+    # ffmpeg and caught it; a user with a bad call and no ffmpeg would have
+    # been sent to fix the wrong thing.
+    #
+    # Consuming the first frame here is also what validates it, so the shape
+    # check comes for free before anything is created on disk.
     iterator = iter(frames)
     try:
         first = np.asarray(next(iterator), dtype=np.float64)
@@ -362,6 +367,14 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
     if first.ndim != 3 or first.shape[2] != 3:
         raise EncodeError(f"expected (H, W, 3) frames, got {first.shape}")
     height, width = first.shape[:2]
+
+    if not shutil.which("ffmpeg"):
+        raise EncodeError("ffmpeg is not on PATH, so nothing can be encoded. "
+                          "Install it (winget install Gyan.FFmpeg) and try again.")
+
+    # Only now, once the call is known to be encodable, is a directory made.
+    output = Path(output).with_suffix(spec.suffix)
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     args = ["ffmpeg", "-v", "error", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb48le",
