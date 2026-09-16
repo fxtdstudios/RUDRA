@@ -261,3 +261,42 @@ input[type=range]{ accent-color:var(--accent); }
 }
 .appfoot i{ display:block; width:60px; height:1px;
             background:linear-gradient(90deg,transparent,rgba(120,140,160,.4),transparent); }
+
+/* ---- viewer: layers, legend, probe, zoom ------------------------------- */
+
+.viewer.probing{ cursor:crosshair; }
+.viewer.panning{ cursor:grabbing; }
+.viewer{ overflow:hidden; }          /* pan is a transform, not a scrollbar */
+.plate{ will-change:transform; transform-origin:50% 50%; }
+
+/* The legend is the whole point of false colour: a zone map you cannot read
+   is a pretty picture. Sits on the plate so it is next to what it explains. */
+.fclegend{
+  position:absolute; left:8px; bottom:8px; z-index:3;
+  display:flex; align-items:center; gap:0;
+  padding:5px 7px; border-radius:6px;
+  background:rgba(6,10,14,.86); border:1px solid rgba(52,78,104,.45);
+  backdrop-filter:blur(6px);
+}
+.fclegend i{ display:block; width:20px; height:9px; }
+.fclegend i:first-of-type{ border-radius:2px 0 0 2px; }
+.fclegend i:last-of-type{ border-radius:0 2px 2px 0; }
+.fclegend span{
+  font-family:var(--mono); font-size:8px; color:var(--ink-3);
+  margin:0 2px 0 3px; transform:translateY(1px);
+}
+
+.probebox{
+  position:absolute; z-index:4; pointer-events:none;
+  min-width:196px; padding:9px 11px; border-radius:7px;
+  background:rgba(7,12,17,.94); border:1px solid rgba(72,106,140,.55);
+  box-shadow:0 12px 34px rgba(0,0,0,.65);
+  font-size:10.5px; line-height:1.6;
+}
+.probebox .pr{ display:flex; gap:10px; }
+.probebox .pr .k{ width:58px; color:var(--ink-3); flex:none; }
+.probebox .pr .v{ color:var(--ink-2); }
+.probebox .pr .v.hi{ color:var(--gold-hi); }
+.probebox .pr .v.bad{ color:var(--bad); }
+
+#zoomVal{ min-width:44px; text-align:right; color:var(--ink-3); font-size:10.5px; }

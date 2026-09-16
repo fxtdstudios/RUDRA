@@ -43,6 +43,10 @@
     shownCount: 0, shownT0: 0, measuredFps: 0, dropped: 0,
     mode: "all", strength: 1, peakEv: 0, preserve: true, anchor: true, carryChroma: true,
     show: "model", flipHeld: false,
+    view: 0,                 // 0 image, 1 false colour, 2 difference
+    probeOn: false, probeLock: null,
+    scale: null,             // null = fit to window; otherwise a multiplier
+    panX: 0, panY: 0, panning: false,
     // Wipe: null when off, otherwise 0..1 across the plate. The baseline is on
     // the left, the reconstruction on the right.
     wipe: null, wipeDragging: false,
@@ -397,9 +401,15 @@
     if (!ctx || !state.header) { return; }
     var wiping = state.wipe !== null;
     ctx.setParams({displayNits: displayNits(), show: shown(),
+                   view: state.view,
                    wipe: wiping ? state.wipe : -1});
     ctx.present();
-    $("peakBadge").textContent = "Display peak " + Math.round(displayNits()) + " nits";
+    $("peakBadge").textContent = state.view === 1
+      ? "False colour \u00b7 nits"
+      : (state.view === 2 ? "Difference \u00b7 |RUDRA \u2212 baseline|"
+                          : "Display peak " + Math.round(displayNits()) + " nits");
+    var leg = $("fcLegend");
+    if (leg) { leg.hidden = state.view !== 1; }
     var isBase = !wiping && shown() === "baseline";
     $("plateLabel").textContent = wiping
       ? ("Baseline \u2502 RUDRA" + (graded() ? " + region EV" : ""))
@@ -1008,12 +1018,130 @@
     ["?", "This list"]
   ];
 
+  /* ---- viewer geometry ---------------------------------------------------
+     Zoom and pan are a CSS transform on the plate, not a resize of the canvas:
+     the canvas stays at frame resolution, so zooming never re-rasterises and
+     never costs a recomposite. It also keeps every client-to-image mapping
+     honest for free -- getBoundingClientRect() already reports the transformed
+     box, so the wipe and the probe need no scale maths of their own. */
+  function fitScale() {
+    var v = $("viewer"), f = ctx && ctx.size();
+    if (!f || !v.clientWidth) { return 1; }
+    var pad = 28;
+    return Math.min((v.clientWidth - pad) / f.width, (v.clientHeight - pad) / f.height);
+  }
+
+  function applyViewport() {
+    var plate = $("plate");
+    if (!plate) { return; }
+    if (state.scale === null) {
+      state.panX = state.panY = 0;
+      plate.style.transform = "";
+      plate.style.maxWidth = "100%";
+      plate.style.maxHeight = "100%";
+    } else {
+      plate.style.maxWidth = "none";
+      plate.style.maxHeight = "none";
+      plate.style.transform = "translate(" + state.panX.toFixed(1) + "px," +
+                             state.panY.toFixed(1) + "px) scale(" + state.scale + ")";
+    }
+    var el = $("zoomVal");
+    if (el) {
+      var s = state.scale === null ? fitScale() : state.scale;
+      el.textContent = Math.round(s * 100) + "%";
+    }
+    [].forEach.call($("zoomSeg").children, function (b) {
+      if (!b.dataset.zoom) { return; }
+      b.classList.toggle("on", b.dataset.zoom === "fit" ? state.scale === null
+                                                        : state.scale === 1);
+    });
+  }
+
+  function zoomAbout(clientX, clientY, factor) {
+    var plate = $("plate");
+    if (!plate || plate.hidden) { return; }
+    var from = state.scale === null ? fitScale() : state.scale;
+    var to = Math.max(0.05, Math.min(32, from * factor));
+    var r = plate.getBoundingClientRect();
+    // keep the point under the cursor fixed
+    var cx = clientX - (r.left + r.width / 2);
+    var cy = clientY - (r.top + r.height / 2);
+    var k = to / from;
+    state.panX = (state.panX - cx) * k + cx;
+    state.panY = (state.panY - cy) * k + cy;
+    state.scale = to;
+    applyViewport();
+  }
+
+  /* ---- probe -------------------------------------------------------------
+     The frame-wide numbers answer "what is in this shot". Nothing answered
+     "what is THIS pixel", which is the question asked at a specular -- and it
+     is the claim itself, measured one pixel at a time: what the baseline had
+     there, what the network put there, and whether the SDR was clipped at that
+     point at all. A lift where the SDR never clipped is invention, not
+     reconstruction, and this is the only view that tells them apart. */
+  function probeAt(clientX, clientY) {
+    if (!ctx || !state.header || !$("plate") || $("plate").hidden) { return null; }
+    var cv = $("gl"), r = cv.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) { return null; }
+    var f = ctx.size();
+    var x = Math.floor((clientX - r.left) / r.width * f.width);
+    var y = Math.floor((clientY - r.top) / r.height * f.height);
+    if (x < 0 || y < 0 || x >= f.width || y >= f.height) { return null; }
+    var s = ctx.probe(x, y);
+    if (!s) { return null; }
+    var i = y * f.width + x;
+    s.hiMask = hiMask ? hiMask[i] : null;
+    s.shMask = shMask ? shMask[i] : null;
+    var frame = current();
+    if (frame && frame.buf && frame.header && frame.header.offsets) {
+      var sdr = new Uint8Array(frame.buf, frame.header.offsets.sdr, f.width * f.height * 3);
+      s.sdr = [sdr[i * 3], sdr[i * 3 + 1], sdr[i * 3 + 2]];
+    }
+    return s;
+  }
+
+  function stops(nits) {
+    return Math.log2(Math.max(nits, 1e-6) / DIFFUSE_WHITE);
+  }
+
+  function showProbe(s, clientX, clientY) {
+    var box = $("probeBox");
+    if (!box) { return; }
+    if (!s) { box.hidden = true; return; }
+    var clipped = s.sdr && Math.max(s.sdr[0], s.sdr[1], s.sdr[2]) >= 254;
+    var d = stops(s.model.nits) - stops(s.baseline.nits);
+    function row(k, v, cls) {
+      return '<div class="pr"><span class="k">' + k + '</span><span class="v' +
+             (cls ? " " + cls : "") + '">' + v + "</span></div>";
+    }
+    box.innerHTML =
+      row("x,y", s.x + ", " + s.y) +
+      row("baseline", Math.round(s.baseline.nits).toLocaleString("en-US") + " nits  " +
+          (stops(s.baseline.nits) >= 0 ? "+" : "") + stops(s.baseline.nits).toFixed(2) + " st") +
+      row("RUDRA", Math.round(s.model.nits).toLocaleString("en-US") + " nits  " +
+          (stops(s.model.nits) >= 0 ? "+" : "") + stops(s.model.nits).toFixed(2) + " st", "hi") +
+      row("delta", (d >= 0 ? "+" : "") + d.toFixed(2) + " stops", Math.abs(d) > 0.01 ? "hi" : "") +
+      (s.sdr ? row("SDR", s.sdr.join(",") + (clipped ? "  clipped" : ""),
+                   clipped ? "bad" : "") : "") +
+      row("mask", "hi " + (s.hiMask === null ? "-" : s.hiMask.toFixed(2)) +
+                  "  sh " + (s.shMask === null ? "-" : s.shMask.toFixed(2)));
+    box.hidden = false;
+    var vr = $("viewer").getBoundingClientRect();
+    var bw = 196, bh = box.offsetHeight || 118;
+    var lx = clientX - vr.left + 16, ly = clientY - vr.top + 16;
+    if (lx + bw > vr.width) { lx = clientX - vr.left - bw - 16; }
+    if (ly + bh > vr.height) { ly = clientY - vr.top - bh - 16; }
+    box.style.left = Math.max(4, lx) + "px";
+    box.style.top = Math.max(4, ly) + "px";
+  }
+
   /* ---- window ----------------------------------------------------------- */
   function applyWindow() {
     $("railLeft").classList.toggle("hidden", !state.railLeft);
     $("railRight").classList.toggle("hidden", !state.railRight);
     $("scopes").classList.toggle("hidden", !state.scopesOpen);
-    $("viewer").classList.toggle("actual", state.zoom === "actual");
+    applyViewport();
   }
 
   /* ---- menus ------------------------------------------------------------ */
@@ -1084,8 +1212,10 @@
     "rail-left": function () { state.railLeft = !state.railLeft; applyWindow(); },
     "rail-right": function () { state.railRight = !state.railRight; applyWindow(); },
     "scopes": function () { state.scopesOpen = !state.scopesOpen; applyWindow(); },
-    "zoom-fit": function () { state.zoom = "fit"; applyWindow(); },
-    "zoom-actual": function () { state.zoom = "actual"; applyWindow(); },
+    "zoom-fit": function () { state.scale = null; state.zoom = "fit"; applyViewport(); },
+    "zoom-actual": function () {
+      state.scale = 1; state.zoom = "actual"; state.panX = state.panY = 0; applyViewport();
+    },
     "shortcuts": function () {
       sheet("Keyboard", SHORTCUTS.map(function (s) {
         return '<div class="row"><span class="k">' + s[0] + "</span><span>" + s[1] + "</span></div>";
@@ -1244,6 +1374,65 @@
       if (state.flipHeld) { state.flipHeld = false; present(); }
     });
     $("wipeBtn").addEventListener("click", function () { ACTIONS.wipe(); });
+
+    /* view layers */
+    $("viewLayer").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-layer]");
+      if (!b) { return; }
+      state.view = parseInt(b.dataset.layer, 10) || 0;
+      [].forEach.call($("viewLayer").children, function (c) {
+        c.classList.toggle("on", c === b);
+      });
+      present();
+    });
+
+    /* probe */
+    $("probeBtn").addEventListener("click", function () {
+      state.probeOn = !state.probeOn;
+      this.classList.toggle("on", state.probeOn);
+      $("viewer").classList.toggle("probing", state.probeOn);
+      if (!state.probeOn) { showProbe(null); }
+    });
+    $("plate").addEventListener("pointermove", function (e) {
+      if (!state.probeOn || state.panning || state.wipeDragging) { return; }
+      showProbe(probeAt(e.clientX, e.clientY), e.clientX, e.clientY);
+    });
+    $("plate").addEventListener("pointerleave", function () {
+      if (state.probeOn) { showProbe(null); }
+    });
+
+    /* zoom and pan. Scroll zooms about the cursor, middle-drag pans -- the
+       Nuke and Resolve convention, and it leaves left-drag alone so the wipe
+       seam and hold-to-flip keep the gesture they already had. */
+    $("viewer").addEventListener("wheel", function (e) {
+      if (!ctx || !state.header) { return; }
+      e.preventDefault();
+      zoomAbout(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, {passive: false});
+
+    $("viewer").addEventListener("pointerdown", function (e) {
+      if (e.button !== 1) { return; }        // middle only
+      e.preventDefault();
+      if (state.scale === null) { state.scale = fitScale(); }
+      state.panning = {x: e.clientX, y: e.clientY, px: state.panX, py: state.panY};
+      $("viewer").classList.add("panning");
+      if ($("viewer").setPointerCapture) { $("viewer").setPointerCapture(e.pointerId); }
+    });
+    $("viewer").addEventListener("pointermove", function (e) {
+      if (!state.panning) { return; }
+      state.panX = state.panning.px + (e.clientX - state.panning.x);
+      state.panY = state.panning.py + (e.clientY - state.panning.y);
+      applyViewport();
+    });
+    window.addEventListener("pointerup", function () {
+      if (state.panning) { state.panning = false; $("viewer").classList.remove("panning"); }
+    });
+    $("viewer").addEventListener("dblclick", function () {
+      state.scale = null; applyViewport();
+    });
+    window.addEventListener("resize", function () {
+      if (state.scale === null) { applyViewport(); }
+    });
     $("strength").addEventListener("pointerdown", pushUndo);
     $("strength").addEventListener("input", function () {
       state.strength = parseFloat(this.value);

@@ -145,6 +145,32 @@
        the order the words "before and after" are read in. */
     "uniform float uWipe;",
     "uniform float uWipeHalfWidth;",
+    /* 0 = image, 1 = false colour by nits, 2 = |reconstruction - baseline|.
+       All three read the same two float targets that are already bound for the
+       wipe, so switching view costs one uniform and no recomposite -- which is
+       what lets false colour stay live through playback. */
+    "uniform int uView;",
+    "uniform float uPeakNits;",
+    "uniform float uDiffGain;",
+    /* Rec.2020 luma. The working space is linear Rec.2020, so a mean of RGB
+       would read a saturated red highlight as dimmer than it is, which is
+       exactly the pixel this tool exists to judge. */
+    "float lum2020(vec3 c){ return dot(c, vec3(0.2627, 0.6780, 0.0593)); }",
+    /* Zone boundaries in nits, keyed to this pipeline's diffuse white of 203.
+       The two bands either side of white are deliberately narrow: knowing that
+       a face is at 160 rather than 250 is the judgement this replaces. */
+    "vec3 falseColour(float n){",
+    "  if (n <     0.1) return vec3(0.169, 0.122, 0.239);",
+    "  if (n <     1.0) return vec3(0.184, 0.294, 0.561);",
+    "  if (n <    10.0) return vec3(0.184, 0.561, 0.722);",
+    "  if (n <   100.0) return vec3(0.200, 0.627, 0.416);",
+    "  if (n <   160.0) return vec3(0.604, 0.655, 0.698);",
+    "  if (n <   250.0) return vec3(0.914, 0.929, 0.945);",
+    "  if (n <  1000.0) return vec3(0.910, 0.765, 0.290);",
+    "  if (n <  4000.0) return vec3(0.910, 0.529, 0.227);",
+    "  if (n < 10000.0) return vec3(0.816, 0.263, 0.184);",
+    "  return vec3(0.780, 0.290, 0.780);",
+    "}",
     "void main(){",
     /* The one flip in the whole pipeline, and it belongs here. Every texture
        is uploaded in array order -- row 0 is the TOP of the image -- and the
@@ -159,7 +185,21 @@
     "  vec2 uv = vec2(vUV.x, 1.0 - vUV.y);",
     "  vec3 hdr = (uWipe >= 0.0 && vUV.x < uWipe) ? texture(uHdrBefore, uv).rgb",
     "                                             : texture(uHdr, uv).rgb;",
-    "  vec3 col = linearToSrgb(clamp(hdr * uScale, 0.0, 1.0));",
+    "  vec3 col;",
+    "  if (uView == 1) {",
+    "    col = falseColour(lum2020(hdr) * uPeakNits);",
+    "  } else if (uView == 2) {",
+    /* The difference is shown on a log scale because the interesting values
+       span four decades: a 2-nit lift in a shadow and a 6000-nit reconstruction
+       in a specular are both things you want to see, and a linear ramp shows
+       only the second. Black means the network changed nothing there, which is
+       as much of the answer as the bright parts are. */
+    "    float d = lum2020(abs(texture(uHdr, uv).rgb - texture(uHdrBefore, uv).rgb));",
+    "    float v = clamp(log2(1.0 + d * uPeakNits) / log2(1.0 + uDiffGain), 0.0, 1.0);",
+    "    col = vec3(v * 0.95, v * 0.62, v * 0.28);",
+    "  } else {",
+    "    col = linearToSrgb(clamp(hdr * uScale, 0.0, 1.0));",
+    "  }",
     /* The handle is drawn here rather than as a DOM overlay so it cannot drift
        from the split it marks: one pixel of disagreement between the line and
        the seam is exactly the artefact a wipe exists to rule out. */
@@ -306,6 +346,8 @@
     var baseSample = null;     // cached readback of smallBase
     var params = {strength: 1, mode: "all", preserve: true,
                   displayNits: 203, show: "model", shadowWeight: 1.0,
+                  view: 0,           // 0 image, 1 false colour, 2 difference
+                  diffGain: 2000,    // nits at which the difference ramp saturates
                   wipe: -1,          // <0 is off; otherwise 0..1 across the canvas
                   wipeHalfWidth: 0.0012,
                   regions: [{label: "highlights", low_nits: 400, high_nits: 2000, ev: 0},
@@ -451,9 +493,42 @@
       gl.uniform1i(uniform(progDisplay, "uHdrBefore"), 7);
       gl.uniform1f(uniform(progDisplay, "uScale"),
                    PEAK_NITS / Math.max(params.displayNits, 1e-3));
+      gl.uniform1i(uniform(progDisplay, "uView"), params.view | 0);
+      gl.uniform1f(uniform(progDisplay, "uPeakNits"), PEAK_NITS);
+      gl.uniform1f(uniform(progDisplay, "uDiffGain"), Math.max(params.diffGain, 1));
       gl.uniform1f(uniform(progDisplay, "uWipe"), wiping ? params.wipe : -1.0);
       gl.uniform1f(uniform(progDisplay, "uWipeHalfWidth"), params.wipeHalfWidth);
       draw(progDisplay, frame.w, frame.h, null);
+    }
+
+    /* One pixel out of each of the two float targets. readPixels on a 1x1 box
+       is cheap enough to run on mousemove; reading the whole buffer (which
+       readComposite does) is not, which is why this is a separate path and not
+       a crop of that one.
+
+       y is NOT flipped here, and that is worth stating because it looks like it
+       should be. COMPOSITE writes through a full-screen quad with vUV passed
+       straight through, so image row 0 lands on framebuffer row 0: inside these
+       targets the image is already bottom-up, in the framebuffer's own order.
+       readPixels therefore takes py directly. The flip belongs in DISPLAY, at
+       presentation, which is where it is -- and a flip here on top of that one
+       reads the mirrored scanline, which is a bug that looks plausible in every
+       frame that happens to be vertically symmetric. */
+    function probe(x, y) {
+      if (!frame) { return null; }
+      var px = Math.max(0, Math.min(frame.w - 1, Math.round(x)));
+      var py = Math.max(0, Math.min(frame.h - 1, Math.round(y)));
+      var out = new Float32Array(4), res = {x: px, y: py};
+      [["model", model], ["baseline", base]].forEach(function (pair) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, pair[1].fb);
+        gl.readPixels(px, py, 1, 1, gl.RGBA, gl.FLOAT, out);
+        res[pair[0]] = {
+          r: out[0] * PEAK_NITS, g: out[1] * PEAK_NITS, b: out[2] * PEAK_NITS,
+          nits: (out[0] * 0.2627 + out[1] * 0.6780 + out[2] * 0.0593) * PEAK_NITS
+        };
+      });
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      return res;
     }
 
     function readComposite(which) {
@@ -526,6 +601,10 @@
           }
         }
         if (p.displayNits !== undefined) { params.displayNits = p.displayNits; }
+        // view and diffGain choose how a finished buffer is READ, never what is
+        // in it, so like the wipe they never trigger a recomposite.
+        if (p.view !== undefined) { params.view = p.view | 0; }
+        if (p.diffGain !== undefined) { params.diffGain = p.diffGain; }
         if (p.show !== undefined) { params.show = p.show; }
         // The wipe only chooses which of two finished buffers each pixel reads,
         // so it never triggers a recomposite -- dragging it is free.
@@ -537,6 +616,7 @@
         return recompose;
       },
       present: present,
+      probe: probe,
       readComposite: readComposite,
       sample: sample,
       peakNits: function () { return reduce(model, 0) * PEAK_NITS; },
@@ -545,7 +625,8 @@
         return reduce(model, 1) * PEAK_NITS / (frame.w * frame.h);
       },
       size: function () { return frame ? {width: frame.w, height: frame.h} : null; },
-      wipe: function () { return params.wipe; }
+      wipe: function () { return params.wipe; },
+      view: function () { return params.view; }
     };
   }
 

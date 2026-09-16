@@ -67,6 +67,27 @@ as fills rather than hairlines, and when any column sits on the ceiling it says
 so, with the percentage. On a tool about the two ends of the range, a scope
 that renders both ends in the same grey as the middle is not a scope.
 
+**Four things to look at, and three ways to measure.** The **Layer** segment
+switches what the viewer draws from the same two composited buffers, so it
+costs one uniform and no recomposite -- false colour stays live through
+playback. *Image* is the picture. *False colour* paints luminance zones in
+nits against this pipeline's diffuse white of 203, with a legend on the plate;
+the two bands either side of white are deliberately narrow, because knowing a
+face is at 160 rather than 250 is the judgement it replaces. *Difference* is
+`|RUDRA - baseline|` on a log ramp: black means the network changed nothing
+there, which is as much of the answer as the bright parts are.
+
+**Probe** reads one pixel and is the claim measured one pixel at a time: what
+the baseline had there, what the network put there, the delta in stops, the
+mask values, and whether the SDR was clipped at that point at all. A lift
+where the SDR never clipped is invention rather than reconstruction, and the
+probe is the only view that tells them apart.
+
+Scroll zooms about the cursor, middle-drag pans, double-click fits. Zoom is a
+transform on the plate rather than a resize of the canvas, so it never
+re-rasterises and never recomposites -- and every client-to-image mapping,
+the wipe seam and the probe included, stays correct under it for free.
+
 Two workspaces, top right. **Simple** hides the scopes, the log and the
 explanatory notes and leaves open, look, compare, render. **Full** is
 everything. Simple hides nothing that is the only way to reach a behaviour:

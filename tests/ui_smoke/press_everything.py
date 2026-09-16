@@ -202,6 +202,64 @@ def main(URL, FRAMES):
         pg.keyboard.press("Escape")
         record("Wipe ▸ Escape exits too", canvas() == full)
 
+        # ---- View layers ---------------------------------------------------
+        # False colour and difference are uniforms on the same two float
+        # targets the wipe already reads, so the check that matters is that
+        # they change the canvas WITHOUT changing what was composited into it.
+        image = canvas()
+        probe_before = pg.evaluate("() => document.getElementById('gl').toDataURL().length")
+        pg.click("#viewLayer button[data-layer='1']")
+        fc = canvas()
+        record("Layer > False colour redraws", fc != image and
+               pg.eval_on_selector("#viewLayer button[data-layer='1']",
+                                   "e => e.classList.contains('on')"))
+        record("Layer > False colour shows its legend",
+               pg.eval_on_selector("#fcLegend", "e => !e.hidden"))
+        record("Layer > badge names the layer",
+               "False colour" in pg.inner_text("#peakBadge"),
+               pg.inner_text("#peakBadge"))
+        pg.click("#viewLayer button[data-layer='2']")
+        diff = canvas()
+        record("Layer > Difference redraws", diff != fc and diff != image)
+        record("Layer > legend hidden again off false colour",
+               pg.eval_on_selector("#fcLegend", "e => e.hidden"))
+        pg.click("#viewLayer button[data-layer='0']")
+        record("Layer > Image restores the original", canvas() == image)
+
+        # ---- Probe ---------------------------------------------------------
+        pg.click("#probeBtn")
+        record("Probe > toggles on",
+               pg.eval_on_selector("#probeBtn", "e => e.classList.contains('on')"))
+        box = pg.query_selector("#gl").bounding_box()
+        pg.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.4)
+        pg.wait_for_timeout(120)
+        record("Probe > reads a pixel",
+               pg.eval_on_selector("#probeBox", "e => !e.hidden"))
+        text = pg.inner_text("#probeBox")
+        record("Probe > reports both sides and the delta",
+               "baseline" in text and "RUDRA" in text and "delta" in text, text[:80])
+        record("Probe > reports the SDR code", "SDR" in text, text[:80])
+        pg.click("#probeBtn")
+        record("Probe > toggles off and hides",
+               pg.eval_on_selector("#probeBox", "e => e.hidden"))
+
+        # ---- Zoom and pan --------------------------------------------------
+        fit = pg.inner_text("#zoomVal")
+        pg.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        pg.mouse.wheel(0, -240)
+        pg.wait_for_timeout(80)
+        record("Zoom > scroll zooms in", pg.inner_text("#zoomVal") != fit,
+               fit + " -> " + pg.inner_text("#zoomVal"))
+        pg.dblclick("#viewer")
+        pg.wait_for_timeout(80)
+        record("Zoom > double-click returns to fit",
+               pg.eval_on_selector("#zoomSeg button[data-zoom='fit']",
+                                   "e => e.classList.contains('on')"))
+        pg.click("#zoomSeg button[data-zoom='actual']")
+        record("Zoom > 100% button", pg.inner_text("#zoomVal") == "100%",
+               pg.inner_text("#zoomVal"))
+        pg.click("#zoomSeg button[data-zoom='fit']")
+
         # ---- Edit menu ----------------------------------------------------
         before = canvas(); menu_click("undo")
         record("Edit ▸ Undo", "undo" in logtail(3))
