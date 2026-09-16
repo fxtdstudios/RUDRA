@@ -1,0 +1,263 @@
+/* RUDRA Studio — Radiance theme
+ *
+ * Additive. Loads AFTER style.css and overrides tokens and chrome only.
+ * No id is renamed, no control is removed, nothing app.js or shell.js binds
+ * to is touched — which is why the 71 controls and the smoke test still work.
+ */
+
+:root{
+  /* sampled from the mockup, not guessed */
+  --bg:#06090d;
+  --bg-deep:#04060a;
+  --panel:#080e14;
+  --panel-2:#0b131b;
+  --raise:#141d27;
+  --line:#16212c;
+  --line-2:#20303f;
+  --ink:#e8edf2;
+  --ink-2:#8fa2b4;
+  --ink-3:#5b6b7a;
+
+  --accent:#4d8fd6;          /* interactive state — toggles, focus */
+  --accent-dim:#1d334b;
+  --accent-line:#27486b;
+
+  --gold:#e8b07a;            /* data, highlights, the seam in the mark */
+  --gold-hi:#f8d8b8;
+  --gold-dim:#6b4a2e;
+
+  --ok:#5fb98a;
+  --warn:#d8a441;
+  --bad:#d05c52;
+  --radius:8px;
+  --radius-sm:5px;
+}
+
+/* ---- the field the window sits in ------------------------------------- */
+
+html,body{ background:var(--bg-deep); }
+
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(120% 90% at 78% -10%, rgba(80,120,180,.16), transparent 58%),
+    radial-gradient(90%  70% at 110% 58%, rgba(232,176,122,.10), transparent 60%),
+    radial-gradient(80%  60% at -8%  92%, rgba(60,96,150,.10), transparent 62%),
+    linear-gradient(180deg,#070b10 0%, #04060a 60%, #05080c 100%);
+}
+/* the two light streaks. Two rotated elements with a blur beat
+   mask-composite here: composite support is patchy and a silently missing
+   mask renders as a full-screen wash, which is worse than no streak. */
+.streak{
+  position:fixed; z-index:0; pointer-events:none;
+  height:2px; border-radius:2px;
+  background:linear-gradient(90deg, transparent,
+    rgba(232,176,122,.55) 22%, rgba(255,242,228,.95) 50%,
+    rgba(232,176,122,.5) 78%, transparent);
+  filter:blur(.4px) drop-shadow(0 0 14px rgba(232,176,122,.55));
+}
+.streak.a{ top:-2vh;  left:34%; width:74vw; transform:rotate(11deg); }
+.streak.b{ top:4vh;   left:52%; width:62vw; transform:rotate(15deg); opacity:.55; }
+.streak.c{ bottom:12vh; left:58%; width:66vw; transform:rotate(-24deg); opacity:.75; }
+.streak.d{ bottom:-4vh; left:44%; width:72vw; transform:rotate(-19deg); opacity:.45; }
+
+.app{
+  position:relative; z-index:1;
+  margin:26px 30px; height:calc(100vh - 52px);
+  border:1px solid rgba(64,92,124,.30);
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(9,14,19,.96), rgba(5,8,12,.98));
+  box-shadow:0 30px 90px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.04);
+  overflow:hidden;
+}
+
+/* ---- titlebar becomes the brand lockup -------------------------------- */
+
+.titlebar{
+  height:78px; flex:0 0 78px; padding:0 24px;
+  background:transparent;
+  border-bottom:1px solid rgba(40,62,84,.32);
+  gap:0;
+}
+.tb-dots{ display:flex; gap:7px; margin-right:20px; }
+.tb-dots i{ width:11px; height:11px; border-radius:50%; display:block; }
+.tb-dots i:nth-child(1){ background:#ec6a5e; }
+.tb-dots i:nth-child(2){ background:#f4bf4f; }
+.tb-dots i:nth-child(3){ background:#61c454; }
+
+.lockup{ display:flex; align-items:center; gap:13px; }
+.lockup img{ width:54px; height:54px; object-fit:contain; display:block;
+             filter:drop-shadow(0 0 18px rgba(232,176,122,.45)) drop-shadow(0 0 4px rgba(255,235,210,.35)); }
+.lockup .lk-txt{ display:flex; flex-direction:column; gap:3px; }
+.lockup .lk-name{
+  font-size:26px; font-weight:300; letter-spacing:.42em;
+  color:#f2f6fa; line-height:1.05; padding-left:2px; white-space:nowrap;
+}
+.lockup .lk-sub{
+  font-size:7.5px; letter-spacing:.195em; color:#6d7f90;
+  text-transform:uppercase; white-space:nowrap; line-height:1.2;
+}
+
+.wordstrip{
+  display:flex; align-items:center; gap:14px; margin:0 auto;
+  font-size:10.5px; letter-spacing:.34em; color:#9fb2c4; text-transform:uppercase;
+}
+.wordstrip s{ color:var(--ink-3); text-decoration:none; opacity:.6; }
+
+.studiomark{ display:flex; align-items:center; gap:10px; }
+.studiomark .sm-cube{
+  width:24px; height:24px; border-radius:5px; flex:0 0 auto;
+  border:1px solid rgba(120,150,180,.35);
+  background:linear-gradient(145deg, rgba(90,125,165,.30), rgba(20,30,42,.6));
+}
+.studiomark .sm-txt{ display:flex; flex-direction:column; gap:2px; }
+.studiomark .sm-name{ font-size:11px; letter-spacing:.26em; color:#cfdae6; }
+.studiomark .sm-sub{ font-size:7px; letter-spacing:.16em; color:var(--ink-3); }
+
+.titlebar .brand,.titlebar .product,.titlebar .wslabel{ color:var(--ink-3); }
+.titlebar .vrule{ background:rgba(60,88,116,.35); }
+.titlebar .pill{
+  background:rgba(18,28,38,.7); border:1px solid rgba(52,78,104,.45);
+  color:var(--ink-2); border-radius:999px; padding:3px 11px; font-size:10px;
+}
+.wsswitch{ border:1px solid rgba(52,78,104,.45); border-radius:999px; overflow:hidden; }
+.wsswitch button{ background:transparent; color:var(--ink-3); padding:4px 12px; font-size:10px;
+                  letter-spacing:.1em; text-transform:uppercase; }
+.wsswitch button.on{ background:rgba(77,143,214,.16); color:#bcd6f2; }
+.lamp{ box-shadow:0 0 10px currentColor; }
+
+/* ---- menubar ----------------------------------------------------------- */
+
+.menubar{
+  background:rgba(6,10,14,.6);
+  border-bottom:1px solid rgba(40,62,84,.26);
+  padding:0 16px;
+}
+.menu>.mtitle{ color:var(--ink-2); font-size:11.5px; letter-spacing:.04em; }
+.menu>.mtitle:hover,.menu.open>.mtitle{ background:rgba(77,143,214,.12); color:#dbe7f3; border-radius:var(--radius-sm); }
+.drop{
+  background:linear-gradient(180deg,#0d141c,#090e14);
+  border:1px solid rgba(52,78,104,.5); border-radius:var(--radius);
+  box-shadow:0 20px 50px rgba(0,0,0,.7);
+}
+.drop button:hover{ background:rgba(77,143,214,.14); }
+
+/* ---- rails and panels -------------------------------------------------- */
+
+.iconrail{ background:rgba(5,8,12,.5); border-right:1px solid rgba(40,62,84,.26); }
+.ibtn{ border-radius:var(--radius-sm); color:var(--ink-3); }
+.ibtn.on{ color:var(--gold-hi); background:rgba(232,176,122,.10); }
+
+.rail{ background:rgba(6,10,14,.55); border-color:rgba(40,62,84,.26); }
+.rail.left{ border-right:1px solid rgba(40,62,84,.26); }
+.rail.right{ border-left:1px solid rgba(40,62,84,.26); }
+
+.plabel{
+  color:var(--ink-3); font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;
+  border-bottom:1px solid rgba(40,62,84,.22);
+}
+.plabel .note{ letter-spacing:.06em; text-transform:none; }
+
+.dropzone{
+  border:1px dashed rgba(72,106,140,.45); border-radius:var(--radius);
+  background:linear-gradient(180deg, rgba(20,29,39,.5), rgba(10,16,22,.35));
+  color:var(--ink-2);
+}
+.dropzone b{ color:var(--ink); letter-spacing:.02em; }
+
+.tbtn{
+  background:rgba(20,29,39,.75); border:1px solid rgba(52,78,104,.45);
+  color:var(--ink-2); border-radius:var(--radius-sm);
+}
+.tbtn:hover{ border-color:rgba(77,143,214,.6); color:var(--ink); }
+.tbtn.primary,.actions .primary{
+  background:linear-gradient(180deg, rgba(77,143,214,.26), rgba(40,84,134,.22));
+  border-color:rgba(96,164,236,.6); color:#dcebfb;
+}
+.seg{ border:1px solid rgba(52,78,104,.45); border-radius:var(--radius-sm); overflow:hidden; }
+.seg button{ background:transparent; color:var(--ink-3); }
+.seg button.on{ background:rgba(77,143,214,.18); color:#cfe3f8; }
+
+.rail-foot .k,.field .k{ color:var(--ink-3); }
+.rail-foot .v,.field .v{ color:var(--gold); }
+
+/* ---- viewer ------------------------------------------------------------ */
+
+.centre{ background:transparent; }
+.vtools{ background:rgba(6,10,14,.45); border-bottom:1px solid rgba(40,62,84,.22); }
+.vlabel{ color:var(--ink-3); font-size:9.5px; letter-spacing:.2em; }
+.vstatic{ color:var(--gold); }
+
+.viewer{
+  background:radial-gradient(120% 100% at 50% 0%, #0b131b, #05080c);
+  margin:12px; border-radius:var(--radius);
+  border:1px solid rgba(40,62,84,.3);
+}
+.empty b{ color:var(--ink); }
+.plate{ position:relative; max-width:100%; max-height:100%; }
+.plate img{ border-radius:4px; }
+.badge{
+  background:rgba(6,10,14,.78); border:1px solid rgba(52,78,104,.4);
+  border-radius:999px; color:var(--ink-2); backdrop-filter:blur(6px);
+}
+.badge.num{ color:var(--gold); }
+
+.transport{ background:rgba(6,10,14,.45); border-top:1px solid rgba(40,62,84,.22); }
+.tc{ color:var(--gold); letter-spacing:.08em; }
+.scrub .track{ background:rgba(40,62,84,.5); }
+.scrub .head{ background:var(--gold-hi); box-shadow:0 0 10px rgba(248,216,184,.7); }
+
+/* ---- scopes become the mockup's analysis cards ------------------------- */
+
+.scopes{ background:transparent; gap:12px; padding:0 12px 12px; }
+.scope{
+  background:linear-gradient(180deg, rgba(20,29,39,.55), rgba(8,13,18,.7));
+  border:1px solid rgba(40,62,84,.34); border-radius:var(--radius);
+}
+.scope .plot{ padding:8px 10px 10px; }
+#wave path,#wave polyline{ stroke:var(--gold-hi); }
+#wave .grid,#hist .grid{ stroke:rgba(64,92,124,.28); }
+
+/* ---- inspector --------------------------------------------------------- */
+
+.itabs{ border-bottom:1px solid rgba(40,62,84,.26); }
+.itabs button{ color:var(--ink-3); font-size:10px; letter-spacing:.16em; text-transform:uppercase; }
+.itabs button.on{ color:#dce9f6; border-bottom:2px solid var(--accent); }
+
+.ctl{ padding:12px 14px; }
+.slider .lab{ color:var(--ink-2); font-size:10.5px; letter-spacing:.06em; }
+.slider .val{ color:var(--gold); }
+.slider .unit{ color:var(--ink-3); }
+input[type=range]{ accent-color:var(--accent); }
+
+.check .box{ border:1px solid rgba(72,106,140,.6); border-radius:3px; }
+.check.on .box{ background:var(--accent); border-color:var(--accent); color:#04070a; }
+.check .hint{ color:var(--gold-dim); }
+
+.note-p{ color:var(--ink-3); }
+
+.logwrap .log{
+  background:rgba(4,7,10,.7); border:1px solid rgba(40,62,84,.3);
+  border-radius:var(--radius-sm); color:var(--ink-2);
+}
+.actions button{ border-radius:var(--radius-sm); }
+
+/* ---- statusbar --------------------------------------------------------- */
+
+.statusbar{
+  background:rgba(5,8,12,.6); border-top:1px solid rgba(40,62,84,.26);
+  color:var(--ink-3);
+}
+.statusbar .s{ letter-spacing:.04em; }
+
+/* ---- footer line under the window -------------------------------------- */
+
+.appfoot{
+  position:fixed; left:0; right:0; bottom:2px; z-index:2;
+  display:flex; align-items:center; justify-content:center; gap:16px;
+  font-size:8.5px; letter-spacing:.3em; text-transform:uppercase;
+  color:rgba(120,140,160,.5); pointer-events:none;
+}
+.appfoot i{ display:block; width:60px; height:1px;
+            background:linear-gradient(90deg,transparent,rgba(120,140,160,.4),transparent); }

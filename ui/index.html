@@ -9,15 +9,27 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="theme.css?v=1">
 </head>
 <body class="ws-full">
+<i class="streak a"></i><i class="streak b"></i><i class="streak c"></i><i class="streak d"></i>
 <div class="app">
 
   <div class="titlebar">
-    <span class="brand">FXTD</span>
-    <span class="vrule"></span>
-    <span class="product">RUDRA Studio</span>
-    <span class="spacer"></span>
+    <span class="tb-dots"><i></i><i></i><i></i></span>
+
+    <span class="lockup">
+      <img src="assets/rudra-mark-256.png" alt="">
+      <span class="lk-txt">
+        <span class="lk-name">RUDRA</span>
+        <span class="lk-sub">Radiance Universal Dynamic Range Adapter</span>
+      </span>
+    </span>
+
+    <span class="wordstrip">
+      <span>Reveal</span><s>/</s><span>Recover</span><s>/</s><span>Adapt</span><s>/</s><span>Extend</span>
+    </span>
+
     <span class="wslabel">WORKSPACE</span>
     <span class="wsswitch">
       <button type="button" id="wsSimple" title="Hide the scopes and the advanced groups">Simple</button>
@@ -28,6 +40,14 @@
     <span class="vrule"></span>
     <span class="pill" id="device">—</span>
     <span class="lamp off" id="lamp"></span>
+    <span class="vrule"></span>
+    <span class="studiomark">
+      <span class="sm-cube"></span>
+      <span class="sm-txt">
+        <span class="sm-name">RADIANCE STUDIO</span>
+        <span class="sm-sub">Tools for a brighter reality</span>
+      </span>
+    </span>
   </div>
 
   <div class="menubar" id="menubar">
@@ -318,6 +338,8 @@
     <span class="s" id="statusTime">—</span>
   </div>
 </div>
+
+<div class="appfoot"><i></i><span>A Radiance Studio technology</span><i></i></div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="overlaySheet"></div></div>
 

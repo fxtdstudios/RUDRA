@@ -34,6 +34,8 @@ what most of this file is about.
 | [`docs/TRAINING.md`](docs/TRAINING.md) | training on your own footage, end to end |
 | [`docs/INTERNALS.md`](docs/INTERNALS.md) | the composite, the units, the gate, the corpus |
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what the training set has to contain, and what was wrong with the last one |
+| [`docs/RETRAIN_RUNBOOK.md`](docs/RETRAIN_RUNBOOK.md) | the five phases of the next corpus, each with the gate that stops it |
+| [`docs/TRAINING_STEPS.md`](docs/TRAINING_STEPS.md) | the next training run, command by command |
 | [`checkpoints/README.md`](checkpoints/README.md) | the model registry and the weights licence |
 
 That is the whole set. Nineteen dated working notes used to sit beside this
@@ -58,7 +60,12 @@ looking at, how it compares against the baseline, framing guides and zoom. The
 **inspector** on the right, in three tabs: Reconstruct for the recovery
 controls, Grade for Region EV, Deliver for the container and the conform
 switches. **Scopes** across the bottom: waveform, histogram and every measured
-number.
+number. Both scopes carry one hue per zone -- blue below four stops under
+diffuse white, neutral through the middle, gold above two stops over -- and
+both mark 203 nits. The waveform draws the envelope and the interquartile band
+as fills rather than hairlines, and when any column sits on the ceiling it says
+so, with the percentage. On a tool about the two ends of the range, a scope
+that renders both ends in the same grey as the middle is not a scope.
 
 Two workspaces, top right. **Simple** hides the scopes, the log and the
 explanatory notes and leaves open, look, compare, render. **Full** is
@@ -73,6 +80,19 @@ are decoded on demand as you scrub, so the shot opens now rather than in a
 minute. Video needs `ffmpeg` on `PATH` (`winget install Gyan.FFmpeg`); a folder
 of frames needs nothing. **Master EXR** works the same on an opened shot as on a
 dropped file, and names the file after the frame.
+
+**Playback runs at the footage's own frame rate.** The transport used to be a
+160 ms `setInterval`, which is a 6.25 fps ceiling that has nothing to do with
+the clip, and it fetched each frame only once the playhead had already landed
+on it -- a round trip and a forward pass per beat, in series. It is now a
+clock: which frame is due is a function of elapsed wall-clock time and the fps
+the server reports, and a frame that is not decoded yet is **skipped rather
+than waited for**, which is the difference between real time and slow motion.
+Behind it a read-ahead keeps twelve frames warm in front of the playhead on
+three parallel requests. The transport reads `measured / target fps · N
+dropped · N ahead`, so when it cannot keep up you can see which side the limit
+is on: if `ahead` sits at zero the forward pass is the constraint, not the
+player.
 
 Two ways to compare against the analytic inverse tone map:
 

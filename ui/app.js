@@ -17,8 +17,16 @@
 
   var PEAK_NITS = 10000, DIFFUSE_WHITE = 203;
   var SCOPE_LO = 0.05, SCOPE_HI = 4000;
-  var CACHE_FRAMES = 4;          // decoded frames held in memory at once
-  var PLAY_INTERVAL_MS = 160;
+  /* Playback used to be setInterval(160ms) -- a hard 6.25 fps ceiling that
+     had nothing to do with the footage, plus a "skip the beat if busy" guard
+     that dropped time instead of catching up. And nothing prefetched: each
+     frame was fetched only once the playhead landed on it, so every beat paid
+     a round trip plus a forward pass. Real time was not reachable by tuning
+     that number; the loop had to become a clock with a read-ahead behind it. */
+  var CACHE_FRAMES = 32;         // decoded frames held in memory at once
+  var PREFETCH_AHEAD = 12;       // frames to keep decoded in front of the head
+  var PREFETCH_PARALLEL = 3;     // concurrent read-ahead requests
+  var DEFAULT_FPS = 24;
 
   function defaultRegions() {
     return [
@@ -31,6 +39,8 @@
   var state = {
     live: false, busy: false,
     frames: [], index: -1, playing: false, playTimer: null,
+    fps: DEFAULT_FPS, playT0: 0, playBase: 0, playRaf: null,
+    shownCount: 0, shownT0: 0, measuredFps: 0, dropped: 0,
     mode: "all", strength: 1, peakEv: 0, preserve: true, anchor: true, carryChroma: true,
     show: "model", flipHeld: false,
     // Wipe: null when off, otherwise 0..1 across the plate. The baseline is on
@@ -258,50 +268,120 @@
     return out;
   }
 
+  /* Scopes.
+
+     The old pair were three grey percentile strokes and a row of flat grey
+     bars. Both drew the data correctly and neither let you READ it: nothing
+     marked diffuse white, nothing marked the clip, and highlights and shadows
+     were the same colour as everything else -- on a tool whose whole subject is
+     what happens at the two ends of the range.
+
+     So: one hue per zone, carried identically across both scopes. Blue below
+     -4 stops from diffuse white, neutral through the middle, gold above +2.
+     A dashed line on 203 nits in both. And the clip gets its own band, because
+     "did this frame clip, and where" is the question the tool exists to
+     answer. */
+  var Z_SHADOW = "#4d8fd6", Z_MID = "#9fb0c0", Z_HI = "#e8b07a", Z_HI_BRIGHT = "#f8d8b8";
+
+  function nitsToY(n) {
+    var span = Math.log10(SCOPE_HI / SCOPE_LO);
+    var v = Math.min(Math.max(n, SCOPE_LO), SCOPE_HI);
+    return H - (Math.log10(v / SCOPE_LO) / span) * H;
+  }
+
   function drawScopes(s, m) {
-    var n = s.mid.length, step = W / n, outer = "", inner = "", spine = [];
-    for (var i = 0; i < n; i++) {
-      var x = (i * step + 0.5).toFixed(1);
-      outer += "M" + x + " " + ((1 - s.lo[i]) * H).toFixed(1) + "V" + ((1 - s.hi[i]) * H).toFixed(1);
-      inner += "M" + x + " " + ((1 - s.q1[i]) * H).toFixed(1) + "V" + ((1 - s.q3[i]) * H).toFixed(1);
-      spine.push(x + "," + ((1 - s.mid[i]) * H).toFixed(1));
+    var n = s.mid.length, step = W / n;
+    var i, x, out = "";
+
+    /* gridlines first, so the trace sits on top of them */
+    var grid = "";
+    [[0.05, "0.05"], [1, "1"], [10, "10"], [100, "100"], [1000, "1k"], [4000, "4k"]]
+      .forEach(function (t2) {
+        var y = nitsToY(t2[0]);
+        grid += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
+                '" stroke="#1e2c3a" stroke-width="0.6"/>' +
+                '<text x="' + (W + 3) + '" y="' + (y + 3).toFixed(1) +
+                '" font-family="IBM Plex Mono, monospace" font-size="8" fill="#5b6b7a">' +
+                t2[1] + "</text>";
+      });
+    var dwY = nitsToY(DIFFUSE_WHITE);
+    grid += '<line x1="0" y1="' + dwY.toFixed(1) + '" x2="' + W + '" y2="' + dwY.toFixed(1) +
+            '" stroke="#6f7f8f" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.8"/>' +
+            '<text x="3" y="' + (dwY - 4).toFixed(1) +
+            '" font-family="IBM Plex Mono, monospace" font-size="8" fill="#8fa2b4">203 diffuse</text>';
+
+    /* the envelope as filled bands, which reads far better than hairlines */
+    var top = [], bot = [], q3 = [], q1 = [], spine = [];
+    for (i = 0; i < n; i++) {
+      x = (i * step + 0.5);
+      top.push(x.toFixed(1) + "," + ((1 - s.hi[i]) * H).toFixed(1));
+      bot.push(x.toFixed(1) + "," + ((1 - s.lo[i]) * H).toFixed(1));
+      q3.push(x.toFixed(1) + "," + ((1 - s.q3[i]) * H).toFixed(1));
+      q1.push(x.toFixed(1) + "," + ((1 - s.q1[i]) * H).toFixed(1));
+      spine.push(x.toFixed(1) + "," + ((1 - s.mid[i]) * H).toFixed(1));
     }
+    var envelope = '<polygon points="' + top.join(" ") + " " + bot.reverse().join(" ") +
+                   '" fill="' + Z_MID + '" opacity="0.13"/>';
+    var iqr = '<polygon points="' + q3.join(" ") + " " + q1.reverse().join(" ") +
+              '" fill="' + Z_MID + '" opacity="0.30"/>';
+    var mid = '<polyline points="' + spine.join(" ") +
+              '" fill="none" stroke="' + Z_HI_BRIGHT + '" stroke-width="1.1" opacity="0.92"/>';
+
+    /* how much of the frame is sitting on the ceiling */
+    var clipY = nitsToY(SCOPE_HI), clipped = 0;
+    for (i = 0; i < n; i++) { if (s.hi[i] >= 0.999) { clipped++; } }
+    var clip = "";
+    if (clipped) {
+      clip = '<rect x="0" y="0" width="' + W + '" height="' + (clipY + 3).toFixed(1) +
+             '" fill="' + Z_HI + '" opacity="0.10"/>' +
+             '<line x1="0" y1="' + clipY.toFixed(1) + '" x2="' + W + '" y2="' + clipY.toFixed(1) +
+             '" stroke="' + Z_HI + '" stroke-width="1"/>' +
+             '<text x="3" y="' + (clipY + 9).toFixed(1) +
+             '" font-family="IBM Plex Mono, monospace" font-size="8" fill="' + Z_HI +
+             '">at ceiling  ' + (clipped * 100 / n).toFixed(1) + "% of columns</text>";
+    }
+
     var cll = "";
     if (m && isFinite(m.maxcll)) {
-      var span = Math.log10(SCOPE_HI / SCOPE_LO);
-      var y = H - (Math.log10(Math.min(Math.max(m.maxcll, SCOPE_LO), SCOPE_HI) / SCOPE_LO) / span) * H;
+      var y = nitsToY(m.maxcll);
       cll = '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
-            '" stroke="#cfcfcf" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>' +
-            '<text x="4" y="' + (y - 4).toFixed(1) +
-            '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#a8a8a8">MaxCLL ' +
-            Math.round(m.maxcll) + "</text>";
+            '" stroke="' + Z_HI_BRIGHT + '" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>' +
+            '<text x="' + (W - 3) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="end"' +
+            ' font-family="IBM Plex Mono, monospace" font-size="8" fill="' + Z_HI_BRIGHT +
+            '">MaxCLL ' + Math.round(m.maxcll) + "</text>";
     }
-    $("wave").innerHTML = ladder() +
-      '<path d="' + outer + '" stroke="#8f8f8f" stroke-width="1.6" opacity="0.30"/>' +
-      '<path d="' + inner + '" stroke="#d8d8d8" stroke-width="1.6" opacity="0.62"/>' +
-      '<polyline points="' + spine.join(" ") +
-      '" fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.5"/>' + cll;
 
+    /* The top and bottom gridlines sit exactly on y=0 and y=H, so their
+       labels fall outside a tight box and get clipped. Pad the viewBox rather
+       than inset the plot -- the trace keeps the full height either way. */
+    $("wave").setAttribute("viewBox", "0 -9 " + (W + 30) + " " + (H + 18));
+    $("wave").innerHTML = grid + envelope + iqr + mid + clip + cll;
+
+    /* ---- histogram ---- */
     var bins = s.histogram.length, bw = HW / bins, bars = "";
+    var lo2 = Math.log2(SCOPE_LO), span2 = Math.log2(SCOPE_HI / SCOPE_LO);
     for (var j = 0; j < bins; j++) {
       var v = s.histogram[j];
-      if (v > 0.004) {
-        bars += '<rect x="' + (j * bw).toFixed(2) + '" y="' + (HH - v * HH).toFixed(1) +
-                '" width="' + (bw * 0.72).toFixed(2) + '" height="' + (v * HH).toFixed(1) + '"/>';
-      }
+      if (v <= 0.004) { continue; }
+      var stopsFromWhite = (lo2 + (j + 0.5) / bins * span2) - Math.log2(DIFFUSE_WHITE);
+      var c = stopsFromWhite < -4 ? Z_SHADOW : (stopsFromWhite > 2 ? Z_HI : Z_MID);
+      var h = Math.max(1, v * HH);
+      bars += '<rect x="' + (j * bw).toFixed(2) + '" y="' + (HH - h).toFixed(1) +
+              '" width="' + (bw * 0.78).toFixed(2) + '" height="' + h.toFixed(1) +
+              '" fill="' + c + '" opacity="0.88"/>';
     }
     var marks = "";
     [[0.05, "0.05"], [1, "1"], [10, "10"], [203, "203"], [1000, "1k"], [4000, "4k"]]
-      .forEach(function (t) {
-        var x = (Math.log2(t[0] / SCOPE_LO) / Math.log2(SCOPE_HI / SCOPE_LO)) * HW;
-        marks += '<text x="' + x.toFixed(0) + '" y="110" font-family="IBM Plex Mono, monospace"' +
-                 ' font-size="8.5" fill="#5c5c5c" text-anchor="middle">' + t[1] + "</text>";
+      .forEach(function (t2) {
+        var mx = (Math.log2(t2[0] / SCOPE_LO) / span2) * HW;
+        marks += '<text x="' + mx.toFixed(0) + '" y="110" font-family="IBM Plex Mono, monospace"' +
+                 ' font-size="8" fill="#5b6b7a" text-anchor="middle">' + t2[1] + "</text>";
       });
-    var dw = (Math.log2(DIFFUSE_WHITE / SCOPE_LO) / Math.log2(SCOPE_HI / SCOPE_LO)) * HW;
-    $("hist").innerHTML = '<g fill="#b4b4b4" opacity="0.78">' + bars + "</g>" +
-      '<line x1="0" y1="' + HH + '" x2="' + HW + '" y2="' + HH + '" stroke="#2c2c2c"/>' +
-      '<line x1="' + dw.toFixed(1) + '" y1="0" x2="' + dw.toFixed(1) + '" y2="' + HH +
-      '" stroke="#4a4a4a" stroke-dasharray="2 3"/>' + marks;
+    var dwX = (Math.log2(DIFFUSE_WHITE / SCOPE_LO) / span2) * HW;
+    $("hist").innerHTML = bars +
+      '<line x1="0" y1="' + HH + '" x2="' + HW + '" y2="' + HH + '" stroke="#1e2c3a"/>' +
+      '<line x1="' + dwX.toFixed(1) + '" y1="0" x2="' + dwX.toFixed(1) + '" y2="' + HH +
+      '" stroke="#6f7f8f" stroke-dasharray="3 3" opacity="0.8"/>' + marks;
   }
 
   /* ---- the viewer ------------------------------------------------------ */
@@ -490,6 +570,60 @@
     $("btnPlay").disabled = single;
   }
 
+  /* Read-ahead. Deliberately separate from fetchFrame(): that one aborts the
+     inflight request because the user moved on, which is right for a click and
+     fatal for a queue. These run on their own controllers, never abort each
+     other, and never touch `inflight` or busy() -- so the interactive path
+     behaves exactly as before. */
+  var prefetching = 0;
+
+  function prefetchFrom(index) {
+    if (!state.live || !ctx) { return; }
+    for (var k = 1; k <= PREFETCH_AHEAD && prefetching < PREFETCH_PARALLEL; k++) {
+      var f = state.frames[(index + k) % state.frames.length];
+      if (!f || f.buf || f.loading) { continue; }
+      loadAhead(f);
+    }
+  }
+
+  function loadAhead(frame) {
+    frame.loading = true;
+    prefetching++;
+    var request = frame.src
+      ? {method: "GET", headers: {"X-Rudra-Params": JSON.stringify(params())}}
+      : {method: "POST",
+         headers: {"Content-Type": "application/octet-stream",
+                   "X-Rudra-Params": JSON.stringify(params())},
+         body: frame.file};
+    fetch(frame.src || "/api/frame", request).then(function (r) {
+      var head = r.headers.get("X-Rudra-Frame");
+      if (!r.ok || !head) { throw new Error("HTTP " + r.status); }
+      return r.arrayBuffer().then(function (buf) {
+        frame.header = JSON.parse(head);
+        frame.buf = buf;
+        if (frame.header.fps) { state.fps = Number(frame.header.fps) || state.fps; }
+      });
+    }).catch(function () {
+      /* A read-ahead miss is not an error the user needs to see. The frame is
+         simply not warm, and the clock will show it late or skip it. */
+    }).then(function () {
+      frame.loading = false;
+      prefetching--;
+      drawFrames();
+      if (state.playing) { prefetchFrom(state.index); }
+    });
+  }
+
+  function cachedAhead(index) {
+    var n = 0;
+    for (var k = 1; k <= PREFETCH_AHEAD; k++) {
+      var f = state.frames[(index + k) % state.frames.length];
+      if (!f || !f.buf) { break; }
+      n++;
+    }
+    return n;
+  }
+
   function evictCache() {
     var loaded = state.frames.filter(function (f) { return f.buf; });
     loaded.sort(function (a, b) { return (a.touched || 0) - (b.touched || 0); });
@@ -607,6 +741,8 @@
       busy(false);
       if (state.frames[state.index] !== frame) { drawFrames(); return; }
       adopt(frame);
+      if (d.header.fps) { state.fps = Number(d.header.fps) || state.fps; }
+      prefetchFrom(state.index);
       log("  " + d.header.resolution + "  net " + d.header.elapsed_s + " s  transfer " +
           (d.buf.byteLength / 1048576).toFixed(1) + " MB  total " +
           ((performance.now() - started) / 1000).toFixed(2) + " s");
@@ -721,21 +857,70 @@
   }
   function stopPlay() {
     if (state.playTimer) { clearInterval(state.playTimer); state.playTimer = null; }
+    if (state.playRaf) { cancelAnimationFrame(state.playRaf); state.playRaf = null; }
     state.playing = false;
     $("btnPlay").classList.remove("on");
   }
+
+  /* The clock. Which frame is due is a function of elapsed wall-clock time and
+     the footage's own frame rate -- never of how long the last one took. If a
+     frame is not warm when it comes due it is SKIPPED, not waited for: that is
+     the difference between playing at real time and playing in slow motion.
+     The count of skips is reported rather than hidden, because a shot that
+     drops half its frames is telling you the read-ahead cannot keep up. */
+  function playTick() {
+    if (!state.playing) { return; }
+    var n = state.frames.length;
+    var elapsed = (performance.now() - state.playT0) / 1000;
+    var want = (state.playBase + Math.floor(elapsed * state.fps)) % n;
+
+    if (want !== state.index) {
+      var f = state.frames[want];
+      if (f && f.buf) {
+        state.index = want;
+        drawFrames();
+        evictCache();
+        adopt(f);
+        state.shownCount++;
+      } else {
+        state.dropped++;
+      }
+      prefetchFrom(want);
+
+      var dt = (performance.now() - state.shownT0) / 1000;
+      if (dt >= 0.5) {
+        state.measuredFps = state.shownCount / dt;
+        state.shownCount = 0; state.shownT0 = performance.now();
+        var el = $("srcInfo");
+        if (el) {
+          el.textContent = (state.header && state.header.resolution ? state.header.resolution + "  ·  " : "")
+            + state.measuredFps.toFixed(1) + " / " + state.fps.toFixed(0) + " fps"
+            + (state.dropped ? "  ·  " + state.dropped + " dropped" : "")
+            + "  ·  " + cachedAhead(state.index) + " ahead";
+        }
+      }
+    }
+    state.playRaf = requestAnimationFrame(playTick);
+  }
+
   function togglePlay() {
     if (state.frames.length < 2) { return; }
-    if (state.playing) { stopPlay(); log("stop"); return; }
+    if (state.playing) {
+      stopPlay();
+      log("stop  ·  " + state.measuredFps.toFixed(1) + " fps measured"
+          + (state.dropped ? ", " + state.dropped + " frames dropped" : ""));
+      return;
+    }
+    if (state.header && state.header.fps) { state.fps = Number(state.header.fps) || state.fps; }
     state.playing = true;
+    state.playT0 = performance.now();
+    state.playBase = state.index < 0 ? 0 : state.index;
+    state.shownCount = 0; state.shownT0 = performance.now();
+    state.dropped = 0;
     $("btnPlay").classList.add("on");
-    log("play " + state.frames.length + " frames");
-    state.playTimer = setInterval(function () {
-      /* Never queue up behind a fetch: if the next frame is not decoded yet,
-         hold this beat rather than stacking forward passes. */
-      if (state.busy) { return; }
-      step(1);
-    }, PLAY_INTERVAL_MS);
+    log("play " + state.frames.length + " frames at " + state.fps.toFixed(0) + " fps");
+    prefetchFrom(state.index);
+    state.playRaf = requestAnimationFrame(playTick);
   }
 
   /* ---- delivery --------------------------------------------------------- */
