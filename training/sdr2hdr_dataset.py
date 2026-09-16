@@ -20,6 +20,56 @@ if str(REPO) not in sys.path:
 from pipeline.hdr_io import HDRStorage, decode_hdr_u16  # noqa: E402
 
 
+def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -> float:
+    """The exposure the corpus applied before its tone curve, from its sidecars.
+
+    prepare_training_data.py writes ``tonemap_ev`` into every pair's metadata
+    sidecar, and build_sdr_hdr_manifest.py carries ``metadata_path`` (and,
+    since 16 Sep 2026, ``tonemap_ev`` itself) in every manifest row. Nothing
+    read either until now: the model was always built with the legacy -1 EV
+    baseline, so the first checkpoint trained on a 0 EV corpus would have
+    learned against a baseline one stop too bright and reproduced that stop
+    in every prediction. This is the one place the value crosses from data
+    to model; train_sdr2hdr.py writes what it returns into the checkpoint
+    config as ``corpus_ev``, and SDR2HDRNet.from_config reads it back.
+
+    A corpus without sidecars is the legacy corpus and gets -1 EV. A corpus
+    whose rows disagree is refused: one model has one baseline.
+    """
+    from rudra.sdr2hdr import LEGACY_CORPUS_EV
+
+    rows = records if records is not None else read_jsonl(manifest_path)
+    seen: dict[float, int] = {}
+    unknown = 0
+    for row in rows:
+        value = row.get("tonemap_ev")
+        if value is None and row.get("metadata_path"):
+            try:
+                value = json.loads(Path(str(row["metadata_path"])).read_text(
+                    encoding="utf-8")).get("tonemap_ev")
+            except (OSError, ValueError):
+                value = None
+        if value is None:
+            unknown += 1
+            continue
+        key = round(float(value), 6)
+        seen[key] = seen.get(key, 0) + 1
+    if not seen:
+        return float(LEGACY_CORPUS_EV)
+    if len(seen) > 1:
+        detail = ", ".join(f"{ev:+.2f} EV x{n}" for ev, n in sorted(seen.items()))
+        raise ValueError(f"{manifest_path}: rows were rendered at different exposures "
+                         f"({detail}); a corpus has one tone-map exposure or it is "
+                         f"two corpora")
+    if unknown:
+        (ev, n), = seen.items()
+        raise ValueError(f"{manifest_path}: {n} rows record {ev:+.2f} EV and {unknown} "
+                         f"record nothing; rebuild the manifest with --metadata-dir "
+                         f"so every row says what it is")
+    (ev,), = seen.keys(),
+    return float(ev)
+
+
 def read_jsonl(path: str | Path) -> list[dict]:
     records = []
     with Path(path).open("r", encoding="utf-8") as handle:

@@ -33,8 +33,16 @@
   var COMMON = [
     "precision highp float;",
     "precision highp sampler2D;",
-    "const float LOG_SCALE = 16.0;",
-    "const float MAX_HDR = 4.0;",
+    /* These three were constants until 16 Sep 2026. They are properties of
+       the checkpoint, not of the page: log_scale and max_hdr are how the
+       network encodes its residual, and the baseline scale is the exposure
+       the corpus was rendered at (2**(-corpus_ev) * 203/10000 -- see
+       rudra.sdr2hdr.sdr_to_baseline_hdr). A 0 EV checkpoint under the old
+       constants would have previewed one stop brighter than its own master.
+       ui/server.py sends all three in every frame header. */
+    "uniform float uLogScale;",
+    "uniform float uMaxHdr;",
+    "uniform float uBaselineScale;",
     "vec3 log1p3(vec3 x){",
     "  vec3 big = log(1.0 + x);",
     "  vec3 small = x - x*x*0.5 + x*x*x*(1.0/3.0);",
@@ -69,7 +77,7 @@
     "  return max(max((-qb - s) / den, (-qb + s) / den), vec3(0.0));",
     "}",
     "vec3 baselineOf(vec3 sdr){",
-    "  return inverseAces(srgbToLinear(sdr)) * (2.0 * 203.0 / 10000.0);",
+    "  return inverseAces(srgbToLinear(sdr)) * uBaselineScale;",
     "}",
     /* Region EV. A port of rudra/delivery/controls.py's qualifier_mask:
        a soft window in log luminance, feathered symmetrically in stops so a
@@ -89,7 +97,7 @@
     "    float m = min(rise, fall);",
     "    total += uRegionEv[i] * m * m * (3.0 - 2.0 * m);",
     "  }",
-    "  return clamp(pred * exp2(total), 0.0, MAX_HDR);",
+    "  return clamp(pred * exp2(total), 0.0, uMaxHdr);",
     "}"
   ].join("\n");
 
@@ -123,9 +131,9 @@
     "  sp *= uShadowWeight;",
     "  float gate = uMode == 0 ? max(hp, sp) : (uMode == 1 ? hp : (uMode == 2 ? sp : 0.0));",
     "  gate *= uStrength;",
-    "  vec3 predLog = clamp(log1p3(base * LOG_SCALE) + f.rgb * gate,",
-    "                       0.0, log(1.0 + MAX_HDR * LOG_SCALE));",
-    "  vec3 pred = expm13(predLog) / LOG_SCALE;",
+    "  vec3 predLog = clamp(log1p3(base * uLogScale) + f.rgb * gate,",
+    "                       0.0, log(1.0 + uMaxHdr * uLogScale));",
+    "  vec3 pred = expm13(predLog) / uLogScale;",
     "  if (uPreserve) { pred = base + max(f.a, shadow) * (pred - base); }",
     "  oCol = vec4(applyRegions(pred), 1.0);",
     "}"].join("\n");
@@ -399,8 +407,17 @@
       return out[0];
     }
 
+    function baselineScale(corpusEv) {
+      var ev = (corpusEv === undefined || corpusEv === null || isNaN(Number(corpusEv)))
+               ? -1.0 : Number(corpusEv);
+      return Math.pow(2.0, -ev) * 203.0 / 10000.0;
+    }
+
     function setFrame(f) {
-      frame = {w: f.width, h: f.height};
+      frame = {w: f.width, h: f.height,
+               logScale: Number(f.log_scale) > 0 ? Number(f.log_scale) : LOG_SCALE,
+               maxHdr: Number(f.max_hdr) > 0 ? Number(f.max_hdr) : MAX_HDR,
+               baselineScale: baselineScale(f.corpus_ev)};
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
       gl.activeTexture(gl.TEXTURE0);
@@ -449,6 +466,9 @@
       gl.uniform1i(uniform(progComposite, "uPreserve"), params.preserve ? 1 : 0);
       gl.uniform1i(uniform(progComposite, "uBaselineOnly"), baselineOnly ? 1 : 0);
       gl.uniform1f(uniform(progComposite, "uShadowWeight"), params.shadowWeight);
+      gl.uniform1f(uniform(progComposite, "uLogScale"), frame.logScale);
+      gl.uniform1f(uniform(progComposite, "uMaxHdr"), frame.maxHdr);
+      gl.uniform1f(uniform(progComposite, "uBaselineScale"), frame.baselineScale);
       var lo = [], hi = [], ev = [];
       for (var i = 0; i < 3; i++) {
         var band = params.regions[i] || {low_nits: 1, high_nits: 1, ev: 0};

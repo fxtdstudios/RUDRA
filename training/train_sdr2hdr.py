@@ -35,7 +35,8 @@ from rudra.sdr2hdr import (  # noqa: E402
     SDR2HDRNet, TemporalHDRRefiner, sdr2hdr_loss, temporal_consistency_loss,
     temporal_spatial_loss,
 )
-from training.sdr2hdr_dataset import SDRHDRDataset, SDRHDRVideoDataset  # noqa: E402
+from training.sdr2hdr_dataset import (  # noqa: E402
+    SDRHDRDataset, SDRHDRVideoDataset, corpus_ev_of)
 
 
 def seed_everything(seed: int) -> None:
@@ -319,10 +320,16 @@ def train(args: argparse.Namespace) -> Path:
         torch.backends.cuda.matmul.allow_tf32 = True
     train_loader, val_loader, val_hard_loader = build_loaders(args)
     image_model: SDR2HDRNet | None = None
+    # The baseline the network learns a residual over is the inverse of the
+    # corpus's own render, exposure included. Read from the manifest, never
+    # assumed: until 16 Sep 2026 this constructor took the class default, the
+    # legacy -1 EV, whatever the corpus said.
+    corpus_ev = corpus_ev_of(args.manifest)
     if args.mode == "image":
         model: torch.nn.Module = SDR2HDRNet(
             base_channels=args.base_channels,
-            gate_conditioning=args.gate_conditioning).to(device)
+            gate_conditioning=args.gate_conditioning,
+            corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
             raise ValueError("--image-checkpoint is required for temporal training")
@@ -390,6 +397,7 @@ def train(args: argparse.Namespace) -> Path:
     config = vars(args).copy()
     config.update({
         "manifest_sha256": manifest_hash(args.manifest),
+        "corpus_ev": corpus_ev,
         "architecture": type(model).__name__,
         "input_contract": "8-bit normalized sRGB RGB",
         "output_contract": "scene-linear RGB normalized to 10000 nits",
