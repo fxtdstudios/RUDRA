@@ -912,15 +912,20 @@ feathering fields and feathering composed predictions are not the same operation
 either side of `expm1`. The viewer and Master both ask for an untiled pass, fall
 back to tiles only on OOM, and report which they used.
 
-The screenshot at the top of this file is the wipe: the analytic baseline on the
-left, the reconstruction on the right, both presented at the same 1 000-nit
-display peak so the difference between them is the data and not a grade. On
-that frame the SDR clips on 0.90% of pixels, the two sides differ by a mean of
-687 nits inside that region, and by 0.0000 nits outside it -- which is the
-do-no-harm claim, shown rather than asserted.
+The screenshot at the top of this file is the problem, measured. It is the
+Studio with no checkpoint loaded, so what it shows is the analytic inverse-ACES
+baseline -- and on that frame the SDR clips on **8.43% of pixels** while the
+baseline saturates at **1 466 nits** against its own ceiling of 1 470, which is
+`7.24 x 203`, the point where the Narkowicz inverse runs out. The probe is open
+on the sun: SDR `255,255,255`, baseline `+2.85 stops`, at saturation. Everything
+above that line is what an 8-bit frame does not carry and what the model exists
+to put back.
 
-It is generated against a running Studio and refuses to overwrite itself with
-anything under 200 KB, which is the size of an error page:
+The scopes in it are computed from that frame's own pixels, not drawn. The
+baseline-against-reconstruction wipe needs a checkpoint, so it comes from a
+running Studio rather than from a static render. The capture refuses to
+overwrite itself with anything under 200 KB, which is the size of an error
+page:
 
 ```bash
 python ui/capture_shot.py
