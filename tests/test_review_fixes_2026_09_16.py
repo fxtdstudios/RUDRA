@@ -343,3 +343,47 @@ def test_corpus_ev_travels_from_the_manifest_into_the_model(tmp_path):
 def test_infer_defaults_to_the_mode_the_shipped_model_was_scored_in():
     src = (REPO / "training" / "infer_sdr2hdr.py").read_text(encoding="utf-8")
     assert 'default="all",' in src.split('"--recovery-mode"')[1][:200]
+
+
+# ---------------------------------------------------------------------------
+# corpus gate (17 Sep: the floor that would have failed the -1 EV corpus)
+# ---------------------------------------------------------------------------
+def test_the_gate_fails_a_corpus_whose_sdr_never_clips():
+    """Two statistics share a name. Check 3 caps HDR-target clipping at the
+    storage ceiling; 3b floors SDR-input clipping. The shipped corpus had
+    0.57% of records touching the top code and passed everything."""
+    from pipeline import verify_dataset as vd
+
+    def run(rows, floor=0.20):
+        report = vd.Report()
+        vd.check_sdr_clipping(rows, report, floor)
+        return report
+
+    legacy = [{"sdr_clipped_fraction": 0.0}] * 994 + [{"sdr_clipped_fraction": 0.01}] * 6
+    fixed = [{"sdr_clipped_fraction": 0.0}] * 60 + [{"sdr_clipped_fraction": 0.03}] * 40
+    assert any(s == vd.FAIL for s, *_ in run(legacy).rows)
+    assert all(s != vd.FAIL for s, *_ in run(fixed).rows)
+    # A corpus that never recorded the statistic cannot pass either.
+    assert any(s == vd.FAIL for s, *_ in run([{"clipped_fraction": 0.0}] * 10).rows)
+
+
+def test_prepare_pairs_records_the_exposure_and_the_sdr_clip():
+    src = (REPO / "pipeline" / "prepare_pairs.py").read_text(encoding="utf-8")
+    assert '"--tonemap-ev"' in src
+    assert 'ptd.TONEMAP_EV_OFFSET = float(args.tonemap_ev)' in src
+    assert '"tonemap_ev"' in src.split("def check_sentinel")[1].split("def ")[0], \
+        "the sentinel must refuse to mix exposures in one directory"
+    assert '"sdr_clipped_fraction": stats["sdr_clipped_fraction"]' in src
+
+
+def test_the_manifest_builder_carries_every_index_field():
+    """pipeline/build_manifests.py copies pairs_index rows whole, so tonemap_ev
+    and sdr_clipped_fraction reach the manifest and corpus_ev_of without
+    anyone remembering to add them."""
+    from pipeline.build_manifests import build_image_manifest
+    from training.sdr2hdr_dataset import corpus_ev_of
+    records = [{"asset_id": f"a{i}", "scene_id": f"s{i}", "is_video": False,
+                "tonemap_ev": 0.0, "sdr_clipped_fraction": 0.02} for i in range(30)]
+    rows, _ = build_image_manifest(records, 0.1, 0.1, 1, 0.0)
+    assert all(r["tonemap_ev"] == 0.0 and "sdr_clipped_fraction" in r for r in rows)
+    assert corpus_ev_of("in-memory", rows) == 0.0
