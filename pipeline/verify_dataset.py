@@ -104,6 +104,35 @@ def check_clipping(records: list[dict], report: Report, max_clipped: float) -> N
     report.add(status, "3 highlight clipping", detail)
 
 
+def check_sdr_clipping(records: list[dict], report: Report, min_records: float) -> None:
+    """The floor. A corpus whose SDR never clips has nothing to reconstruct.
+
+    Check 3 above is a ceiling on the HDR TARGET clipping at the storage
+    limit. This is the other quantity with a similar name -- the fraction of
+    SDR INPUT pixels at the top code -- and it wants a floor, because the
+    -1 EV corpus that shipped had a median of 0.000% here, 0.57% of records
+    touching the top code at all, and every check passed. An inverse tone
+    mapper trained on it never saw a blown highlight.
+    """
+    values = [r["sdr_clipped_fraction"] for r in records if "sdr_clipped_fraction" in r]
+    if not values:
+        report.add(FAIL, "3b SDR clipping",
+                   "no sdr_clipped_fraction recorded -- re-run prepare_pairs (16 Sep 2026 "
+                   "or later); without it the corpus cannot be shown to contain any "
+                   "clipped highlight, which is the defect this gate exists for")
+        return
+    arr = np.asarray(values, dtype=float)
+    affected = float((arr > 0.0001).mean())
+    detail = (f"{affected:.1%} of records clip any SDR pixel; median {np.median(arr):.3%}, "
+              f"mean {arr.mean():.3%}, p90 {np.percentile(arr, 90):.2%}")
+    status = PASS if affected >= min_records else FAIL
+    if status == FAIL:
+        detail += (f"  (floor {min_records:.0%}; the -1 EV corpus was 0.6% -- render at "
+                   f"--tonemap-ev 0, or the sources themselves peak near diffuse white "
+                   f"and no exposure will fix them)")
+    report.add(status, "3b SDR clipping", detail)
+
+
 def check_shadow_precision(storage: HDRStorage, report: Report, minimum: int) -> None:
     codes_below_white = _code_for_nits(storage.diffuse_white_nits, storage) * UINT16_MAX
     detail = (f"{codes_below_white:,.0f} codes below diffuse white "
@@ -222,7 +251,13 @@ def main() -> int:
     parser.add_argument("--pairs-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--video-manifest", type=Path)
-    parser.add_argument("--max-clipped-records", type=float, default=0.02)
+    parser.add_argument("--max-clipped-records", type=float, default=0.02,
+                        help="ceiling: share of records whose HDR TARGET clips at the "
+                             "storage limit (default 2%%)")
+    parser.add_argument("--min-clipped-records", type=float, default=0.20,
+                        help="floor: share of records whose SDR INPUT clips at the top "
+                             "code (default 20%%). Below this the highlight loss sees "
+                             "almost nothing and the retrain is not worth running")
     parser.add_argument("--min-shadow-codes", type=int, default=8000)
     parser.add_argument("--min-video-share", type=float, default=0.15)
     parser.add_argument("--max-scene-share", type=float, default=0.25)
@@ -239,6 +274,7 @@ def main() -> int:
 
     rows = read_jsonl(args.manifest)
     check_clipping(rows, report, args.max_clipped_records)
+    check_sdr_clipping(rows, report, args.min_clipped_records)
     check_leakage(rows, report)
     check_split_video(rows, report, args.min_video_share)
     check_concentration(rows, report, args.max_scene_share)
