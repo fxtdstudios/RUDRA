@@ -464,8 +464,13 @@ def main() -> int:
     parser.add_argument("--out-dir", type=Path, default=Path("hdrdata"))
     parser.add_argument("--val-frac", type=float, default=0.10)
     parser.add_argument("--test-frac", type=float, default=0.10)
-    parser.add_argument("--min-video-share", type=float, default=0.25,
-                        help="Minimum share of val/test records that must be video frames")
+    # 0.15 matches verify_dataset.py check 6. Setting this to 0.25 while
+    # max-eval-scene-share is also 0.25 creates an impossible knife-edge whenever
+    # val or test holds only 1 video scene: capping that scene to <= 25% via
+    # integer stride thinning lands it at 24.8% (e.g. 95/383 records), failing
+    # the builder check while passing dataset verification.
+    parser.add_argument("--min-video-share", type=float, default=0.15,
+                        help="Minimum share of val/test records that must be video frames (default %(default)s)")
     parser.add_argument("--clip-length", type=int, default=9)
     parser.add_argument("--clip-stride", type=int, default=9)
     parser.add_argument("--min-peak-nits", type=float, default=1.0,
@@ -478,7 +483,13 @@ def main() -> int:
                              "scene-linear source, so every frame landed ~5,000x too "
                              "dark and each became its own single-frame 'scene'. "
                              "0 disables.")
-    parser.add_argument("--max-eval-scene-share", type=float, default=0.35,
+    # 0.25, because that is what verify_dataset.py's check 7 demands. This
+    # defaulted to 0.35 until 18 Sep 2026, which meant the builder thinned a
+    # dominant scene down to a share the gate then rejected: corpus v4b came
+    # out at 34.7% of test and 34.2% of val -- sitting exactly on the old cap
+    # -- and failed verification for it. A builder whose default cannot pass
+    # the default gate is a builder that wastes a render.
+    parser.add_argument("--max-eval-scene-share", type=float, default=0.25,
                         help="No single scene may exceed this share of val or of test. "
                              "Training is untouched -- its sampler is already "
                              "scene-balanced -- but evaluation is a plain mean over "
