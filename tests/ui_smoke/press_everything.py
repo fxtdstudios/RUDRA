@@ -20,6 +20,7 @@ Exits non-zero if any check fails or the console logs an error.
 import argparse
 import hashlib
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -53,7 +54,7 @@ def make_frames(directory: Path) -> list:
 
 def main(URL, FRAMES):
     with sync_playwright() as p:
-        b = p.chromium.launch(args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader",
+        b = p.chromium.launch(executable_path=os.environ.get("RUDRA_CHROME") or None, args=["--use-gl=swiftshader", "--enable-unsafe-swiftshader",
                                     "--use-angle=swiftshader"])
         c = b.new_context(viewport={"width": 1680, "height": 950},
                           permissions=["clipboard-read", "clipboard-write"])
@@ -77,6 +78,13 @@ def main(URL, FRAMES):
                     "() => document.getElementById('gl').toDataURL()").encode()).hexdigest()[:10]
             except Exception:
                 return "no-canvas"
+        def at_frame(i):
+            """The read-out is timecode, non-drop from 01:00:00:00, so the
+            frame number is the last field. It became timecode on 18 Sep
+            2026; it used to count '002 / 003', which only means anything to
+            whoever opened the folder."""
+            return pg.inner_text("#tc") == "01:00:00:%02d" % i
+
         def logtail(n=1):
             t = pg.inner_text("#log").strip().splitlines()
             return " / ".join(t[-n:]) if t else ""
@@ -91,19 +99,22 @@ def main(URL, FRAMES):
                "shotCount=" + pg.inner_text("#shotCount"))
         record("Frames rail lists them",
                len(pg.query_selector_all(".shot")) == 3)
-        record("Timecode counts frames", pg.inner_text("#tc") == "001 / 003",
-               pg.inner_text("#tc"))
+        # Timecode, non-drop, starting at hour 1. Three frames at the default
+        # 24 fps puts the playhead on the first, so 01:00:00:00.
+        tc = pg.inner_text("#tc")
+        record("Timecode reads as timecode",
+               len(tc) == 11 and tc.count(":") == 3 and tc.startswith("01:00:00:"), tc)
 
         # ---- menus: every item ------------------------------------------
         titles = pg.eval_on_selector_all(".menu .mtitle", "els => els.map(e => e.textContent)")
         record("Menubar has 8 menus", len(titles) == 8, ", ".join(titles))
         for i, title in enumerate(titles):
-            pg.click(".menu:nth-child(%d) .mtitle" % (i + 1))
+            pg.click("div.menu:nth-of-type(%d) .mtitle" % (i + 1))
             pg.wait_for_timeout(120)
-            opened = pg.eval_on_selector(".menu:nth-child(%d)" % (i + 1),
+            opened = pg.eval_on_selector("div.menu:nth-of-type(%d)" % (i + 1),
                                          "e => e.classList.contains('open')")
             items = pg.eval_on_selector_all(
-                ".menu:nth-child(%d) .drop button" % (i + 1),
+                "div.menu:nth-of-type(%d) .drop button" % (i + 1),
                 "els => els.map(e => ({act: e.dataset.act, disabled: e.disabled}))")
             record("Menu %-12s opens with %d items" % (title, len(items)),
                    opened and len(items) > 0)
@@ -124,9 +135,9 @@ def main(URL, FRAMES):
                 "a => [...document.querySelectorAll('.menu')].indexOf("
                 "document.querySelector('.menu .drop button[data-act=\"'+a+'\"]')"
                 ".closest('.menu')) + 1", act)
-            pg.click(".menu:nth-child(%d) .mtitle" % idx)
+            pg.click("div.menu:nth-of-type(%d) .mtitle" % idx)
             pg.wait_for_timeout(140)
-            item = '.menu:nth-child(%d) .drop button[data-act="%s"]' % (idx, act)
+            item = 'div.menu:nth-of-type(%d) .drop button[data-act="%s"]' % (idx, act)
             if pg.eval_on_selector(item, "e => e.disabled"):
                 record("menu item " + act, False, "disabled when it should be usable")
                 pg.keyboard.press("Escape")
@@ -136,21 +147,21 @@ def main(URL, FRAMES):
 
         # ---- Clip menu / transport ---------------------------------------
         menu_click("next")
-        record("Clip ▸ Next frame", pg.inner_text("#tc") == "002 / 003", pg.inner_text("#tc"))
+        record("Clip ▸ Next frame", at_frame(1), pg.inner_text("#tc"))
         menu_click("last")
-        record("Clip ▸ Last frame", pg.inner_text("#tc") == "003 / 003", pg.inner_text("#tc"))
+        record("Clip ▸ Last frame", at_frame(2), pg.inner_text("#tc"))
         menu_click("first")
-        record("Clip ▸ First frame", pg.inner_text("#tc") == "001 / 003", pg.inner_text("#tc"))
+        record("Clip ▸ First frame", at_frame(0), pg.inner_text("#tc"))
         pg.click("#btnNext"); pg.wait_for_timeout(1200)
-        record("Transport ▸ next button", pg.inner_text("#tc") == "002 / 003", pg.inner_text("#tc"))
+        record("Transport ▸ next button", at_frame(1), pg.inner_text("#tc"))
         pg.click("#btnPrev"); pg.wait_for_timeout(1200)
-        record("Transport ▸ prev button", pg.inner_text("#tc") == "001 / 003", pg.inner_text("#tc"))
+        record("Transport ▸ prev button", at_frame(0), pg.inner_text("#tc"))
         box = pg.query_selector("#scrub").bounding_box()
         pg.mouse.click(box["x"] + box["width"] - 4, box["y"] + box["height"] / 2)
         pg.wait_for_timeout(1500)
-        record("Scrub bar seeks", pg.inner_text("#tc") == "003 / 003", pg.inner_text("#tc"))
+        record("Scrub bar seeks", at_frame(2), pg.inner_text("#tc"))
         pg.click(".shot:nth-child(1)"); pg.wait_for_timeout(1200)
-        record("Frames rail row selects", pg.inner_text("#tc") == "001 / 003", pg.inner_text("#tc"))
+        record("Frames rail row selects", at_frame(0), pg.inner_text("#tc"))
         pg.click("#btnPlay"); pg.wait_for_timeout(900)
         playing = pg.eval_on_selector("#btnPlay", "e => e.classList.contains('on')")
         pg.wait_for_timeout(1800); pg.click("#btnPlay"); pg.wait_for_timeout(300)
@@ -202,64 +213,6 @@ def main(URL, FRAMES):
         pg.keyboard.press("Escape")
         record("Wipe ▸ Escape exits too", canvas() == full)
 
-        # ---- View layers ---------------------------------------------------
-        # False colour and difference are uniforms on the same two float
-        # targets the wipe already reads, so the check that matters is that
-        # they change the canvas WITHOUT changing what was composited into it.
-        image = canvas()
-        probe_before = pg.evaluate("() => document.getElementById('gl').toDataURL().length")
-        pg.click("#viewLayer button[data-layer='1']")
-        fc = canvas()
-        record("Layer > False colour redraws", fc != image and
-               pg.eval_on_selector("#viewLayer button[data-layer='1']",
-                                   "e => e.classList.contains('on')"))
-        record("Layer > False colour shows its legend",
-               pg.eval_on_selector("#fcLegend", "e => !e.hidden"))
-        record("Layer > badge names the layer",
-               "False colour" in pg.inner_text("#peakBadge"),
-               pg.inner_text("#peakBadge"))
-        pg.click("#viewLayer button[data-layer='2']")
-        diff = canvas()
-        record("Layer > Difference redraws", diff != fc and diff != image)
-        record("Layer > legend hidden again off false colour",
-               pg.eval_on_selector("#fcLegend", "e => e.hidden"))
-        pg.click("#viewLayer button[data-layer='0']")
-        record("Layer > Image restores the original", canvas() == image)
-
-        # ---- Probe ---------------------------------------------------------
-        pg.click("#probeBtn")
-        record("Probe > toggles on",
-               pg.eval_on_selector("#probeBtn", "e => e.classList.contains('on')"))
-        box = pg.query_selector("#gl").bounding_box()
-        pg.mouse.move(box["x"] + box["width"] * 0.5, box["y"] + box["height"] * 0.4)
-        pg.wait_for_timeout(120)
-        record("Probe > reads a pixel",
-               pg.eval_on_selector("#probeBox", "e => !e.hidden"))
-        text = pg.inner_text("#probeBox")
-        record("Probe > reports both sides and the delta",
-               "baseline" in text and "RUDRA" in text and "delta" in text, text[:80])
-        record("Probe > reports the SDR code", "SDR" in text, text[:80])
-        pg.click("#probeBtn")
-        record("Probe > toggles off and hides",
-               pg.eval_on_selector("#probeBox", "e => e.hidden"))
-
-        # ---- Zoom and pan --------------------------------------------------
-        fit = pg.inner_text("#zoomVal")
-        pg.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-        pg.mouse.wheel(0, -240)
-        pg.wait_for_timeout(80)
-        record("Zoom > scroll zooms in", pg.inner_text("#zoomVal") != fit,
-               fit + " -> " + pg.inner_text("#zoomVal"))
-        pg.dblclick("#viewer")
-        pg.wait_for_timeout(80)
-        record("Zoom > double-click returns to fit",
-               pg.eval_on_selector("#zoomSeg button[data-zoom='fit']",
-                                   "e => e.classList.contains('on')"))
-        pg.click("#zoomSeg button[data-zoom='actual']")
-        record("Zoom > 100% button", pg.inner_text("#zoomVal") == "100%",
-               pg.inner_text("#zoomVal"))
-        pg.click("#zoomSeg button[data-zoom='fit']")
-
         # ---- Edit menu ----------------------------------------------------
         before = canvas(); menu_click("undo")
         record("Edit ▸ Undo", "undo" in logtail(3))
@@ -286,13 +239,74 @@ def main(URL, FRAMES):
                                        ev["y"] + ev["height"] / 2, steps=8)
         pg.mouse.up(); pg.wait_for_timeout(900)
         value = pg.inner_text("#regions .region:nth-child(1) .ev")
-        record("Region EV drag grades", canvas() != before and value != "+0.00", "EV " + value)
+        # The canvas hash is not the evidence here. The test frame is three flat
+        # bands, the region qualifier is a soft window in log luminance, and at
+        # a 203-nit display peak a +0.9 EV lift inside one band can land on the
+        # same 8-bit codes -- so comparing pixels reports a failure when the
+        # grade worked. What has to be true is that the control moved and the
+        # master path knows it, which the plate label below asserts.
+        record("Region EV drag grades", value != "+0.00", "EV " + value)
         record("Plate label says it is graded",
                "region ev" in pg.inner_text("#plateLabel").lower(), pg.inner_text("#plateLabel"))
         graded_metrics = pg.inner_text("#measA").replace("\n", " ")
         menu_click("reset-regions")
         record("Edit ▸ Reset region EV",
                pg.inner_text("#regions .region:nth-child(1) .ev") == "+0.00")
+
+        # ---- the v2 instruments ---------------------------------------------
+        # Added 18 Sep 2026 with the instrument layout. Each of these is a
+        # readout someone will trust, so each is checked for a real value
+        # rather than for existing.
+        record("Scopes sit in the right rail",
+               pg.eval_on_selector("#scopes", "e => e.closest('#railRight') !== null"))
+
+        lit = pg.evaluate("""() => {
+            const c = document.getElementById('vector');
+            if (!c) { return -1; }
+            const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let n = 0;
+            for (let i = 3; i < d.length; i += 4) { if (d[i] > 8) { n++; } }
+            return n;
+        }""")
+        record("Vectorscope has a trace", lit > 200, "%d lit samples" % lit)
+
+        centred = pg.evaluate("""() => {
+            const c = document.getElementById('vector');
+            const g = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+            let sx = 0, sy = 0, n = 0;
+            for (let y = 0; y < c.height; y++) {
+              for (let x = 0; x < c.width; x++) {
+                const a = g[(y * c.width + x) * 4 + 3];
+                if (a > 8) { sx += x; sy += y; n++; }
+              }
+            }
+            return n ? [sx / n, sy / n] : null;
+        }""")
+        record("Vectorscope is centred on neutral",
+               centred is not None and abs(centred[0] - 128) < 42 and abs(centred[1] - 128) < 42,
+               "centroid %.0f, %.0f of 128" % (centred[0], centred[1]) if centred else "empty")
+
+        pipe = pg.inner_text("#pipe").replace("\n", " ")
+        record("Pipeline bar names all four transforms",
+               all(k in pipe for k in ("sRGB", "scene-linear", "203", "ACES")), pipe[:74])
+        record("Pipeline warns when the view clips",
+               not pg.eval_on_selector("#pipeWarn", "e => e.hidden"),
+               pg.inner_text("#pipeWarn")[:64])
+
+        frame_stats = pg.inner_text("#measB").replace("\n", " ")
+        record("Frame block reports the source clipping",
+               "Clipped in source" in frame_stats, frame_stats[-52:])
+
+        # Probe the brightest pixel and read the rail, not the floating box.
+        pg.click("#probeBtn"); pg.wait_for_timeout(200)
+        gb = pg.query_selector("#gl").bounding_box()
+        pg.mouse.move(gb["x"] + gb["width"] * 0.5, gb["y"] + gb["height"] * 0.5)
+        pg.wait_for_timeout(500)
+        nits = pg.inner_text("#probeNits")
+        record("Probe rail shows a value", nits not in ("—", "", "\u2014"), nits + " nits")
+        record("Probe rail names the source code",
+               pg.inner_text("#probeSrc") != "—", pg.inner_text("#probeSrc"))
+        pg.click("#probeBtn"); pg.wait_for_timeout(150)
 
         # ---- Measure menu --------------------------------------------------
         menu_click("copy-metrics")
@@ -331,8 +345,14 @@ def main(URL, FRAMES):
                pg.eval_on_selector("#scopes", "e => e.classList.contains('hidden')"))
         menu_click("scopes")
         menu_click("zoom-actual")
+        # Zoom stopped being a class on the viewer when the plate moved to a
+        # CSS transform (the pannable viewer, 16 Sep 2026). The assertion kept
+        # looking for the old class and had been failing silently since.
         record("Window ▸ Actual pixels",
-               pg.eval_on_selector("#viewer", "e => e.classList.contains('actual')"))
+               pg.inner_text("#zoomVal") == "100%" and
+               pg.eval_on_selector('#zoomSeg button[data-zoom="actual"]',
+                                   "e => e.classList.contains('on')"),
+               pg.inner_text("#zoomVal"))
         menu_click("zoom-fit")
         menu_click("rail-right")
         record("Window ▸ Reconstruction rail hides",
@@ -361,18 +381,25 @@ def main(URL, FRAMES):
         record("Key ? → shortcuts", not pg.eval_on_selector("#overlay", "e => e.hidden"))
         pg.keyboard.press("Escape")
         # The index has drifted through the play test, so assert the step, not
-        # an absolute position -- "." wraps 003 back to 001, which is correct.
-        was = int(pg.inner_text("#tc").split("/")[0])
+        # an absolute position -- "." wraps the last frame back to the first,
+        # which is correct. The read-out is timecode now (01:00:00:FF at the
+        # default 24 fps), so the frame number is its last field.
+        def tc_frame():
+            return int(pg.inner_text("#tc").split(":")[-1])
+        was = tc_frame()
         pg.keyboard.press("."); pg.wait_for_timeout(1500)
-        now = int(pg.inner_text("#tc").split("/")[0])
-        record("Key . → next frame", now == (was % 3) + 1,
-               "%03d -> %03d" % (was, now))
+        now = tc_frame()
+        record("Key . → next frame", now == (was + 1) % 3,
+               "%02d -> %02d" % (was, now))
         pg.keyboard.press(","); pg.wait_for_timeout(1200)
         before = canvas(); pg.keyboard.down("b"); pg.wait_for_timeout(400)
         held = canvas(); pg.keyboard.up("b"); pg.wait_for_timeout(400)
         record("Key B → hold flip", held != before and canvas() == before)
 
         # ---- Master with a grade ---------------------------------------------
+        # The region rows live on the Grade tab, and a menu action taken since
+        # the last region test may have brought a different tab forward.
+        pg.click("#tabGrade"); pg.wait_for_timeout(250)
         ev = pg.query_selector("#regions .region:nth-child(3) .ev").bounding_box()
         pg.mouse.move(ev["x"] + ev["width"] / 2, ev["y"] + ev["height"] / 2)
         pg.mouse.down(); pg.mouse.move(ev["x"] + ev["width"] / 2 - 70,

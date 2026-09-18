@@ -100,9 +100,10 @@
   }());
 
   /* ---- formatting ------------------------------------------------------ */
-  function ro(k, v, u) {
+  function ro(k, v, u, warn) {
     return '<div class="ro"><span class="k">' + k + '</span>' +
-           '<span class="v">' + v + '</span><span class="u">' + (u || "") + "</span></div>";
+           '<span class="v' + (warn ? " warn" : "") + '">' + v +
+           '</span><span class="u">' + (u || "") + "</span></div>";
   }
   function fmt(n, d) {
     if (n === null || n === undefined || (typeof n === "number" && !isFinite(n))) { return "—"; }
@@ -123,6 +124,7 @@
     $("measB").innerHTML =
       ro("Above diffuse white", fmt(m.above_diffuse_white_pct, 2), "%") +
       ro("Above 1 000 nits", fmt(m.above_1000_nits_pct, 3), "%") +
+      ro("Clipped in source", fmt(state.maskPct.clipped, 2), "%", true) +
       ro("Headroom, highlights", signed(m.headroom_highlight_stops, 2), "st") +
       ro("Headroom, shadows", signed(m.headroom_shadow_stops, 2), "st") +
       ro("Departure RMS", fmt(m.departure_rms_stops, 3), "st");
@@ -211,6 +213,8 @@
     showMetrics(m);
     state.scopeData = buildScopes(luma, w, h);
     drawScopes(state.scopeData, m);
+    drawVector(s);
+    updatePipe(m);
     drawFrames();
   }
 
@@ -568,10 +572,12 @@
     $("shots").innerHTML = rows;
     $("shotCount").textContent = String(state.frames.length);
     $("framesEmpty").hidden = state.frames.length > 0;
+    /* Timecode, not a frame counter. A shot arrives with a rate and the
+       person reading this sits next to an edit that speaks in timecode; two
+       three-digit numbers are only meaningful to whoever opened the folder.
+       Non-drop, starting at hour 1, which is the delivery convention. */
     $("tc").textContent = state.frames.length
-      ? String(state.index + 1).padStart(3, "0") + " / " +
-        String(state.frames.length).padStart(3, "0")
-      : "000 / 000";
+      ? timecode(state.index, state.fps) : "01:00:00:00";
     var frac = state.frames.length > 1 ? state.index / (state.frames.length - 1) : 0;
     $("scrubHead").style.left = (frac * 100) + "%";
     var single = state.frames.length < 2;
@@ -652,14 +658,22 @@
 
     hiMask = new Float32Array(n);
     shMask = new Float32Array(n);
-    var hiCount = 0, shCount = 0;
+    var hiCount = 0, shCount = 0, clipCount = 0;
     for (var i = 0; i < n; i++) {
       hiMask[i] = HALF[fieldsU16[i * 4 + 3]];
       shMask[i] = HALF[shadowU16[i]];
       if (hiMask[i] > 0.5) { hiCount++; }
       if (shMask[i] > 0.5) { shCount++; }
+      /* What the SDR actually lost. The masks are the network's OPINION about
+         where to reconstruct; this is the measurement of where the container
+         ran out, and the two are not the same number. The corpus audit turned
+         on exactly this distinction. */
+      var o3 = i * 3;
+      if (sdr[o3] >= 254 || sdr[o3 + 1] >= 254 || sdr[o3 + 2] >= 254) { clipCount++; }
     }
-    state.maskPct = {highlight: 100 * hiCount / n, shadow: 100 * shCount / n};
+    state.maskPct = {highlight: 100 * hiCount / n, shadow: 100 * shCount / n,
+                     clipped: 100 * clipCount / n};
+    paintClipBar(100 * clipCount / n, 100 * hiCount / n);
     state.header = head;
     frame.touched = performance.now();
 
@@ -855,6 +869,12 @@
     hiMask = shMask = null;
     $("plate").hidden = true; $("empty").hidden = false;
     $("measA").innerHTML = ""; $("measB").innerHTML = "";
+    if ($("clipBar")) { $("clipBar").hidden = true; }
+    showProbePanel(null);
+    if ($("vector")) {
+      var vg = $("vector").getContext("2d");
+      if (vg) { vg.clearRect(0, 0, $("vector").width, $("vector").height); }
+    }
     $("wave").innerHTML = ""; $("hist").innerHTML = "";
     $("statusMask").textContent = "—"; $("statusTime").textContent = "—";
     $("srcInfo").textContent = "—";
@@ -1107,7 +1127,153 @@
     return Math.log2(Math.max(nits, 1e-6) / DIFFUSE_WHITE);
   }
 
+  /* A bar under the frame stats: red is what the SDR lost, amber is where the
+     network chose to act. They overlap but are not the same, which is the
+     whole argument for measuring both. */
+  function paintClipBar(clippedPct, maskPct) {
+    var bar = $("clipBar");
+    if (!bar) { return; }
+    bar.hidden = false;
+    bar.querySelector("i").style.width = Math.min(100, clippedPct) + "%";
+    var u = bar.querySelector("u");
+    u.style.left = Math.min(100, clippedPct) + "%";
+    u.style.width = Math.max(0, Math.min(100 - clippedPct, maskPct)) + "%";
+  }
+
+  function timecode(frameIndex, fps) {
+    var rate = Math.max(1, Math.round(fps || 24));
+    var f = (frameIndex | 0) + rate * 3600;          /* start at 01:00:00:00 */
+    var pad = function (v) { return String(v).padStart(2, "0"); };
+    return pad(Math.floor(f / (rate * 3600)) % 24) + ":" +
+           pad(Math.floor(f / (rate * 60)) % 60) + ":" +
+           pad(Math.floor(f / rate) % 60) + ":" + pad(f % rate);
+  }
+
+  /* ---- vectorscope -------------------------------------------------------
+     Cb/Cr of the composited frame, Rec.2020 luma coefficients, each pixel
+     normalised by its own luminance so a 4 000-nit specular and a 20-nit
+     shadow of the same hue land on the same spot. That normalisation is what
+     makes it a HUE instrument rather than a brightness one -- without it an
+     HDR frame collapses into the centre and the trace says nothing.
+
+     Drawn from ctx.sample(), the same downsampled read the metrics use, so
+     it costs nothing extra. */
+  var VEC_SIZE = 256;
+  function drawVector(s) {
+    var cv = $("vector");
+    if (!cv || !s) { return; }
+    var g = cv.getContext("2d", {willReadFrequently: false});
+    if (!g) { return; }
+    var n = s.width * s.height;
+    var acc = new Float32Array(VEC_SIZE * VEC_SIZE);
+    var KR = 0.2627, KG = 0.6780, KB = 0.0593;
+    var half = VEC_SIZE / 2, peak = 0;
+
+    for (var i = 0; i < n; i++) {
+      var o = i * 4;
+      var r = s.model[o] * PEAK_NITS, gg = s.model[o + 1] * PEAK_NITS,
+          b = s.model[o + 2] * PEAK_NITS;
+      var y = r * KR + gg * KG + b * KB;
+      if (y < 0.02) { continue; }            /* black has no hue to report */
+      var norm = Math.max(y, 1.0);
+      var cb = (b - y) / (2 * (1 - KB)) / norm;
+      var cr = (r - y) / (2 * (1 - KR)) / norm;
+      var px = Math.round(half + cb * half * 0.92);
+      var py = Math.round(half - cr * half * 0.92);
+      if (px < 0 || py < 0 || px >= VEC_SIZE || py >= VEC_SIZE) { continue; }
+      var k = py * VEC_SIZE + px;
+      acc[k] += 1;
+      if (acc[k] > peak) { peak = acc[k]; }
+    }
+
+    var img = g.createImageData(VEC_SIZE, VEC_SIZE);
+    var d = img.data, scale = 1 / Math.log1p(Math.max(peak, 1));
+    for (var j = 0; j < acc.length; j++) {
+      var a = acc[j] ? Math.pow(Math.log1p(acc[j]) * scale, 0.6) : 0;
+      var q = j * 4;
+      d[q] = 158 * a; d[q + 1] = 242 * a; d[q + 2] = 255 * a;
+      d[q + 3] = Math.min(255, a * 300);
+    }
+    g.putImageData(img, 0, 0);
+  }
+
+  /* ---- the colour pipeline bar -------------------------------------------
+     Four states end to end, plus the one warning that matters on delivery:
+     pixels above the peak the master declares. Getting a transform wrong is
+     the most expensive mistake in a suite, and until now nothing on this page
+     said what the transforms were. */
+  function updatePipe(m) {
+    var head = state.header || {};
+    var aces = state.container !== "linear";
+    if ($("pipeIn")) {
+      $("pipeIn").textContent = (head.source_bits ? head.source_bits + "-bit " : "") +
+                                "sRGB · Rec.709";
+    }
+    if ($("pipeWorking")) {
+      $("pipeWorking").textContent = "scene-linear · " + DIFFUSE_WHITE + " nits = 1.0";
+    }
+    if ($("pipeMaster")) {
+      $("pipeMaster").textContent = aces ? "ACES 2065-1 EXR, half"
+                                         : "linear Rec.2020 EXR, half";
+    }
+    /* What the VIEWER does, which is not what the master does. The display
+       path is an exposure to the chosen peak and then a hard clip -- there is
+       no tone-map in it -- and calling that anything softer would invite
+       someone to trust an SDR monitor for a highlight decision. */
+    if ($("viewTransform")) {
+      $("viewTransform").textContent = "exposure + clip · " +
+                                       fmt(Math.round(displayNits()), 0) + " nits";
+    }
+    var warn = $("pipeWarn");
+    if (!warn) { return; }
+    var peak = m && isFinite(m.maxcll) ? m.maxcll : null;
+    var display = displayNits();
+    if (peak !== null && peak > display * 1.001) {
+      warn.textContent = "MaxCLL " + fmt(peak, 0) + " over view peak " +
+                         fmt(display, 0) + " — clipped on screen, not in the master";
+      warn.hidden = false;
+    } else {
+      warn.hidden = true;
+    }
+  }
+
+  /* ---- the probe readout in the rail -------------------------------------
+     The floating box follows the cursor while probing; this one stays, so a
+     value can be read after the mouse has moved on. Same numbers, one source. */
+  function showProbePanel(s) {
+    if (!$("probeNits")) { return; }
+    if (!s) {
+      $("probeXY").textContent = "—";
+      $("probeNits").textContent = "\u2014";
+      $("probeNits").parentNode.classList.add("idle");
+      $("probeDelta").textContent = "pick a pixel with Probe, or hold Alt";
+      $("probeDelta").className = "pdelta idle";
+      ["probeSrc", "probeBase", "probeModel", "probeMask"].forEach(function (id) {
+        $(id).textContent = "—"; $(id).className = "";
+      });
+      return;
+    }
+    var clipped = s.sdr && Math.max(s.sdr[0], s.sdr[1], s.sdr[2]) >= 254;
+    var st = stops(s.model.nits);
+    var d = st - stops(s.baseline.nits);
+    $("probeXY").textContent = s.x + ", " + s.y;
+    $("probeNits").parentNode.classList.remove("idle");
+    $("probeNits").textContent = fmt(Math.round(s.model.nits), 0);
+    $("probeDelta").textContent = (st >= 0 ? "+" : "−") + Math.abs(st).toFixed(2) +
+                                  " stops over diffuse white";
+    $("probeDelta").className = "pdelta";
+    $("probeSrc").textContent = s.sdr ? s.sdr.join(" ") : "—";
+    $("probeSrc").className = clipped ? "clip" : "";
+    $("probeBase").textContent = fmt(Math.round(s.baseline.nits), 0);
+    $("probeModel").textContent = fmt(Math.round(s.model.nits), 0);
+    $("probeModel").className = Math.abs(d) > 0.01 ? "hi" : "";
+    $("probeMask").textContent =
+      "hi " + (s.hiMask === null ? "—" : s.hiMask.toFixed(2)) +
+      "  sh " + (s.shMask === null ? "—" : s.shMask.toFixed(2));
+  }
+
   function showProbe(s, clientX, clientY) {
+    showProbePanel(s);
     var box = $("probeBox");
     if (!box) { return; }
     if (!s) { box.hidden = true; return; }

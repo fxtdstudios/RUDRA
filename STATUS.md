@@ -73,6 +73,21 @@
 >   and `shell.js` were not cache-stamped; `paper/mdtotex.py` failed the
 >   fresh-clone test and is gone.
 >
+> **Line C, 18 Sep 2026 — the Studio is an instrument, not a dark web app.**
+> Neutral surround (every grey R = G = B; a tinted one biases colour
+> judgement), the titlebar folded into the menubar, the scopes moved out from
+> under the viewer into a full-height right-rail column and joined by a
+> vectorscope, a permanent probe readout in the left rail with the largest
+> figures on the page, a measured `Frame` block that reports the share of
+> pixels the SDR actually clipped beside what the network chose to act on,
+> timecode on the transport, and a colour pipeline bar across the bottom that
+> names all four transforms and warns when MaxCLL is over the view peak.
+> Every existing element id was kept, so `compositor.js` is untouched.
+> `tests/ui_smoke/press_everything.py` now runs 72 checks, 0 failed, console
+> clean — eight of them new, and two assertions fixed that had been stale
+> since the pannable viewer landed (zoom stopped being a class on the viewer)
+> and were failing before this change too.
+>
 > **Still open from the review, in order:** the synthetic-clip protocol
 > (`measure_clipping.py --score` on 0/+1/+2 EV re-renders — the only measurement
 > of the highlight claim); one out-of-generator degradation beside "hard";

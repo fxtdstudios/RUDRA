@@ -86,10 +86,21 @@ controls move at frame rate.
 | **False colour** | luminance zones in nits, against a diffuse white of 203 |
 | **Difference** | how far RUDRA moved from the baseline — black means it changed nothing there |
 | **Probe** | one pixel: baseline, RUDRA, the delta in stops, and whether the SDR clipped there at all |
-| **Scopes** | waveform and histogram in nits, computed from the frame's own pixels |
+| **Scopes** | waveform, RGB histogram and vectorscope, all in nits on a log axis, computed from the frame's own pixels |
+| **Frame** | what the frame contains: MaxCLL, MaxFALL, the share above 1 000 nits, and the share the SDR actually clipped |
+
+The bar along the bottom is the colour pipeline, and it is always on: what the
+input is being read as, the working space, what the viewer is doing to the
+picture, and what the master will be written as. It warns when the frame
+carries pixels above the peak the viewer is showing, because an SDR monitor
+clipping a highlight looks exactly like a highlight that was never there.
+
+The surround is a neutral grey on purpose — a tinted one biases the judgement
+of the picture inside it.
 
 Playback runs at the footage's frame rate, with a read-ahead in front of the
-playhead. Master to OpenEXR in ACES 2065-1 or linear Rec.2020.
+playhead, and the transport reads timecode. Master to OpenEXR in ACES 2065-1
+or linear Rec.2020.
 
 ---
 
