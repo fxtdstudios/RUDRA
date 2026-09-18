@@ -7,50 +7,25 @@
 <meta name="description" content="Scene-linear HDR reconstruction and mastering. FXTD Studios / Radiance Research.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="style.css?v=6">
 <link rel="stylesheet" href="theme.css?v=1">
 </head>
 <body class="ws-full">
-<i class="streak a"></i><i class="streak b"></i><i class="streak c"></i><i class="streak d"></i>
 <div class="app">
 
-  <div class="titlebar">
-    <span class="tb-dots"><i></i><i></i><i></i></span>
-
+  <!-- ─────────────────────────────────────────────────────────────────────
+       Menubar. The brand lockup, the menus and the machine state on one
+       30px row. It used to be two rows: a titlebar carrying the lockup and
+       a menubar under it. In a grading suite vertical pixels belong to the
+       image, so the two were merged.
+       ───────────────────────────────────────────────────────────────── -->
+  <div class="menubar" id="menubar">
     <span class="lockup">
       <img src="assets/rudra-mark-256.png" alt="">
-      <span class="lk-txt">
-        <span class="lk-name">RUDRA</span>
-        <span class="lk-sub">Radiance Universal Dynamic Range Adapter</span>
-      </span>
+      <span class="lk-name">RUDRA</span>
     </span>
 
-    <span class="wordstrip">
-      <span>Reveal</span><s>/</s><span>Recover</span><s>/</s><span>Adapt</span><s>/</s><span>Extend</span>
-    </span>
-
-    <span class="wslabel">WORKSPACE</span>
-    <span class="wsswitch">
-      <button type="button" id="wsSimple" title="Hide the scopes and the advanced groups">Simple</button>
-      <button type="button" id="wsFull" class="on" title="Everything">Full</button>
-    </span>
-    <span class="vrule"></span>
-    <span class="pill" id="ckpt">no model</span>
-    <span class="vrule"></span>
-    <span class="pill" id="device">—</span>
-    <span class="lamp off" id="lamp"></span>
-    <span class="vrule"></span>
-    <span class="studiomark">
-      <span class="sm-cube"></span>
-      <span class="sm-txt">
-        <span class="sm-name">RADIANCE STUDIO</span>
-        <span class="sm-sub">Tools for a brighter reality</span>
-      </span>
-    </span>
-  </div>
-
-  <div class="menubar" id="menubar">
     <div class="menu"><button type="button" class="mtitle">File</button>
       <div class="drop">
         <button type="button" data-act="open">Open frames…<i>O</i></button>
@@ -125,6 +100,19 @@
         <button type="button" data-act="about">About RUDRA Studio</button>
       </div>
     </div>
+
+    <span class="spacer"></span>
+
+    <span class="wsswitch">
+      <button type="button" id="wsSimple" title="Hide the scopes and the advanced groups">Simple</button>
+      <button type="button" id="wsFull" class="on" title="Everything">Full</button>
+    </span>
+    <span class="mstat">
+      <span class="lamp off" id="lamp"></span>
+      <span class="pill" id="ckpt">no model</span>
+      <span class="pill" id="device">—</span>
+    </span>
+    <span class="studiomark"><span class="sm-cube"></span>RADIANCE STUDIO</span>
   </div>
 
   <div class="body">
@@ -141,8 +129,9 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9.6 9.4a2.5 2.5 0 113.4 2.3v1.3"/><circle cx="12" cy="16.6" r=".6" fill="currentColor"/></svg></button>
     </div>
 
+    <!-- ── left rail: media, then the probe readout pinned to the bottom ── -->
     <div class="rail left" id="railLeft">
-      <div class="plabel"><span>Frames</span><span class="note num" id="shotCount">0</span></div>
+      <div class="plabel"><span>Media</span><span class="note num" id="shotCount">0</span></div>
 
       <div class="dropzone" id="dropzone">
         <b>Drop footage here</b>
@@ -164,41 +153,49 @@
         <span>Size</span><span style="width:40px;text-align:right">Peak</span>
         <span style="width:26px"></span>
       </div>
-      <div id="shots"></div>
+      <div class="shotscroll"><div id="shots"></div></div>
       <div class="empty-rail" id="framesEmpty">Nothing open yet</div>
 
       <div class="spacer"></div>
-      <div class="rail-foot">
-        <div><span class="k">Storage</span><span class="v">log2_extended</span></div>
-        <div><span class="k">Working</span><span class="v">Rec.2020 linear</span></div>
-        <div><span class="k">Diffuse white</span><span class="v">203 nits</span></div>
+
+      <!-- The probe is the one readout a colourist checks pixel by pixel, so
+           it gets a permanent home and the largest figures on the page. The
+           floating box (#probeBox) still follows the cursor while probing. -->
+      <div class="probepanel">
+        <div class="plabel"><span>Probe</span><span class="note num" id="probeXY">—</span></div>
+        <div class="pbody" id="probePanel">
+          <div class="pnit idle"><span id="probeNits">&mdash;</span><small>nits</small></div>
+          <div class="pdelta" id="probeDelta">pick a pixel with Probe, or hold Alt</div>
+          <div class="prow"><span>Source</span><b id="probeSrc">—</b></div>
+          <div class="prow"><span>Baseline</span><b id="probeBase">—</b></div>
+          <div class="prow"><span>RUDRA</span><b id="probeModel">—</b></div>
+          <div class="prow"><span>Masks</span><b id="probeMask">—</b></div>
+        </div>
       </div>
     </div>
 
+    <!-- ── centre: toolbar, viewer, transport ── -->
     <div class="centre">
 
       <div class="vtools">
-        <span class="vlabel">VIEW</span>
-        <span class="vstatic num" id="viewTransform">PQ · Rec.2020</span>
-        <span class="vsep"></span>
-        <span class="vlabel">COMPARE</span>
+        <span class="vlabel">Compare</span>
         <div class="seg" id="viewMode">
           <button type="button" data-view="model" class="on" title="The reconstruction (1)">RUDRA</button>
           <button type="button" data-view="baseline" title="The analytic baseline (2)">Baseline</button>
           <button type="button" id="wipeBtn" title="Wipe: baseline left, RUDRA right (W)">Wipe</button>
         </div>
         <span class="vsep"></span>
-        <span class="vlabel">LAYER</span>
+        <span class="vlabel">Layer</span>
         <div class="seg" id="viewLayer">
           <button type="button" data-layer="0" class="on" title="The composed picture">Image</button>
           <button type="button" data-layer="1" title="Luminance zones, in nits">False colour</button>
           <button type="button" data-layer="2" title="What the network changed, and where it did not">Difference</button>
         </div>
-        <button type="button" class="tbtn" id="probeBtn" title="Read one pixel: baseline, RUDRA, and whether the SDR clipped there">Probe</button>
         <span class="vsep"></span>
+        <button type="button" class="tbtn" id="probeBtn" title="Read one pixel: baseline, RUDRA, and whether the SDR clipped there">Probe</button>
         <button type="button" class="tbtn" id="guideBtn" title="Framing guides, 90% and 80%">Guides</button>
         <span class="spacer"></span>
-        <span class="vlabel">ZOOM</span>
+        <span class="vlabel">Zoom</span>
         <div class="seg" id="zoomSeg">
           <button type="button" data-zoom="fit" class="on">Fit</button>
           <button type="button" data-zoom="actual">100%</button>
@@ -217,7 +214,7 @@
           <span class="badge right" id="plateLabel"
                 style="left:8px;bottom:8px">RUDRA reconstruction</span>
           <span class="badge" style="right:8px;bottom:8px" id="plateHint">Hold B, or the image, to flip</span>
-          <span class="badge num" style="right:8px;top:8px" id="peakBadge">Display peak 203 nits</span>
+          <span class="badge num" style="right:8px;top:8px" id="peakBadge">Display peak 203 nits · clipped</span>
         </div>
         <div class="fclegend" id="fcLegend" hidden>
           <i style="background:#2b1f3d"></i><span>0.1</span>
@@ -247,26 +244,31 @@
         <div class="scrub" id="scrub"><div class="track"></div><div class="head" id="scrubHead" style="left:0"></div></div>
         <span class="num srcinfo" id="srcInfo">—</span>
       </div>
-
-      <div class="scopes" id="scopes">
-        <div class="scope wave">
-          <div class="plabel"><span>Waveform</span><span class="note">nits, log</span></div>
-          <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="xMidYMid meet"></svg></div>
-        </div>
-        <div class="scope hist">
-          <div class="plabel"><span>Histogram</span><span class="note">log2 stops</span></div>
-          <div class="plot"><svg id="hist" width="310" height="116" viewBox="0 0 310 116"></svg></div>
-        </div>
-        <div class="scope meas">
-          <div class="plabel">Measured</div>
-          <div style="padding:0 10px" id="measA"></div>
-          <div class="hr" style="margin:6px 10px"></div>
-          <div style="padding:0 10px" id="measB"></div>
-        </div>
-      </div>
     </div>
 
+    <!-- ── right rail: scopes on top, controls below ── -->
     <div class="rail right" id="railRight">
+
+      <div class="railscroll">
+      <div class="scopes" id="scopes">
+        <div class="scope wave">
+          <div class="plabel"><span>Waveform</span><span class="note">nits · log</span></div>
+          <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="none"></svg></div>
+        </div>
+        <div class="scope hist">
+          <div class="plabel"><span>Histogram</span><span class="note">R G B · log</span></div>
+          <div class="plot"><svg id="hist" viewBox="0 0 310 116" preserveAspectRatio="none"></svg></div>
+        </div>
+        <div class="scope vector">
+          <div class="plabel"><span>Vectorscope</span><span class="note">Rec.2020</span></div>
+          <div class="plot vs"><canvas id="vector" width="256" height="256"></canvas>
+            <span class="vsring"></span>
+            <b style="left:50%;top:7%">R</b><b style="left:88%;top:28.5%">MG</b>
+            <b style="left:88%;top:71.5%">B</b><b style="left:50%;top:93%">CY</b>
+            <b style="left:12%;top:71.5%">G</b><b style="left:12%;top:28.5%">YL</b>
+          </div>
+        </div>
+      </div>
 
       <div class="itabs" id="itabs">
         <button type="button" class="on" data-tab="rec" id="tabRec">Reconstruct</button>
@@ -275,7 +277,6 @@
       </div>
 
       <div class="ipanel on" data-panel="rec">
-        <div class="plabel">Recovery</div>
         <div class="ctl">
           <div class="seg wide" id="mode">
             <button type="button" data-mode="all" class="on">All</button>
@@ -315,7 +316,6 @@
       </div>
 
       <div class="ipanel" data-panel="deliver">
-        <div class="plabel">Conform</div>
         <div class="ctl">
           <div class="check on" id="anchor">
             <span class="box"><svg width="7" height="6" viewBox="0 0 7 6" fill="none"><path d="M1 3L2.8 4.8L6 1.2" stroke="currentColor" stroke-width="1.2"/></svg></span>
@@ -327,9 +327,6 @@
             <span class="lab">Carry source chroma</span>
             <span class="hint" id="chromaHint">below the clip</span>
           </div>
-        </div>
-        <div class="plabel">Container</div>
-        <div class="ctl">
           <div class="field"><span class="k">Container</span><span class="v" id="containerField">OpenEXR — ACES 2065-1</span></div>
           <div class="field"><span class="k">Transfer</span><span class="v">linear (scene-referred)</span></div>
           <div class="field"><span class="k">Primaries</span><span class="v" id="primariesField">AP0 (ST 2065-4)</span></div>
@@ -340,9 +337,20 @@
         </div>
       </div>
 
+      <!-- What this frame actually contains. Measured, never estimated: every
+           figure here comes from ui/server.py's measure() over the composited
+           pixels, which is the same code path the master writes from. -->
+      <div class="framestats">
+        <div class="plabel"><span>Frame</span><span class="note">measured</span></div>
+        <div class="ms" id="measA"></div>
+        <div class="ms" id="measB"></div>
+        <div class="clipbar" id="clipBar" hidden><i></i><u></u></div>
+      </div>
+
       <div class="logwrap">
         <div class="plabel">Log</div>
         <div class="log" id="log"></div>
+      </div>
       </div>
 
       <div class="actions">
@@ -352,16 +360,27 @@
     </div>
   </div>
 
-  <div class="statusbar">
-    <span class="s">log2_extended · 0.005–1 000 000 nits · 2 377 codes/stop</span>
-    <span class="vrule"></span>
-    <span class="s" id="statusMask">—</span>
+  <!-- ─────────────────────────────────────────────────────────────────────
+       The colour pipeline, always visible. Which transform is on the input,
+       what the working space is, what the viewer is showing and what the
+       master will be written as. A wrong transform is the most expensive
+       mistake in a DI suite and nothing else on this page reports it.
+       ───────────────────────────────────────────────────────────────── -->
+  <div class="pipe" id="pipe">
+    <span class="pseg"><em>in</em><b id="pipeIn">sRGB · Rec.709</b></span>
+    <span class="parrow">&#9656;</span>
+    <span class="pseg"><em>working</em><b id="pipeWorking">scene-linear · 203 nits = 1.0</b></span>
+    <span class="parrow">&#9656;</span>
+    <span class="pseg"><em>view</em><b id="viewTransform">PQ · Rec.2020</b></span>
+    <span class="parrow">&#9656;</span>
+    <span class="pseg"><em>master</em><b id="pipeMaster">ACES 2065-1 EXR, half</b></span>
     <span class="spacer"></span>
+    <span class="s" id="statusMask">—</span>
+    <span class="vrule"></span>
     <span class="s" id="statusTime">—</span>
+    <span class="pwarn" id="pipeWarn" hidden></span>
   </div>
 </div>
-
-<div class="appfoot"><i></i><span>A Radiance Studio technology</span><i></i></div>
 
 <div class="overlay" id="overlay" hidden><div class="sheet" id="overlaySheet"></div></div>
 

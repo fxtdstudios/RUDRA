@@ -138,16 +138,10 @@
     }).observe(viewer, {attributes: true, attributeFilter: ["class"]});
   }
 
-  /* ---- view transform read-out ---------------------------------------
-     Says what the picture on screen is being shown as, taken from the
-     delivery container the app already tracks. It reports; it does not set. */
-  var cf = $("containerField"), vt = $("viewTransform");
-  if (cf && vt) {
-    var readTransform = function () {
-      var t = (cf.textContent || "").toLowerCase();
-      vt.textContent = t.indexOf("aces") >= 0 ? "linear · AP0" : "linear · Rec.2020";
-    };
-    readTransform();
-    new MutationObserver(readTransform).observe(cf, {childList: true, characterData: true, subtree: true});
-  }
+  /* The view transform read-out moved to app.js updatePipe() on 18 Sep 2026.
+     It used to be derived here from the delivery container, which named the
+     wrong thing: the container is what the MASTER is written as, and the
+     pipeline bar reports that separately. What the viewer does to the picture
+     is an exposure and a clip at the display peak, and only app.js knows the
+     peak, so only app.js can say it. */
 })();
