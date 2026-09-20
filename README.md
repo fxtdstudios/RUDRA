@@ -44,9 +44,7 @@ output.
 ## Install
 
 ```bash
-git clone https://github.com/fxtdstudios/RUDRA.git
-cd RUDRA
-pip install -e .
+(cd checkpoints && sha256sum -c SHA256SUMS)
 ```
 
 Then open the Studio — it loads the shipped checkpoint and opens a browser tab:
@@ -55,17 +53,103 @@ Then open the Studio — it loads the shipped checkpoint and opens a browser tab
 python ui/server.py
 ```
 
-Drop a frame or a shot, and **Master** writes a scene-linear OpenEXR. The CLI
-takes it from there, with no GPU:
+| backbone | VAE latent | recommended | PSNR_log |
+|---|---|---|---:|
+| Flux.1 | 16ch / 8x | full | 29.77 |
+| Wan | 16ch / 8x | full | 32.45 |
+| LTX | 128ch / 8x | full | 25.47 |
+| SDXL | 4ch / 8x | turbo | 33.86 |
+| Qwen-Image | 16ch / 8x | turbo | 26.67 |
+| Flux.2 Klein | 128ch / 16x | turbo | 28.57 |
+
+---
+
+## Use it
+
+Convert a complete SDR clip to HDR10, retaining its audio:
 
 ```bash
-rudra info    master.exr --nits-scale 203                         # nits, percentiles
-rudra deliver masters/ --output shot --target prores4444 --fps 24  # or hdr10, hlg
-rudra aces    masters/ --output aces                               # ACES 2065-1 EXR
+rudra video input.mp4 --output delivery/master_hdr10.mp4 \
+    --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --device cuda
 ```
 
-Batch inference without the Studio is `python training/infer_sdr2hdr.py`; its
-output is a float TIFF, which the CLI does not read yet.
+Run `python -m rudra.video` with the same arguments if the CLI is not installed.
+Requires FFmpeg/ffprobe with `libx265` and `zscale`. This command supports
+progressive, square-pixel, constant-frame-rate SDR video with even dimensions.
+It preserves the rational frame rate and frame count, normalizes video start
+time to zero, and keeps audio aligned relative to the video. Audio outside the
+video interval is trimmed; all input audio streams are copied by default.
+Use `--audio aac` when the input audio codec cannot be copied into MP4.
+
+Colour tags determine the input transfer, primaries, YUV matrix and range.
+Missing or unsupported tags require explicit overrides, for example
+`--input-transfer rec709 --input-primaries rec709 --input-matrix bt709 --input-range limited`.
+Only use those overrides when they describe the source. HDR, alpha-bearing,
+interlaced, rotated, anamorphic and variable-frame-rate inputs are rejected
+rather than silently changed, except that straight alpha is supported by the
+ProRes 4444 preset below. No preset carries subtitles.
+
+The export is 10-bit HEVC, BT.2020/PQ, with measured MaxCLL/MaxFALL and mastering
+display metadata. `--peak-nits 1000` selects the mastering peak. The video is
+published only after checking dimensions, every frame timestamp, frame count,
+colour tags, HDR metadata, audio alignment, and a complete decode. A matching
+`.mp4.json` sidecar records the checkpoint hash, settings, per-frame statistics
+and QC results. Existing outputs are never overwritten.
+
+Optional `--shadow-smoothing 0.8` smooths the scalar shadow gate and resets it
+at detected hard cuts; it does not blend image pixels or constitute a validated
+temporal model. It is off by default. Full source dimensions are kept, using
+512-pixel tiles by default; `--tile-size 0` runs untiled when memory permits.
+The command spools temporary 16-bit PNGs to disk rather than keeping a whole
+clip in RAM. Use `--work-dir` to select a disk with space; jobs are not yet
+resumable. CPU is the default device, so select CUDA explicitly when available.
+
+Select another delivery preset with `--format`:
+
+| Preset | Output | Signal | Alpha |
+|---|---|---|---|
+| `hdr10` (default) | MP4/MOV/MKV, HEVC 10-bit | BT.2020 PQ, static HDR10 metadata | No |
+| `hlg` | MP4/MOV/MKV, HEVC 10-bit | BT.2020 HLG | No |
+| `prores422` | MOV, ProRes 422 | BT.2020 PQ | No |
+| `prores422hq` | MOV, ProRes 422 HQ | BT.2020 PQ | No |
+| `prores4444` | MOV, ProRes 4444 | BT.2020 PQ | Straight alpha |
+
+```bash
+rudra video input.mp4 --output delivery/broadcast_hlg.mp4 --format hlg \
+    --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --device cuda
+rudra video input.mp4 --output delivery/editorial.mov --format prores422hq \
+    --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --device cuda
+rudra video transparent.mov --output delivery/composite.mov --format prores4444 \
+    --alpha-mode straight --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --device cuda
+```
+
+ProRes requires FFmpeg's `prores_ks` encoder. This encoder accepts 10-bit colour
+and alpha input planes; a 4444 stream decoding to 12-bit colour or configured
+for 16-bit alpha storage does not restore precision lost at its input. Alpha
+bypasses reconstruction and grading. Every decoded output alpha pixel is checked
+against the input with a tolerance of 128/65535 (two 10-bit steps). Arbitrary
+16-bit alpha is therefore **not lossless**. Premultiplied sources must first be
+unpremultiplied; `--alpha-mode straight` declares the supplied interpretation.
+
+HLG uses BT.2100's inverse OOTF followed by its OETF, with zero reference black,
+the selected peak and the corresponding system gamma (1.2 at 1000 nits). It
+does not merely relabel PQ pixels. Saturated values outside legal HLG scene RGB
+receive a common RGB gain reduction. HLG has no HDR10 static SEI; ProRes stores
+PQ colour tags while mastering/content-light analysis remains in the sidecar.
+ProRes MOV's `nclc` atom may omit a separate range flag; conversion uses limited
+video range. All presets retain the frame/audio checks and no-overwrite policy.
+
+Reconstruct a frame or a sequence:
+
+```bash
+python training/infer_sdr2hdr.py input/ --output-dir out/ \
+    --image-checkpoint checkpoints/sdr2hdr_shadow_v1.pt --recovery-mode all
+```
+
+Inference also writes float EXR delivery masters at 203 nits per stored unit.
+TIFF outputs retain the network's separate 10,000-nit convention. For a nested
+input sequence, pass the corresponding output shot directory to delivery.
+Master and deliver. No GPU required:
 
 CUDA is optional — it runs on CPU, slower. `ffmpeg` is needed for video, not
 for stills.
@@ -155,8 +239,88 @@ is why, and that is not a term FXTD Studios can waive for you. See
 
 ---
 
-<p align="center">
-  <img src="ui/assets/rudra-mark-256.png" width="52"><br>
-  <b>FXTD Studios</b> · Cairo<br>
-  <sub>A Radiance Studio technology · Light has a deeper story</sub>
-</p>
+[FXTD Studios](https://fxtdstudios.com) · Cairo
+# Resumable video queues
+
+Studio's **Master EXR** renders directly to an absolute **Render folder** on the
+computer running Studio. Choose **Current image**, or **All loaded frames —
+sequence**, then set the render name and starting frame. A sequence named `shot`
+starting at 1001 writes `shot.001001.exr`, `shot.001002.exr`, and matching JSON
+sidecars, using loaded frame order and one frozen copy of the current grade.
+Existing outputs stop the render before processing; files are never overwritten.
+Master keeps the source resolution and does not trigger a browser download.
+Keep Studio and the browser open until the render completes. If a sequence stops,
+completed frames remain on disk; choose the remaining inputs and matching start
+number to continue, or use a fresh render folder.
+
+Save a queue as `queue.json`. Paths resolve relative to that file. Defaults and
+per-job `options` accept the same option names as `rudra video` (underscores or
+hyphens), without the leading `--`.
+
+```json
+{
+  "version": 1,
+  "defaults": {
+    "checkpoint": "checkpoints/sdr2hdr_shadow_v1.pt",
+    "device": "cpu",
+    "format": "hdr10"
+  },
+  "jobs": [
+    {"input": "clips/shot01.mp4", "output": "masters/shot01.mp4"},
+    {"input": "clips/shot02.mp4", "output": "masters/shot02.mov",
+     "options": {"format": "prores422hq"}}
+  ]
+}
+```
+
+```console
+rudra batch run queue.json
+rudra batch status queue.json
+rudra batch run queue.json --retry-failed
+```
+
+Jobs run sequentially. Progress and errors are saved atomically in
+`queue.json.state.json`; a process lock prevents two runners using the same
+queue. Repeating `run` verifies SHA-256 hashes of completed video/report pairs,
+sources, and weights before skipping them. Failed jobs remain visible and require
+`--retry-failed`; other jobs continue. The command returns nonzero if any job is
+incomplete. Keep the queue unchanged after starting it; use a new filename for a
+revised queue. Use separate output paths across different queues.
+
+Resume is **per clip**: interrupted clips restart from frame one. An existing
+output or report is never overwritten. If a crash occurs during final publication
+or before completion is saved, review and relocate that job's output/report pair
+before retrying. Temporary folders may remain after a hard process termination.
+
+## Validation quality diagnostic
+
+Run a fixed, scene-balanced sample without consuming the final test set:
+
+```console
+python training/quality_benchmark.py --manifest outputs/finetune_views_20260920/data/manifest.jsonl --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --out outputs/quality_diagnostic_new --scenes 12
+```
+
+The output directory must be new. The tool freezes source and checkpoint hashes,
+scores the shipped model against the analytic inverse-ACES baseline at native
+resolution on CPU, and writes `REPORT.md`, `summary.json`, and `scores.jsonl`.
+It selects one frame per validation scene by a stable hash, then tests clean and
+seeded degraded inputs. It reports PU21-PSNR, real ColorVideoVDP image JOD, and
+shadow/highlight region errors, with paired bootstrap intervals. Missing metrics
+remain unavailable; proxy values never enter the comparison.
+
+This is an image-quality diagnostic, not a motion benchmark or a Ruby comparison.
+Candidate training assessment and final held-out testing remain separate. Do not
+interpret a small validation sample as proof of general superiority.
+
+To isolate the residual recovery paths on the exact same frozen sample:
+
+```console
+python training/recovery_ablation.py --benchmark outputs/quality_benchmark_20260920 --out outputs/recovery_ablation_new
+```
+
+This verifies the original source, checkpoint, and implementation hashes, reuses
+the original baseline/all-recovery scores, and measures highlights-only,
+shadows-only, and recovery-off with real ColorVideoVDP. The new output directory
+contains paired comparisons and an ablation report. No inference defaults or
+training settings are changed; confirm findings on broader validation before
+promoting a different recovery policy.

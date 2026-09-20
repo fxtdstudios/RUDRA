@@ -92,6 +92,8 @@ def main() -> int:
     ap.add_argument("--best-smoothing", type=int, default=5)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--seed", type=int, default=20260901)
+    ap.add_argument("--eval-seed", type=int, default=20260901,
+                    help="Fixed validation degradation seed shared across training seeds")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -113,7 +115,7 @@ def main() -> int:
     train_set = WholeFrameDataset(args.manifest, "train", args.max_side,
                                   args.degradation_probability, seed=args.seed)
     val_set = WholeFrameDataset(args.manifest, "val", args.max_side,
-                                deterministic=True, seed=args.seed)
+                                deterministic=True, seed=args.eval_seed)
     val_set = Subset(val_set, deterministic_eval_order(len(val_set)))
     largs = dict(batch_size=1, num_workers=args.workers, persistent_workers=args.workers > 0)
     train_loader = DataLoader(train_set, shuffle=True, **largs)

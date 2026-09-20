@@ -350,13 +350,19 @@
     }
 
     var cll = "";
+    var span = Math.log10(SCOPE_HI / SCOPE_LO);
+    var diffuseY = H - (Math.log10(DIFFUSE_WHITE / SCOPE_LO) / span) * H;
+    cll += '<line x1="0" y1="' + diffuseY.toFixed(1) + '" x2="' + W + '" y2="' + diffuseY.toFixed(1) +
+           '" stroke="#777" stroke-width="1" stroke-dasharray="4 3" opacity="0.75"/>' +
+           '<text x="4" y="' + (diffuseY - 4).toFixed(1) +
+           '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#888">Diffuse white 203</text>';
     if (m && isFinite(m.maxcll)) {
-      var y = nitsToY(m.maxcll);
+      var y = H - (Math.log10(Math.min(Math.max(m.maxcll, SCOPE_LO), SCOPE_HI) / SCOPE_LO) / span) * H;
       cll = '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
-            '" stroke="' + Z_HI_BRIGHT + '" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>' +
-            '<text x="' + (W - 3) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="end"' +
-            ' font-family="IBM Plex Mono, monospace" font-size="8" fill="' + Z_HI_BRIGHT +
-            '">MaxCLL ' + Math.round(m.maxcll) + "</text>";
+            '" stroke="#cfcfcf" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>' +
+            '<text x="4" y="' + (y - 4).toFixed(1) +
+            '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#a8a8a8">MaxCLL ' +
+            Math.round(m.maxcll) + " nits</text>";
     }
 
     /* The top and bottom gridlines sit exactly on y=0 and y=H, so their
@@ -385,11 +391,12 @@
         marks += '<text x="' + mx.toFixed(0) + '" y="110" font-family="IBM Plex Mono, monospace"' +
                  ' font-size="8" fill="#5b6b7a" text-anchor="middle">' + t2[1] + "</text>";
       });
-    var dwX = (Math.log2(DIFFUSE_WHITE / SCOPE_LO) / span2) * HW;
-    $("hist").innerHTML = bars +
-      '<line x1="0" y1="' + HH + '" x2="' + HW + '" y2="' + HH + '" stroke="#1e2c3a"/>' +
-      '<line x1="' + dwX.toFixed(1) + '" y1="0" x2="' + dwX.toFixed(1) + '" y2="' + HH +
-      '" stroke="#6f7f8f" stroke-dasharray="3 3" opacity="0.8"/>' + marks;
+    var dw = (Math.log2(DIFFUSE_WHITE / SCOPE_LO) / Math.log2(SCOPE_HI / SCOPE_LO)) * HW;
+    $("hist").innerHTML = '<g fill="#b4b4b4" opacity="0.78">' + bars + "</g>" +
+      '<line x1="0" y1="' + HH + '" x2="' + HW + '" y2="' + HH + '" stroke="#2c2c2c"/>' +
+      '<line x1="' + dw.toFixed(1) + '" y1="0" x2="' + dw.toFixed(1) + '" y2="' + HH +
+      '" stroke="#4a4a4a" stroke-dasharray="2 3"/>' +
+      '<text x="' + (dw + 3).toFixed(1) + '" y="10" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#777">DW</text>' + marks;
   }
 
   /* ---- the viewer ------------------------------------------------------ */
@@ -985,35 +992,44 @@
     }
   }
 
-  function master() {
+  async function master() {
     if (!state.live || !current() || state.busy) { return; }
-    busy(true, "Mastering…");
-    log("master " + current().name + " → " +
-        (state.container === "aces" ? "ACES 2065-1" : "linear Rec.2020") +
-        " EXR, full resolution" + (graded() ? ", with region EV" : ""));
-    fetch("/api/master", {
-      method: "POST",
-      headers: {"Content-Type": "application/octet-stream",
-                "X-Rudra-Params": JSON.stringify(params(Object.assign(
-                    {name: current().name,
-                     container: state.container,
-                     master_max_side: 4096,
-                     anchor: state.anchor,
-                     carry_chroma: state.carryChroma}, seqRef())))},
-      body: current().file || null
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      busy(false);
-      if (!d.ok) { log("master failed: " + (d.error || "unknown"), "err"); return; }
-      state.master = d;
-      log("  " + d.file + "  " + (d.bytes / 1048576).toFixed(2) + " MB  " +
-          d.resolution + "  " + d.container + (d.tiled ? "  tiled" : "  one pass") +
-          "  " + d.elapsed_s + " s");
-      log("  MaxCLL " + d.maxcll + "  MaxFALL " + d.maxfall + " nits  sidecar " + d.sidecar);
-      var a = document.createElement("a");
-      a.href = "/api/master/download?f=" + encodeURIComponent(d.file);
-      a.download = d.file;
-      document.body.appendChild(a); a.click(); a.remove();
-    }).catch(function (e) { busy(false); log("master failed: " + e, "err"); });
+    var folder = $("renderDir").value.trim();
+    if (!folder) { $("renderStatus").textContent = "Choose a render folder first."; $("renderDir").focus(); return; }
+    var sequence = $("renderMode").value === "sequence";
+    var frames = sequence ? state.frames.slice() : [current()];
+    var start = Number($("renderStart").value);
+    var settings = params({container: state.container, master_max_side: 0,
+      render_dir: folder, render_name: $("renderName").value.trim(),
+      render_mode: sequence ? "sequence" : "image", frame_start: start,
+      render_count: frames.length});
+    settings = JSON.parse(JSON.stringify(settings));
+    stopPlay();
+    busy(true, "Rendering…");
+    var completed = 0;
+    async function submit(endpoint, body, options) {
+      var response = await fetch(endpoint, {method: "POST",
+        headers: {"Content-Type": "application/octet-stream", "X-Rudra-Params": JSON.stringify(options)}, body: body});
+      var result = await response.json();
+      if (!response.ok || !result.ok) { throw new Error(result.error || "Render failed"); }
+      return result;
+    }
+    try {
+      var plan = await submit("/api/master/plan", "plan", settings);
+      log("Render destination: " + plan.paths[0] + (frames.length > 1 ? " … " + plan.paths[plan.paths.length - 1] : ""));
+      for (var i = 0; i < frames.length; i++) {
+        $("renderStatus").textContent = "Rendering " + (i + 1) + " / " + frames.length;
+        var options = Object.assign({}, settings, {render_count: 1, frame_start: start + i, name: frames[i].name});
+        var result = await submit("/api/master", frames[i].file, options);
+        state.master = result;
+        completed++;
+        log("Saved " + result.path + " · " + result.resolution);
+      }
+      $("renderStatus").textContent = "Rendered " + completed + " frame(s) to " + folder;
+    } catch (error) {
+      $("renderStatus").textContent = "Stopped after " + completed + " / " + frames.length + ": " + error.message;
+      log("Render stopped: " + error.message, "err");
+    } finally { busy(false); }
   }
 
   /* ---- overlay sheet ---------------------------------------------------- */
@@ -1750,6 +1766,11 @@
           log("model " + info.name + (info.step ? "  step " + info.step : ""));
           log("device " + (info.gpu || info.device));
           log("drop frames — the network runs once each, then the grade is local");
+          fetch("/api/training", {cache: "no-store"}).then(function (r) { return r.json(); }).then(function (candidate) {
+            if (candidate.available && !candidate.promoted) {
+              log("training complete — candidate " + candidate.selected_seed + " available for review; shipped model remains active");
+            }
+          });
           autoload();
         } else {
           log("no model loaded: " + (info.reason || "unknown"), "err");

@@ -1,4 +1,4 @@
-"""``rudra`` — the headless delivery CLI (torch-free).
+"""``rudra`` — headless delivery and video conversion CLI.
 
 Escapes ComfyUI: everything the delivery layer does is scriptable from a
 shell or a render farm. Model inference still lives in the training scripts
@@ -6,6 +6,7 @@ and the ComfyUI node; this CLI covers what happens AFTER radiance exists —
 grade, master, measure, export, benchmark.
 
 Subcommands:
+  video      SDR video -> HDR10/HLG/ProRes with audio and QC (torch/FFmpeg)
   info       print frame statistics (nits, PQ codes, percentiles)
   grade      apply GradeControls (EV / regions / knee / peak) to linear frames
   aces       write ACES 2065-1 (AP0) or ACEScg (AP1) container EXR(s)
@@ -195,6 +196,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rudra", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    from ..video import add_arguments, convert_video
+    video = sub.add_parser("video", help="SDR video to HDR10/HLG/ProRes with audio and export QC")
+    add_arguments(video)
+    video.set_defaults(fn=convert_video)
+    from ..batch import add_arguments as add_batch_arguments
+    add_batch_arguments(sub.add_parser('batch', help='Run, resume, or inspect a saved video queue'))
 
     def common(p):
         p.add_argument("input", type=Path, help="frame file or directory (.exr/.npy)")

@@ -394,3 +394,7 @@ body.ws-simple .rail-foot{display:none}
   .scope.meas{width:auto;flex-basis:auto}
   .ipanel{max-height:340px}
 }
+.overlay .sheet .close { margin-top: 14px; font-size: 10px; color: var(--fg-3); }
+.render-controls label { display: block; margin: 6px 0; color: var(--fg-3); }
+.render-controls input, .render-controls select { display: block; width: 100%; box-sizing: border-box; background: #17191d; color: #eee; border: 1px solid #40444b; padding: 6px; margin-top: 4px; }
+.render-controls small, #renderStatus { display: block; overflow-wrap: anywhere; margin: 6px 0; }

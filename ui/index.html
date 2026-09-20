@@ -252,12 +252,12 @@
       <div class="railscroll">
       <div class="scopes" id="scopes">
         <div class="scope wave">
-          <div class="plabel"><span>Waveform</span><span class="note">nits · log</span></div>
-          <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="none"></svg></div>
+          <div class="plabel"><span>Waveform</span><span class="note">luma percentile · nits/log</span></div>
+          <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="xMidYMid meet"></svg></div>
         </div>
         <div class="scope hist">
-          <div class="plabel"><span>Histogram</span><span class="note">R G B · log</span></div>
-          <div class="plot"><svg id="hist" viewBox="0 0 310 116" preserveAspectRatio="none"></svg></div>
+          <div class="plabel"><span>Histogram</span><span class="note">absolute nits · log2 stops · DW</span></div>
+          <div class="plot"><svg id="hist" width="310" height="116" viewBox="0 0 310 116"></svg></div>
         </div>
         <div class="scope vector">
           <div class="plabel"><span>Vectorscope</span><span class="note">Rec.2020</span></div>
@@ -347,11 +347,17 @@
         <div class="clipbar" id="clipBar" hidden><i></i><u></u></div>
       </div>
 
-      <div class="logwrap">
-        <div class="plabel">Log</div>
-        <div class="log" id="log"></div>
+      <div class="plabel">Render</div>
+      <div class="ctl render-controls">
+        <label>Render folder<input id="renderDir" type="text" placeholder="C:\Renders\Shot01" aria-label="Render folder"></label>
+        <label>Output<select id="renderMode"><option value="image">Current image</option><option value="sequence">All loaded frames — sequence</option></select></label>
+        <label>Render name<input id="renderName" value="master" type="text"></label>
+        <label>Start frame<input id="renderStart" value="1" type="number" min="0" step="1"></label>
+        <small>Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame.</small>
+        <div id="renderStatus" role="status" aria-live="polite"></div>
       </div>
-      </div>
+      <div class="plabel">Log</div>
+      <div class="log" id="log"></div>
 
       <div class="actions">
         <button type="button" id="btnReprocess" disabled>Reprocess</button>
