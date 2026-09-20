@@ -47,11 +47,29 @@ _to_delete/
 .keep_running
 training/input.jpg
 
-# ── Docs stay local: ignore all markdown except README.md ────────────────────
+# ── Docs: ignore working notes, keep the documentation ───────────────────────
+# The blanket rule below is deliberate: dated audits, runbooks and session
+# notes do not belong in the repo. It was too blanket, and that cost months.
+#
+# docs/ is documentation people are meant to read ON GITHUB. The *.md rule
+# swallowed it, so the guides split out of the README were never committed,
+# their links 404'd for everyone who clicked them, and a commit went in on the
+# remote removing the LINKS rather than adding the FILES. One line here caused
+# all of it, and nothing reported it because an ignored file is not an error.
 *.md
-# Root README only -- an anchored pattern, so a docs/README.md or any other
-# nested markdown cannot slip back in through the negation.
+# Root README only -- an anchored pattern, so a stray nested markdown cannot
+# slip back in through the negation.
 !/README.md
+# Documentation that is meant to be read, and the two model cards, one of which
+# a test reads off disk.
+!/docs/*.md
+!/STATUS.md
+!/HF_MODEL_CARD.md
+
+# Run artefacts from the corpus tools. Reports of a measurement, not source,
+# and pilot_clipping.json has already been committed once by accident.
+/pilot_clipping.json
+/survey.json
 
 # Audit, review and status reports stay local too. These were written as HTML so
 # they slipped past the *.md rule and stayed tracked; the same content belongs in
@@ -98,5 +116,12 @@ NEXT_*.md
 AGENTS.md
 .agents/
 
-# Agent scratch delivered into the repo by the Cowork app.
+# Scratch delivered into the repo by the desktop assistant app. The pattern
+# has to match the folder's real name on disk, so it stays as written.
 Claude outputs/
+
+# Local helper scripts: they carry absolute paths from this machine and are
+# regenerated per task. Not part of the project.
+COMMIT_*.ps1
+AUDIT_*.ps1
+SCRUB_TRAILERS.txt

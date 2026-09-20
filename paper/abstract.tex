@@ -1,0 +1,32 @@
+We treat single-image inverse tone mapping as a question about information
+rather than about model capacity. A compact residual model on an analytic
+inverse tone map is scored against that same analytic map on 429 held-out
+frames, in PU21-PSNR and in ColorVideoVDP (CVVDP) JOD. On degraded input, the
+condition in which real footage arrives, it gains \SI{1.43}{\decibel} and
+\num{0.44}~JOD and wins 348 of 429 frames. On clean, well-graded input it loses
+\SI{3.0}{\decibel} of PU21-PSNR for a perceptually invisible $-0.046$~JOD, the two metrics
+disagreeing sharply about the practical significance of the same difference,
+which is itself one of our results. The regression is not diffuse: it is carried by
+low-dynamic-range frames, and the model has no representation of how much
+headroom a frame has, so it cannot decide to do nothing.
+
+We then measure what repairing that is worth and whether it can be repaired. An
+oracle per-frame scale on the residual is worth \SI{+5.84}{\decibel} on clean
+and \SI{+0.29}{\decibel} on degraded input at the same time, and no constant
+achieves it. But a linear readout of the features such a gate would see explains
+\num{3}\% of that scale's variance, and \num{79}\% of the variance lies within a
+condition rather than between conditions, so even a perfect
+clean-versus-degraded classifier is capped at $R^2 = \num{0.213}$. The residual
+variance asks whether a clipped region was a \SI{200}{\nits} lamp or a
+\SI{20000}{\nits} sun. Capacity, corpus and objective were each varied by a
+factor of four to six and none of them moved the result. We report this as an
+empirical identifiability bound on the representations we tested, not as an
+information-theoretic one.
+
+That bound is a property of the question. Posed as a continuous per-frame scale
+it is unreachable; posed as a binary decision on the one axis that is
+detectable, it is reachable. A \num{21121}-parameter gate on the shadow arm of
+the reconstruction converts the clean regression into a gain of
+$+3.41 \pm 0.32$~dB and $+0.135 \pm 0.023$~JOD over the shipped model,
+for $0.30 \pm 0.15$~dB and $0.091 \pm 0.041$~JOD given up on degraded
+input, across three seeds.

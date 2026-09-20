@@ -90,8 +90,25 @@ HDR_PEAK_NITS  = 10_000.0
 HDR_REF_NITS   = 203.0
 HDR_NORM_SCALE = HDR_REF_NITS / HDR_PEAK_NITS   # multiply scene-linear by this
 
-# Tone-map exposure (scene-linear mid-grey at this EV → SDR ~0.5)
-TONEMAP_EV_OFFSET = -1.0   # slight underexpose for safety
+# Tone-map exposure, applied to scene-linear BEFORE the ACES curve.
+#
+# This was -1.0, described as "slight underexpose for safety", and the safety
+# turned out to be the problem. The ACES approximation saturates near a linear
+# input of 1, so halving the input roughly doubles the radiance a pixel needs
+# before it clips. Measured on the corpus that produced: median clipped
+# fraction 0.000%, and 52.6% of frames with no clipped pixel anywhere.
+#
+# An inverse tone mapper exists to say what was above a blown highlight. A
+# training set without blown highlights does not contain the question. Corpora
+# rendered from here on clip the way delivered SDR clips.
+#
+# The value is written into every sidecar and into the manifest, and
+# rudra.sdr2hdr.sdr_to_baseline_hdr takes it as an argument, so the analytic
+# baseline always undoes the exposure the render actually applied. Checkpoints
+# trained on the old corpus keep the old value through their config; nothing
+# has to be remembered by anyone.
+LEGACY_TONEMAP_EV = -1.0    # every corpus up to v3, and every shipped checkpoint
+TONEMAP_EV_OFFSET = 0.0     # corpus v4 onward
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -303,17 +320,29 @@ def _apply_exposure(lin: np.ndarray, ev: float) -> np.ndarray:
     return lin * (2.0 ** ev)
 
 
-def tonemap_aces_approx(lin: np.ndarray) -> np.ndarray:
+def tonemap_aces_approx(lin: np.ndarray, ev: float = None) -> np.ndarray:
     """
     ACES filmic approximation (Narkowicz 2015) — punchy, industry-familiar look.
     Input:  scene-linear float32 (any range)
     Output: [0,1] display-linear (apply sRGB OETF afterwards)
     """
-    lin = _apply_exposure(lin, TONEMAP_EV_OFFSET)
+    lin = _apply_exposure(lin, TONEMAP_EV_OFFSET if ev is None else float(ev))
     a, b, c, d, e = 2.51, 0.03, 2.43, 0.59, 0.14
     x   = np.maximum(lin, 0.0)
     out = (x * (a * x + b)) / (x * (c * x + d) + e)
     return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+
+def clipped_fraction(sdr_u8: np.ndarray) -> float:
+    """Fraction of pixels with any channel at the top code.
+
+    Recorded per frame because the corpus defect this module just fixed was
+    invisible for months: nothing measured whether the SDR side clipped, so
+    nobody could see that it did not.
+    """
+    if sdr_u8.size == 0:
+        return 0.0
+    return float((sdr_u8.max(axis=-1) >= 255).mean())
 
 
 def oetf_srgb(lin: np.ndarray) -> np.ndarray:
@@ -324,11 +353,25 @@ def oetf_srgb(lin: np.ndarray) -> np.ndarray:
                     1.055 * lin ** (1.0 / 2.4) - 0.055).astype(np.float32)
 
 
-def make_sdr(linear: np.ndarray) -> np.ndarray:
-    """Scene-linear → 8-bit uint8 sRGB array (H,W,3)."""
-    tone = tonemap_aces_approx(linear)
+def make_sdr(linear: np.ndarray, ev: float = None) -> np.ndarray:
+    """Scene-linear → 8-bit uint8 sRGB array (H,W,3).
+
+    Rounds. It used to truncate, and that had a consequence nobody was looking
+    for: ``oetf_srgb(1.0)`` is ``1.055 * 1**(1/2.4) - 0.055``, which in float32
+    lands on 0.99999994 rather than 1.0. Times 255 that is 254.99998, and
+    ``astype(uint8)`` floors it to **254**.
+
+    So the corpus SDR could not contain the value 255 at any exposure. Every
+    fully blown pixel was stored one code below full. Anything looking for
+    clipping by ``== 255`` found none, ever, which is part of why a corpus with
+    no highlights to reconstruct went unnoticed for months -- and a model
+    trained on it never saw the top code, while real delivered SDR is full of
+    it. That is train/serve skew at precisely the pixels an inverse tone mapper
+    exists for.
+    """
+    tone = tonemap_aces_approx(linear, ev)
     srgb = oetf_srgb(tone)
-    return (srgb * 255.0).clip(0, 255).astype(np.uint8)
+    return np.rint(srgb * 255.0).clip(0, 255).astype(np.uint8)
 
 
 def make_hdr(linear: np.ndarray) -> np.ndarray:
@@ -337,7 +380,10 @@ def make_hdr(linear: np.ndarray) -> np.ndarray:
     Normalised so that HDR_PEAK_NITS → 65535.
     """
     norm = np.clip(linear * HDR_NORM_SCALE, 0.0, 1.0)
-    return (norm * 65535.0).astype(np.uint16)
+    # Rounds, for the same reason make_sdr does. Truncation here costs half a
+    # code everywhere rather than one code at the top, which is smaller but is
+    # a bias rather than noise: every stored value is low.
+    return np.rint(norm * 65535.0).clip(0, 65535).astype(np.uint16)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -574,6 +620,13 @@ def process_frame(
         "scene_mean": round(scene_mean, 6),
         "scene_max":  round(scene_max, 6),
         "peak_nits":  round(peak_nits, 1),
+        # The exposure this render applied before the tone curve, and what came
+        # of it. sdr_to_baseline_hdr needs the first to invert the render, and
+        # the second is the number that would have caught the -1 EV corpus
+        # years earlier: a set whose clipped fraction is 0.000% is a set with
+        # nothing for an inverse tone mapper to reconstruct.
+        "tonemap_ev":       TONEMAP_EV_OFFSET,
+        "clipped_fraction": round(clipped_fraction(sdr_arr), 6),
         "sdr":        str(sdr_path.name),
         "hdr":        str(hdr_path.name),
     }
@@ -674,6 +727,8 @@ def _scan_sources(src: Path) -> dict[str, list[Path]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
+    # Declared before the parser, because the flag's default reads it.
+    global TONEMAP_EV_OFFSET
     parser = argparse.ArgumentParser(
         description="Radiance — Wan LoRA training data preparation pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -693,10 +748,20 @@ def main():
     parser.add_argument("--skip-mxf", action="store_true")
     parser.add_argument("--skip-exr", action="store_true")
     parser.add_argument(
+        "--tonemap-ev", type=float, default=TONEMAP_EV_OFFSET,
+        help=f"Exposure applied before the tone curve (default {TONEMAP_EV_OFFSET}). "
+             f"{LEGACY_TONEMAP_EV} reproduces every corpus up to v3, whose SDR side "
+             "has a median clipped fraction of 0.000%. Recorded in every sidecar.")
+    parser.add_argument(
         "--tif-stride", type=int, default=1,
         help="Take every Nth TIF from a sequence (default: 1 = every frame). "
              "Use 24 to sample 1 frame/sec from a 24fps sequence.")
     args = parser.parse_args()
+
+    # One module-level constant drives make_sdr, the sidecar field and the
+    # baseline convention, so the flag sets it once here rather than being
+    # threaded through five call sites and forgotten at one of them.
+    TONEMAP_EV_OFFSET = float(args.tonemap_ev)
 
     dst: Path = args.dst
     _setup_logging(dst, args.verbose)
@@ -708,6 +773,9 @@ def main():
              TARGET_W, TARGET_H, args.fps, args.tif_stride)
     log.info("  Backend: tifffile=%s  cv2=%s  OpenEXR=%s  PIL=%s",
              HAS_TIFFFILE, HAS_CV2, HAS_OPENEXR, HAS_PIL)
+    log.info("  Tone-map exposure: %+.2f EV%s", TONEMAP_EV_OFFSET,
+             "  (LEGACY: the SDR side will barely clip)"
+             if TONEMAP_EV_OFFSET <= LEGACY_TONEMAP_EV + 1e-9 else "")
 
     if not args.src.exists():
         log.error("Source directory not found: %s", args.src)

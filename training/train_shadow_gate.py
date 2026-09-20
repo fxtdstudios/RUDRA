@@ -45,7 +45,7 @@ def gate_inputs(model: SDR2HDRNet, sdr: torch.Tensor, max_side: int):
     sdr = sdr.float().clamp(0.0, 1.0)
     view = gate_view(sdr, max_side)
     with torch.no_grad():                       # the backbone is frozen
-        _, _, mid = model.encode(view, sdr_to_baseline_hdr(view))
+        _, _, mid = model.encode(view, sdr_to_baseline_hdr(view, model.corpus_ev))
     return mid, sdr, luminance(sdr)
 
 

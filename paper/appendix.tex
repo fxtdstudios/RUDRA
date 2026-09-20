@@ -1,0 +1,112 @@
+\section{Notation}
+\label{sec:notation}
+
+\begin{table}[htbp]
+\centering
+\caption{Symbols used throughout.}
+\label{tab:notation}
+\begin{tabular}{ll}
+\toprule
+symbol & meaning \\
+\midrule
+$\Lsc$ & scene radiance in network units; $1.0 = \SI{10000}{\nits}$ \\
+$\sdr$ & 8-bit SDR frame, $[0,1]^{H\times W\times 3}$ \\
+$T$ & unknown display-referred transform (exposure, grade, tone curve) \\
+$c$ & delivery ceiling of a graded source \\
+$\base(\sdr)$ & analytic inverse-tone-map baseline, \cref{eq:baseline} \\
+$\resid$ & learned log-domain residual \\
+$\hmask, \smask$ & learned highlight and shadow masks \\
+$p_{\mathrm{h}}, p_{\mathrm{s}}$ & fixed per-pixel highlight and shadow priors, \cref{eq:prior} \\
+$\gate$ & per-pixel residual gate \\
+$\sw$ & per-frame shadow-arm weight, predicted by the gate of \cref{sec:gate} \\
+$\alpha$ & global scale on the residual, \cref{sec:oracle} \\
+$\lscale$ & log encoding scale, $\lscale = 16$ \\
+$\maxhdr$ & network output ceiling, $4.0 = \SI{40000}{\nits}$ \\
+$\ell(x)$ & $\log(1 + \lscale x)$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproducibility}
+\label{sec:reproducibility}
+
+The benchmark is four exports and six scorings, resumable:
+
+\begin{Verbatim}[fontsize=\small]
+# the full benchmark
+powershell -ExecutionPolicy Bypass -File training\run_bench.ps1
+
+# one more checkpoint against the same reference
+powershell -ExecutionPolicy Bypass -File training\score_checkpoint.ps1 `
+    -Checkpoint <ckpt> -Name <label>
+
+# every derived number in the results sections recomputed from those
+# results and diffed against the paper; exit status 1 on any mismatch
+python training\audit_paper_numbers.py --bench <bench dir>
+
+# the headroom split and its correlation, from the same results joined
+# to the corpus manifest's per-frame peak luminance
+python training\analyze_headroom.py --bench <bench dir> `
+    --manifest <manifest> --check
+\end{Verbatim}
+
+Results land as a results document, per-clip JSON and per-frame CSV. The
+composite of \cref{eq:composite} exists in three languages, PyTorch, GLSL and
+NumPy, pinned against each other to $8.4 \times 10^{-6}$ relative error by a
+parity test. The test suite covers those, canvas orientation
+(\cref{sec:flip}), PU21 torch-versus-numpy parity, and a smoke test that
+exercises all 54 controls of the interactive viewer.
+
+The audits above are not decoration. An earlier draft reported 346 of 429 frames
+won on degraded input where the benchmark says 348; the count had been
+transcribed by hand, and nothing in the pipeline compared it back to the file it
+came from. An earlier draft gave v6 \num{4772485} parameters where the
+checkpoint has \num{4770117}, for the same reason. Every derived number in
+\cref{sec:results,sec:failure,sec:gate} is now recomputed on demand, and both
+scripts exit non-zero on any drift.
+
+Two analyses remain uncovered by that audit: the trimmed-PSNR table of
+\cref{sec:tail} and the oracle sweep of \cref{sec:oracle}. Both need per-pixel
+statistics over the reference frames rather than the per-frame results the
+benchmark writes, and we state that rather than leaving a reader to assume
+otherwise.
+
+Weights, frame pairs and HDR sources are not distributed; the training scripts
+regenerate them.
+
+\section{Standards referenced by the pipeline}
+\label{sec:standards}
+
+\begin{itemize}
+\item SMPTE ST 2084:2014, the PQ electro-optical transfer function of mastering
+  reference displays \citep{st2084}.
+\item ITU-R BT.2100, image parameter values for high dynamic range television
+  \citep{bt2100}.
+\item ITU-R BT.2408, operational practices in HDR television production, from
+  which diffuse white at \SI{203}{\nits} is taken \citep{bt2408}.
+\item SMPTE ST 2065-4:2013, the ACES image container file layout, AP0
+  chromaticities \citep{st20654}.
+\end{itemize}
+
+\section{Relation to an earlier manuscript}
+\label{sec:withdrawal}
+
+An earlier manuscript from this group described a DRE-transformer and
+cross-attention architecture and reported results for it. Two things in that
+document are withdrawn without qualification.
+
+First, its results tables quoted an ``HDR-VDP-3'' column that corresponds to no
+metric this codebase ever computed. The only HDR perceptual metric implemented
+is ColorVideoVDP, which reports JOD on a roughly 0 to 10 scale. Those tables
+were placeholders and should never have been presented as measurements.
+
+Second, the architecture those tables described was never trained to
+completion, so rows implying an evaluated system were aspirational.
+
+The present paper reports a different system: a direct SDR-pixel to
+scene-linear-radiance image model, measured with the metrics that exist. We
+record the withdrawal here rather than silently omitting it, because a reader
+who has seen the earlier document is entitled to know which claims were retired
+and why. The caution about citations at the head of \cref{sec:related}, and the
+audit scripts of \cref{sec:reproducibility}, are both direct responses to that
+failure.

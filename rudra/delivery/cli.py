@@ -9,7 +9,8 @@ Subcommands:
   video      SDR video -> HDR10/HLG/ProRes with audio and QC (torch/FFmpeg)
   info       print frame statistics (nits, PQ codes, percentiles)
   grade      apply GradeControls (EV / regions / knee / peak) to linear frames
-  aces       write ACES 2065-1 container EXR(s) + optional OCIO config
+  aces       write ACES 2065-1 (AP0) or ACEScg (AP1) container EXR(s)
+  deliver    encode a sequence to ProRes / HDR10 / HLG for a timeline
   metadata   analyze frames -> DoVi L1 generate-JSON, HDR10+ scenes, sidecar
   bench      run the PU21-PSNR (+CVVDP when available) paired benchmark
 
@@ -31,6 +32,7 @@ from . import aces as aces_mod
 from . import bench as bench_mod
 from . import controls as controls_mod
 from . import metadata as metadata_mod
+from . import video as video_mod
 from .exr import write_exr
 
 __all__ = ["main"]
@@ -117,13 +119,67 @@ def _cmd_aces(args) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     for path in _frames(args.input):
         linear = _load(path, 1.0)  # keep stored convention; matrix-only conversion
-        out = out_dir / (path.stem + "_aces2065-1.exr")
-        aces_mod.write_aces_exr(linear, out, source_space=args.source_space,
-                                exposure_scale=args.exposure_scale,
-                                provenance={"source": str(path)})
+        if getattr(args, "container", "aces2065-1") == "acescg":
+            out = out_dir / (path.stem + "_acescg.exr")
+            aces_mod.write_acescg_exr(linear, out, source_space=args.source_space,
+                                      exposure_scale=args.exposure_scale,
+                                      provenance={"source": str(path)})
+        else:
+            out = out_dir / (path.stem + "_aces2065-1.exr")
+            aces_mod.write_aces_exr(linear, out, source_space=args.source_space,
+                                    exposure_scale=args.exposure_scale,
+                                    provenance={"source": str(path)})
         print(out)
     if args.ocio:
         print(aces_mod.generate_ocio_config(out_dir / "rudra-delivery.ocio"))
+    return 0
+
+
+def _cmd_deliver(args) -> int:
+    """Encode a frame sequence to a file a timeline will take."""
+    paths = _frames(args.input)
+    # MaxCLL and MaxFALL are measured from the frames themselves, not guessed.
+    # A PQ file whose static metadata does not match its pixels makes every
+    # display tone-map it differently, and nothing reports the mismatch.
+    #
+    # They are measured AFTER the roll-off into the mastering peak, because
+    # that is what the encoder writes. Measuring the raw frames, as this did
+    # until 16 Sep 2026, produced MaxCLL above the declared display for any
+    # frame with SDR white in it.
+    def frames():
+        for path in paths:
+            yield _load(path, args.nits_scale)
+
+    def mastered():
+        for frame in frames():
+            yield video_mod.shoulder_to_peak(frame, args.peak_nits)
+
+    stats = [metadata_mod.analyze_frame(frame, index=i)
+             for i, frame in enumerate(mastered())]
+    maxcll, maxfall = metadata_mod.maxcll_maxfall(stats)
+
+    out = video_mod.encode_sequence(
+        mastered(), args.output, target=args.target, fps=args.fps,
+        peak_nits=args.peak_nits, maxcll=maxcll, maxfall=maxfall,
+        source_space=args.source_space, min_nits=args.min_nits,
+        verify_tags=args.verify_tags, shoulder=False)
+    # The tags go in the report whether or not they were enforced, so a file
+    # made with --no-verify-tags still says on the record what it came out as.
+    # Both places are reported: ProRes keeps its colour description in the
+    # frame headers, which is what Resolve and FCP read, and the container atom
+    # is a second statement of the same thing that ffprobe reads and some
+    # ffmpeg builds cannot fully write.
+    try:
+        tags = video_mod.colour_tags(out)
+    except video_mod.EncodeError:
+        tags = None
+    frame_tags = video_mod.prores_frame_tags(out)
+    print(json.dumps({"file": str(out), "frames": len(paths), "target": args.target,
+                      "fps": args.fps, "peak_nits": args.peak_nits,
+                      "maxcll": maxcll, "maxfall": maxfall,
+                      "colour_tags": tags, "prores_frame_tags": frame_tags,
+                      "tags_verified": bool(args.verify_tags),
+                      "note": video_mod.TARGETS[args.target].note}, indent=2))
     return 0
 
 
@@ -136,7 +192,7 @@ def _cmd_bench(args) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="rudra", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -181,10 +237,35 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("aces", help="export ACES 2065-1 container EXR")
     p.add_argument("input", type=Path)
     p.add_argument("--output", required=True, type=Path)
-    p.add_argument("--source-space", default="rec2020", choices=["rec2020", "rec709", "p3d65"])
+    p.add_argument("--source-space", default="rec709", choices=["rec2020", "rec709", "p3d65"],
+                   help="primaries of the frames. RUDRA never converts primaries, so "
+                        "a master from an sRGB plate is rec709 whatever its "
+                        "luminance; pass rec2020 only for a plate that was")
+    p.add_argument("--container", default="aces2065-1", choices=["aces2065-1", "acescg"],
+                   help="aces2065-1 (AP0, archival) or acescg (AP1, what a comp works in)")
     p.add_argument("--exposure-scale", type=float, default=1.0)
     p.add_argument("--ocio", action="store_true", help="also write the OCIO config")
     p.set_defaults(fn=_cmd_aces)
+
+    p = sub.add_parser("deliver", help="encode a sequence to ProRes / HDR10 / HLG")
+    common(p)
+    p.add_argument("--output", required=True, type=Path, help="output file stem")
+    p.add_argument("--target", default="hdr10", choices=sorted(video_mod.TARGETS),
+                   help="; ".join(f"{k}: {v.note}" for k, v in sorted(video_mod.TARGETS.items())))
+    p.add_argument("--fps", type=float, default=24.0)
+    p.add_argument("--peak-nits", type=float, default=1000.0,
+                   help="mastering display peak, written into the stream (default 1000)")
+    p.add_argument("--min-nits", type=float, default=0.005)
+    p.add_argument("--source-space", default="rec709",
+                   choices=["rec2020", "rec709", "p3d65"],
+                   help="primaries of the frames (see `aces`). The stream is "
+                        "always Rec.2020; this says what to convert from")
+    p.add_argument("--no-verify-tags", dest="verify_tags", action="store_false",
+                   help="hand over the file even if its Rec.2020 / PQ colour "
+                        "tags did not land. The check runs by default, because "
+                        "an untagged file plays as Rec.709 SDR everywhere and "
+                        "says nothing about it")
+    p.set_defaults(fn=_cmd_deliver, verify_tags=True)
 
     p = sub.add_parser("bench", help="paired PU21-PSNR (+CVVDP) benchmark")
     p.add_argument("root", type=Path, help="directory containing ref/ and test/")
@@ -197,7 +278,11 @@ def main(argv: list[str] | None = None) -> int:
                         "e.g. --test-dir baseline, against the same ref/.")
     p.set_defaults(fn=_cmd_bench)
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     return args.fn(args)
 
 

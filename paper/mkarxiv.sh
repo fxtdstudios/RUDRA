@@ -5,6 +5,9 @@
 # Staging happens in a temp dir, not in the repo: the mounted sandbox this is
 # often run from cannot unlink files, so a build that littered the repo could
 # never clean up after itself.
+#
+# arXiv runs latex but not bibtex, so main.bbl travels with the sources and the
+# \bibliography line is replaced by it. refs.bib goes along for the reader.
 set -e
 cd "$(dirname "$0")"
 HERE="$(pwd)"
@@ -14,7 +17,7 @@ bash build.sh
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
-cp main.tex _body.tex _abstract.tex "$STAGE/"
+cp main.tex abstract.tex appendix.tex sec*.tex refs.bib main.bbl "$STAGE/"
 cp ../docs/figures/*.pdf "$STAGE/"
 
 # arXiv uploads are flat: figures sit beside the .tex, where LaTeX finds them
@@ -26,6 +29,10 @@ pdflatex -interaction=nonstopmode main.tex >/dev/null
 pdflatex -interaction=nonstopmode main.tex >/dev/null
 if grep -q "^!" main.log; then
   echo "FAILED: errors building the flat package"; grep -n "^!" main.log; exit 1
+fi
+if grep -q "Warning: Reference\|Warning: Citation" main.log; then
+  echo "FAILED: undefined references in the flat package"
+  grep -n "Warning: Reference\|Warning: Citation" main.log; exit 1
 fi
 pages=$(pdfinfo main.pdf | awk '/Pages/{print $2}')
 rm -f main.aux main.log main.out main.toc main.pdf

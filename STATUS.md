@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 5 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 16 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **four separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -10,10 +10,11 @@
 > | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
-> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **passes with exact poses (+0.51 JOD), collapses to +0.02 with estimated flow** — oracle bound under flow is −0.005, so no headroom; one RAFT run decides whether v02 continues |
+> | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
-> the manuscript `PAPER_ERRATA.md` refers to, which is line B. Line B's
+> the earlier manuscript, which was about line B; what was withdrawn from that
+> one and why is Appendix D of the paper. Line B's
 > completion path is unchanged and is listed below; nothing since 22 Aug has
 > advanced it.
 >
@@ -36,6 +37,64 @@
 > worse on CVVDP in both conditions; the LaTeX build, the arXiv package and the
 > committed PDF. Related work cited (9 references + 4 standards); no `[CITE]`
 > markers remain.
+>
+> **Line C, 16 Sep 2026 review (engineer / colourist / researcher; the full
+> text is local, `FINAL_REVIEW_2026-09-16.md`).** Fixed the same day, each
+> with a test in `tests/test_review_fixes_2026_09_16.py`:
+>
+> - `rudra deliver` encoded **BT.601 chroma under a bt2020nc tag** — swscale's
+>   default matrix; `-colorspace` only labels. Reproduced on ffmpeg 6.1 (red at
+>   PQ' 0.75 → Y' 1044 where BT.2020 is 946). Fixed with
+>   `-vf scale=out_color_matrix=bt2020nc`. **Anything delivered before this
+>   date should be re-encoded.**
+> - HLG export skipped the inverse OOTF (diffuse white −0.46 st, 18% grey −0.96 st).
+> - `deliver` clipped at 10,000 nits and wrote MaxCLL from those pixels, so SDR
+>   white (2,552 nits from the baseline) exceeded a 1,000-nit MaxMDL. It now
+>   shoulders into the declared peak (hue-preserving) and measures after.
+> - Rec.709 masters were labelled Rec.2020 everywhere: the Studio's ACES path fed
+>   709 primaries to the 2020→AP0 matrix, the linear EXR carried no
+>   chromaticities, and both CLI defaults were `rec2020`. Default is `rec709`
+>   now; the linear container converts and says so in its header.
+> - The Studio bound 0.0.0.0 and would `torch.load(weights_only=False)` any path
+>   a request named. Loopback by default (`--host` to widen), checkpoint
+>   overrides limited to the registry and `RUDRA_CHECKPOINT_ROOTS`, 256 MB body
+>   cap.
+> - `infer_sdr2hdr.py` ran the shadow gate per tile (seams in tiled masters) and,
+>   untiled, from full-resolution features it was never trained on; the paper's
+>   bench went through this path. One whole-frame weight now, as the Studio
+>   does. **The bench should be re-run**; `--recovery-mode` defaults to `all`,
+>   which is what was scored.
+> - `tonemap_ev` was written by the corpus builder and read by nothing, so the
+>   next training run would have built the model against the legacy −1 EV
+>   baseline over a 0 EV corpus. It now travels manifest → `corpus_ev` in the
+>   checkpoint config → frame header → compositor uniform. Phase 0 of the
+>   runbook is closed.
+> - Playback ran at 24 fps for every shot (`fps` was never sent); `theme.css`
+>   and `shell.js` were not cache-stamped; `paper/mdtotex.py` failed the
+>   fresh-clone test and is gone.
+>
+> **Line C, 18 Sep 2026 — the Studio is an instrument, not a dark web app.**
+> Neutral surround (every grey R = G = B; a tinted one biases colour
+> judgement), the titlebar folded into the menubar, the scopes moved out from
+> under the viewer into a full-height right-rail column and joined by a
+> vectorscope, a permanent probe readout in the left rail with the largest
+> figures on the page, a measured `Frame` block that reports the share of
+> pixels the SDR actually clipped beside what the network chose to act on,
+> timecode on the transport, and a colour pipeline bar across the bottom that
+> names all four transforms and warns when MaxCLL is over the view peak.
+> Every existing element id was kept, so `compositor.js` is untouched.
+> `tests/ui_smoke/press_everything.py` now runs 72 checks, 0 failed, console
+> clean — eight of them new, and two assertions fixed that had been stale
+> since the pannable viewer landed (zoom stopped being a class on the viewer)
+> and were failing before this change too.
+>
+> **Still open from the review, in order:** the synthetic-clip protocol
+> (`measure_clipping.py --score` on 0/+1/+2 EV re-renders — the only measurement
+> of the highlight claim); one out-of-generator degradation beside "hard";
+> per-shot smoothing of the gate, anchor and chroma scalars; a BT.1886 input
+> option and a conforming baseline (a retrain — belongs with the corpus
+> programme); an ExpandNet row on the hard condition; §4 provenance and the
+> weights licence in the paper.
 >
 > **Line C remaining:** nothing measurable. The blockers are the arXiv
 > endorsement (a person has to say yes), the HuggingFace upload, and the
@@ -184,13 +243,70 @@
 > seam between them. A softer weighting is not worth trying — the oracle row
 > bounds every weighting there is.
 >
-> **Line D remaining — one experiment, then a decision.** DIS is a fast
-> classical estimator and a learned flow (RAFT and successors) is markedly
-> better in low-texture regions, which is precisely where this failed. Re-run
-> the flow arm with one: it is the single experiment that could reopen v02.
-> If it also comes back flat, v02 as specified is finished, and the corpus
-> re-render, the architecture ladder and the video split all come off the
-> board. Line B's Stage 3 is then the better use of the GPU.
+> **The learned estimator, and the close (10 Sep 2026).** DIS is a fast
+> classical estimator, so the flow arm was re-run with RAFT-large — markedly
+> better in exactly the low-texture regions where DIS failed, 0.35 px against
+> 2.61 px on an open-sky clip. Seed 20260906, 40 drifted clips, same clips
+> every row:
+>
+> | arm | per-frame | aligned | oracle | **achievable** | ceiling |
+> |---|---|---|---|---|---|
+> | pose (exact) | 5.925 | 6.528 | 7.063 | **+0.603** | +1.090 |
+> | flow (DIS) | 5.925 | 5.856 | 6.115 | **−0.069** | +0.122 |
+> | flow (RAFT) | 5.925 | 6.266 | 6.659 | **+0.341** | +0.671 |
+>
+> RAFT recovers 57% of what exact poses give and **misses the threshold** —
+> +0.341 against the +0.5 set before any of this was measured. Not the flat
+> zero DIS gave: the ceiling moved from +0.122 to +0.671, so there was room a
+> better combiner might have reached.
+>
+> One combiner was declared and tried, *before* it was run — weight each
+> neighbour by its forward-backward residual instead of averaging equally.
+> On the same clips: **mean +0.351, confidence +0.350.** Nothing.
+>
+> The reason is the same wall from a third angle. RAFT's forward-backward
+> drift is 0.04–0.09 px on nearly every pixel that passes, so the weight is ~1
+> everywhere and the signal has no dynamic range. **The failures are not
+> low-confidence matches — they are confident wrong ones**, in flat regions
+> where any displacement round-trips perfectly. That is precisely what
+> forward-backward consistency cannot see, and therefore what weighting by it
+> cannot fix.
+>
+> **Line D is closed.** Three alignment arms and two combiners against a
+> threshold fixed in advance: exact camera poses clear it, nothing a plate can
+> supply does. The +0.603 belongs to the renderer's angles. No temporal model
+> was trained because there is nothing measurable for one to learn — **that is
+> the result, not the absence of one**, and it is worth more than the month it
+> would have taken to find out the other way.
+>
+> The corpus re-render, the architecture ladder and the video split are off
+> the board. What would reopen it is a corpus whose neighbouring frames carry
+> information these do not — real parallax, moving subjects, genuine
+> multi-exposure capture — not a better estimator and not a better
+> architecture. The gate would have to be re-run from scratch on it.
+>
+> **The shadow gate is settled, and it stays (10 Sep 2026).** It was proposed
+> for retirement on the strength of three checkpoints agreeing to 0.07 nits on
+> ONE frame. `training/compare_bench_methods.py` answers it properly from the
+> 429 held-out pairs already scored under `bench/results/` -- paired per frame,
+> bootstrap CI, and measured against the spread between the three gate SEEDS,
+> because an effect smaller than retraining noise is not an effect:
+>
+> | condition | metric | gate effect | worst seed-to-seed | verdict |
+> |---|---|---:|---:|---|
+> | hard | CVVDP | **+0.218 JOD** | 0.081 | 2.7x seed noise |
+> | hard | PU21 | **+0.796 dB** | 0.278 | 2.9x |
+> | clean | CVVDP | **+0.107 JOD** | 0.045 | 2.4x |
+> | clean | PU21 | −0.103 dB | 0.645 | within noise |
+>
+> All three seeds clear zero with 95% CIs excluding it on three of four
+> measures. The gate stays; the one measure it does not help, it does not hurt
+> beyond noise. No GPU time was spent -- the files were already on disk.
+>
+> **Still open, neither a training run:** `sdr2hdr_temporal_v1.pt` ships in
+> `models.json` marked *"Unevaluated"* and belongs to the closed line — pull
+> it or measure it. And v6 (4× capacity, moved neither condition) is a keep
+> or drop.
 >
 > ---
 >
@@ -257,7 +373,7 @@ lift them. Full is slow on 64×64-latent backbones (decodes at 512×512). Always
 
 ## Code health
 
-All P0/P1/P2 review items closed (see `RUDRA_TECHNICAL_REVIEW.md`). Real HDR metric is
+All P0/P1/P2 review items closed. Real HDR metric is
 ColorVideoVDP (`rudra/hdrvdp.py`); the old hand-rolled "HDR-VDP-3 ≈ 80" numbers were a
 placeholder and must not be reported. `pytest tests/` covers curve round-trips, the freeze
 guarantee, conditioning, and the metric backend.

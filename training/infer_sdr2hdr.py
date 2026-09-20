@@ -152,13 +152,22 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
     _, _, height, width = sdr.shape
 
     scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+    # The three fields do not depend on the shadow weight (it scales the
+    # prior in the composite, after them), so this only saves forward() an
+    # encode it would otherwise run per tile. The weight itself is what
+    # ui/server.py sends the page beside the fields.
+    # (Named in full: `shadow` is the stitched mask further down, and a
+    # closure reads the name at call time, not at definition.)
+    shadow_weight = model.predict_shadow_weight(sdr) \
+        if hasattr(model, "predict_shadow_weight") else None
 
     def _run(tile: torch.Tensor):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda \
             else contextlib.nullcontext()
         with amp:
             out = model(tile, preserve_outside=False, recovery_mode="all",
-                        residual_strength=1.0, residual_scale=scale)
+                        residual_strength=1.0, residual_scale=scale,
+                        shadow_weight=shadow_weight)
         residual = out.log_residual.float()
         # The viewer composes from these three fields alone and knows nothing
         # about a conditioning head, so the per-frame scale is folded into the
