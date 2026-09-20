@@ -174,6 +174,14 @@ def find_checkpoint(explicit: str | None) -> Path | None:
     return None
 
 
+def resolve_device(device_name, torch):
+    """Choose a usable device for mixed CPU/CUDA Python environments."""
+    requested = str(device_name or 'cpu').lower()
+    if requested.startswith('cuda') and not torch.cuda.is_available():
+        return torch.device('cpu'), f"CUDA requested but unavailable; using CPU"
+    return torch.device(device_name), None
+
+
 def load_model(checkpoint: Path | None, device_name: str):
     import torch
 
@@ -186,7 +194,7 @@ def load_model(checkpoint: Path | None, device_name: str):
     config = payload.get("config", {}) or {}
     model = SDR2HDRNet.from_config(config)
     model.load_state_dict(payload.get("model", payload), strict=True)
-    device = torch.device(device_name)
+    device, fallback = resolve_device(device_name, torch)
     model.to(device).eval()
     info = {
         "loaded": True,
@@ -200,6 +208,8 @@ def load_model(checkpoint: Path | None, device_name: str):
         "gpu": torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU",
         "preserve_outside": True,
     }
+    if fallback:
+        info["device_warning"] = fallback
     return model, info
 
 
