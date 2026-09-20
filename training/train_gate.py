@@ -165,7 +165,7 @@ def model_gate_inputs(model: SDR2HDRNet, sdr: torch.Tensor, max_side: int = 512)
     sdr = sdr.float().clamp(0.0, 1.0)
     view = gate_view(sdr, max_side)
     with torch.no_grad():
-        _, _, mid = model.encode(view, sdr_to_baseline_hdr(view))
+        _, _, mid = model.encode(view, sdr_to_baseline_hdr(view, model.corpus_ev))
     # Features from the view, statistics from the native frame -- see
     # SDR2HDRNet.predict_residual_scale for why the two resolutions differ.
     return mid, sdr, luminance(sdr)

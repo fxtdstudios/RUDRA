@@ -1,0 +1,115 @@
+\section{Localising the clean regression}
+\label{sec:failure}
+
+\subsection{It is a function of scene headroom}
+\label{sec:headroom}
+
+The clean regression is concentrated, not diffuse. Splitting clean frames by the
+headroom the ground truth actually has separates them cleanly
+(\cref{tab:headroom}), and the trend is monotone across the full range
+(\cref{fig:headroom}). The correlation between $\log_2$ of the reference peak
+and per-frame gain is $+0.46$.
+
+\begin{table}[htbp]
+\centering
+\caption{Clean frames split by the headroom of the reference. The model's error
+is a function of the scene.}
+\label{tab:headroom}
+\begin{tabular}{lrr}
+\toprule
+clean frames & mean $\Delta$ vs baseline & median reference peak \\
+\midrule
+60 worst & \textbf{\SI{-10.76}{\decibel}} & \SI{238}{\nits} \\
+60 best  & \textbf{\SI{+3.41}{\decibel}}  & \SI{19590}{\nits} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\linewidth]{fig1_gain_vs_headroom.pdf}
+\caption{Per-frame gain against reference headroom, log $x$-axis, with binned
+medians. On clean input the trend rises through zero at roughly
+\SI{10000}{\nits}; on degraded input it is flat and positive at every headroom.}
+\label{fig:headroom}
+\end{figure}
+
+The mechanism is \cref{eq:prior}. The per-pixel luminance prior cannot
+distinguish a \SI{238}{\nits} studio interior from a \SI{20000}{\nits} sunset,
+because it never sees the frame.
+
+\subsection{The error is in the shadows, and only partly in the tail}
+\label{sec:tail}
+
+On 51 clean held-out frames we computed the per-pixel PU21 squared error for
+both the model and the baseline, then recomputed each PSNR with the worst pixels
+progressively discarded (\cref{tab:trim}). If the penalty were carried by a few
+bad pixels the gap would close.
+
+\begin{table}[htbp]
+\centering
+\caption{Trimmed PU21-PSNR on clean frames below \SI{400}{\nits}, $n = 25$.
+Discarding a tenth of every frame removes \SI{2.3}{\decibel} of the
+\SI{5.55}{\decibel} gap and leaves \SI{3.2}{\decibel}: the penalty is partly
+tail-carried and mostly broad.}
+\label{tab:trim}
+\begin{tabular}{lrrr}
+\toprule
+discard worst & baseline & RUDRA & gap \\
+\midrule
+---     & 54.40 & 48.84 & \textbf{\SI{-5.55}{\decibel}} \\
+0.1\%   & 54.70 & 49.40 & $-5.30$ \\
+1\%     & 55.36 & 51.14 & $-4.23$ \\
+10\%    & 57.58 & 54.34 & \textbf{\SI{-3.23}{\decibel}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The worst 1\% of pixels carry 32\% of the model's total squared error, but the
+bulk of the distribution is genuinely worse too. At those worst pixels the
+\emph{true} luminance has median \SI{4}{\nits} against \SI{21}{\nits}
+frame-wide: they are darker than typical, not brighter, and only 46\% of them
+are over-predicted. On frames at or above \SI{400}{\nits} the model and the
+baseline are level (\SI{-0.03}{\decibel}) and the worst pixels move to the
+bright end instead (median \SI{560}{\nits} against \SI{57}{\nits} frame-wide).
+
+This relocates the failure. \Cref{eq:prior} has two arms, and on a
+low-dynamic-range scene the shadow arm fires on content that needs no
+reconstruction at all. The headroom correlation of $+0.46$ is real, but the
+mechanism behind it is the \emph{shadow} path, not invented highlights. That is
+a specific and testable target, and one that the single global scale of
+\cref{sec:bound} could not have isolated.
+
+\subsection{The shadow arm, ablated}
+\label{sec:ablation}
+
+The hypothesis is directly testable: disable the shadow prior, setting $\sw = 0$
+in \cref{eq:prior}, and rescore the same 429 frames (\cref{tab:ablation}).
+
+\begin{table}[htbp]
+\centering
+\caption{Gain over the analytic baseline with the shadow arm on and off, 429
+frames. Turning it off does not shrink the clean regression, it inverts it.}
+\label{tab:ablation}
+\begin{tabular}{lrrrr}
+\toprule
+ & \multicolumn{2}{c}{clean} & \multicolumn{2}{c}{hard} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+configuration & dB & JOD & dB & JOD \\
+\midrule
+shadow arm \textbf{on} (shipped) & \textbf{$-3.00$} & $-0.046$ & \textbf{$+1.43$} & $+0.443$ \\
+shadow arm \textbf{off}          & \textbf{$+0.51$} & $-0.017$ & $+0.33$ & $+0.134$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The hypothesis is confirmed, and the result is a trade rather than a free win.
+Turning the shadow arm off moves clean by \SI{+3.51}{\decibel}, so the model now
+beats the analytic baseline on clean input by \SI{0.51}{\decibel}, and costs
+\SI{1.10}{\decibel} on degraded input. The shadow path is therefore the whole of
+the clean regression and simultaneously carries most of the degraded-input gain,
+which is what one would expect: crushed shadows are exactly what a bad tone
+curve produces and exactly what a well-graded frame does not have.
+
+This is the observation that makes \cref{sec:gate} possible, and
+\cref{sec:bound} is what makes it necessary to state the problem that way.

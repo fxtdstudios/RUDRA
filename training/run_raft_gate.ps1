@@ -1,11 +1,11 @@
-# The flow arm with a learned estimator, on the GPU.
+# The flow arm with a learned estimator, on the GPU. Fully paired.
 #
-# WHY. The v02 gate reads +0.511 JOD achievable with the renderer's exact
-# camera poses and +0.016 with DIS optical flow estimated from the plate --
-# and the oracle bound under DIS is -0.005, meaning no architecture can
+# WHY. The v02 gate reads a large achievable gain with the renderer's exact
+# camera poses and almost none with DIS optical flow estimated from the plate
+# -- and the oracle bound under DIS is negative, meaning no architecture can
 # recover it. The failure is specific: DIS drifts in flat regions (2.61 px
-# against 0.17 px in textured parts of the same frame on an open-sky clip)
-# and forward-backward consistency cannot detect it, because any displacement
+# against 0.17 px in textured parts of the same frame on an open-sky clip) and
+# forward-backward consistency cannot detect it, because any displacement
 # round-trips through a constant area.
 #
 # RAFT does not have that failure. Measured 6 Sep 2026, four frames apart,
@@ -16,27 +16,28 @@
 #     ostrich_road                  0.60      0.34         0.11
 #     billiard_hall                 0.21       --          0.10
 #
-# So this re-runs the whole 50-clip drift arm with RAFT-large. It is the
-# single experiment that decides whether v02 continues: if the achievable
-# gain comes back near the pose arm's +0.511, the temporal model is buildable
-# and the alignment is part of it. If it stays near zero, v02 as specified is
-# finished whatever the estimator.
+# This runs DIS and RAFT over the SAME clips and prints both beside the pose
+# arm already measured on them, so all three numbers are paired. Cross-seed
+# comparison is not valid here: the flat arm moved +0.035 to +0.110 across
+# seeds, which is the size of the effect being looked for.
+#
+# Read it as: near the pose arm reopens v02; near zero closes it whatever the
+# estimator.
 #
 # ON THE GPU, because RAFT-large on a CPU is about 20 s per pair at 720p and
-# one nine-frame clip needs 72 of them -- 20 hours for 50 clips. On a 4080 it
-# is minutes.
+# one nine-frame clip needs 72 of them. On a 4080 it is minutes.
 #
 #   powershell -ExecutionPolicy Bypass -File training\run_raft_gate.ps1
 #
-# Needs the drifted clips from run_drift_gate.ps1 (seed 20260903 is the
-# 50-clip set the pose and DIS numbers were measured on). torchvision
-# downloads the RAFT weights on first use, about 20 MB.
+# Resumable: the gate writes a row after every clip and --resume skips the
+# ones already in the output file, so an interruption costs one clip.
 
 param(
-  [string] $Clips      = "D:\A.I\Devlopments\RUDRA_v02\_gate_seeds\seed20260903_drift_clips",
+  [string] $Seed       = "20260906",
+  [string] $Work       = "D:\A.I\Devlopments\RUDRA_v02\_gate_seeds",
   [string] $Checkpoint = "D:\A.I\Devlopments\rudra\checkpoints\sdr2hdr_shadow_v1.pt",
-  [string] $Out        = "D:\A.I\Devlopments\RUDRA_v02\_gate_seeds\seed20260903_drift_raft.json",
   [string] $Device     = "cuda",
+  [switch] $SkipDis,
   [string] $Python     = "D:\A.I\Devlopments\rudra\.venv\Scripts\python.exe"
 )
 
@@ -47,12 +48,22 @@ $repo = "D:\A.I\Devlopments\rudra"
 
 function Fail($m) { Write-Host "ERROR: $m" -ForegroundColor Red; exit 1 }
 
+$clips = Join-Path $Work "seed${Seed}_drift_clips"
+$pose  = Join-Path $Work "seed${Seed}_drift.json"
+$outD  = Join-Path $Work "seed${Seed}_drift_dis.json"
+$outR  = Join-Path $Work "seed${Seed}_drift_raft.json"
+
 foreach ($path in @($Python, $Checkpoint)) {
   if (-not (Test-Path $path)) { Fail "not found: $path" }
 }
-if (-not (Test-Path $Clips)) {
-  Fail ("no clips at $Clips. Run training\run_drift_gate.ps1 first, or point " +
-        "-Clips at another drifted set.")
+if (-not (Test-Path $clips)) {
+  Write-Host "ERROR: no clips at $clips" -ForegroundColor Red
+  Write-Host "Drifted clip sets present under ${Work}:"
+  Get-ChildItem $Work -Directory -Filter "*_drift_clips" -ErrorAction SilentlyContinue |
+    ForEach-Object { "  -Seed " + ($_.Name -replace '^seed', '' -replace '_drift_clips$', '') +
+                     "   ($((Get-ChildItem $_.FullName -Directory).Count) clips)" }
+  Write-Host "Or run training\run_drift_gate.ps1 to build one."
+  exit 1
 }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
   Fail "ffmpeg is not on PATH and --degradation codec needs it."
@@ -64,18 +75,43 @@ if ($Device -eq "cuda" -and $LASTEXITCODE -ne 0) {
   Fail "torch reports no CUDA device. -Device cpu works but takes about 20 hours."
 }
 
-$count = (Get-ChildItem $Clips -Directory).Count
+$count = (Get-ChildItem $clips -Directory).Count
+Write-Host "   seed       : $Seed"
 Write-Host "   clips      : $count"
 Write-Host "   device     : $Device"
 
-& $Python "$repo\training\gate_temporal_oracle.py" `
-    --clips $Clips --checkpoint $Checkpoint --condition hard `
-    --degradation codec --alignment flow --flow-backend raft `
-    --flow-device $Device --device $Device --out $Out
-if ($LASTEXITCODE -ne 0) { Fail "gate failed" }
+function Run-Arm($label, $out, $extra) {
+  Write-Host ""
+  Write-Host "== $label ==" -ForegroundColor Cyan
+  $args = @("$repo\training\gate_temporal_oracle.py",
+            "--clips", $clips, "--checkpoint", $Checkpoint, "--condition", "hard",
+            "--degradation", "codec", "--alignment", "flow",
+            "--device", $Device, "--resume", "--out", $out) + $extra
+  & $Python $args
+  if ($LASTEXITCODE -ne 0) { Fail "$label failed" }
+}
+
+if (-not $SkipDis) { Run-Arm "DIS"  $outD @("--flow-backend", "dis") }
+Run-Arm "RAFT" $outR @("--flow-backend", "raft", "--flow-device", $Device)
+
+function Summarise($label, $path) {
+  if (-not (Test-Path $path)) { return }
+  $rows = Get-Content $path -Raw | ConvertFrom-Json
+  $pf  = ($rows | ForEach-Object { $_.per_frame.cvvdp_jod }    | Measure-Object -Average).Average
+  $am  = ($rows | ForEach-Object { $_.aligned_mean.cvvdp_jod } | Measure-Object -Average).Average
+  $ct  = ($rows | ForEach-Object { $_.control.cvvdp_jod }      | Measure-Object -Average).Average
+  $orc = ($rows | ForEach-Object { $_.oracle.cvvdp_jod }       | Measure-Object -Average).Average
+  "{0,-16} {1,3} clips   per-frame {2,7:0.000}   ACHIEVABLE {3,8:+0.000;-0.000}   ceiling {4,8:+0.000;-0.000}" -f `
+    $label, $rows.Count, $pf, ($am - $pf), ($orc - $ct)
+}
 
 Write-Host ""
-Write-Host "Compare against docs\gate_v02_2026-09-05\, same 50 clips:" -ForegroundColor Green
-Write-Host "  pose (exact)      ACHIEVABLE +0.511   ceiling +0.851"
-Write-Host "  flow (DIS)        ACHIEVABLE +0.016   ceiling -0.005"
-Write-Host "Near +0.5 reopens v02. Near zero closes it whatever the estimator."
+Write-Host "== seed $Seed, same clips, alignment is the only difference ==" -ForegroundColor Green
+Summarise "pose (exact)" $pose
+Summarise "flow (DIS)"   $outD
+Summarise "flow (RAFT)"  $outR
+Write-Host ""
+Write-Host "Threshold is +0.5 JOD achievable. If RAFT lands near the pose row,"
+Write-Host "estimated alignment is good enough and v02 continues. If it lands"
+Write-Host "near zero like DIS, the gain belongs to the renderer's poses and"
+Write-Host "not to anything a plate can supply."

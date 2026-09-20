@@ -7,18 +7,13 @@
 # The LaTeX is the source in this repository. _body.tex and _abstract.tex are
 # committed and build on their own; nothing else is needed.
 #
-# They were originally generated from a markdown draft by mdtotex.py, which is
-# kept for whoever still has that draft. It is skipped when the markdown is not
-# here, which is the normal case for a clone.
+# They were originally generated from a markdown draft by a converter. The
+# converter is gone (16 Sep 2026): while it existed, this script ran it
+# whenever the draft was present, and on the author's machine it always was,
+# so a build silently rewrote hand-edited .tex from a stale markdown. The
+# test in tests/test_committed_checkpoint_2026_09_03.py asserts it stays gone.
 set -e
 cd "$(dirname "$0")"
-
-DRAFT="../PAPER_DRAFT_2026-08-29.md"
-if [ -f "$DRAFT" ]; then
-  python mdtotex.py
-else
-  echo "no markdown draft; building the committed LaTeX"
-fi
 
 pdflatex -interaction=nonstopmode main.tex >/dev/null
 pdflatex -interaction=nonstopmode main.tex >/dev/null

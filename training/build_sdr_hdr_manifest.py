@@ -143,6 +143,15 @@ def build_manifest(
             candidate = metadata_dir / Path(key).with_suffix(".json")
             if candidate.exists():
                 record["metadata_path"] = str(candidate.resolve())
+                # The exposure the pair was rendered at travels with the row,
+                # so a model can be built with the right baseline without
+                # opening thirty thousand sidecars (sdr2hdr_dataset.corpus_ev_of).
+                try:
+                    tonemap_ev = json.loads(candidate.read_text(encoding="utf-8")).get("tonemap_ev")
+                except (OSError, ValueError):
+                    tonemap_ev = None
+                if tonemap_ev is not None:
+                    record["tonemap_ev"] = float(tonemap_ev)
         records.append(record)
 
     output.parent.mkdir(parents=True, exist_ok=True)

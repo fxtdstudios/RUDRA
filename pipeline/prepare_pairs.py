@@ -37,9 +37,11 @@ from pipeline.hdr_io import (  # noqa: E402
 )
 
 # Readers, EOTFs and the tone-map curve come from the existing (fixed) module.
+import training.prepare_training_data as ptd  # noqa: E402
 from training.prepare_training_data import (  # noqa: E402
-    TARGET_H, TARGET_W, make_sdr, read_exr, read_tif, resize_frame,
-    save_png_8bit, save_png_16bit, to_scene_linear,
+    TARGET_H, TARGET_W, clipped_fraction as sdr_clipped_fraction, make_sdr,
+    read_exr, read_tif, resize_frame, save_png_8bit, save_png_16bit,
+    to_scene_linear,
 )
 
 
@@ -51,6 +53,11 @@ def sentinel_payload(storage: HDRStorage, args: argparse.Namespace) -> dict:
         "crops_per_source": args.crops,
         "crop_size": args.crop_size,
         "tonemap": "aces_approx_narkowicz2015",
+        # The exposure applied before the curve. It decides whether the SDR
+        # side ever clips, so a directory cannot mix two values of it, and it
+        # rides on every pair so the model built from this corpus inverts the
+        # same render (rudra.sdr2hdr.sdr_to_baseline_hdr, corpus_ev).
+        "tonemap_ev": float(args.tonemap_ev),
         "sdr_encoding": "srgb",
         "seed": args.seed,
         "note": ("Targets are stored via pipeline/hdr_io.py. Decode with "
@@ -67,7 +74,8 @@ def check_sentinel(dst: Path, payload: dict) -> None:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return
     existing = json.loads(path.read_text(encoding="utf-8"))
-    keys = ("hdr_io_version", "storage", "target_size", "tonemap", "sdr_encoding")
+    keys = ("hdr_io_version", "storage", "target_size", "tonemap", "tonemap_ev",
+            "sdr_encoding")
     for key in keys:
         if existing.get(key) != payload.get(key):
             raise SystemExit(
@@ -147,7 +155,14 @@ def main() -> int:
                         help="Add to an existing pairs dir: index is appended, sources "
                              "whose outputs already exist are skipped. Sentinel must match.")
     parser.add_argument("--seed", type=int, default=20260822)
+    parser.add_argument("--tonemap-ev", type=float, default=ptd.TONEMAP_EV_OFFSET,
+                        help=f"Exposure applied before the tone curve (default "
+                             f"{ptd.TONEMAP_EV_OFFSET:+.1f}). {ptd.LEGACY_TONEMAP_EV:+.1f} "
+                             f"reproduces every corpus up to v3, whose SDR side almost "
+                             f"never clipped; 0 clips the way delivered SDR clips.")
     args = parser.parse_args()
+    # make_sdr reads the module constant; this is the one place it is set.
+    ptd.TONEMAP_EV_OFFSET = float(args.tonemap_ev)
 
     storage = HDRStorage(mode=args.mode, ceiling_nits=args.ceiling_nits)  # type: ignore[arg-type]
     print(f"storage: {storage.describe()}")
@@ -185,6 +200,7 @@ def main() -> int:
     scene_origins: dict[tuple, list] = {}
     index_path = args.dst / "pairs_index.jsonl"
     written, skipped, clipped_records, unsupported = 0, 0, 0, 0
+    sdr_clipped_records = 0
 
     with index_path.open("a" if args.append else "w", encoding="utf-8") as index:
         for position, source in enumerate(sources):
@@ -223,6 +239,15 @@ def main() -> int:
                 frame = resize_frame(crop)
                 sdr = make_sdr(frame)
                 hdr, stats = encode_hdr_u16(frame, storage)
+                # Two different clip statistics live in this record and they
+                # must not be confused. stats["clipped_fraction"] is the HDR
+                # TARGET above the storage ceiling -- wanted near zero.
+                # sdr_clipped_fraction is the SDR INPUT at the top code -- the
+                # thing an inverse tone mapper exists to undo, and the thing
+                # the -1 EV corpus had none of. verify_dataset puts a floor on
+                # the second and a ceiling on the first.
+                stats["sdr_clipped_fraction"] = sdr_clipped_fraction(sdr)
+                stats["tonemap_ev"] = float(args.tonemap_ev)
 
                 stem = f"{position:07d}_{path.stem}"
                 if args.crops > 1:
@@ -243,6 +268,8 @@ def main() -> int:
 
                 if stats["clipped_fraction"] > 0.0001:
                     clipped_records += 1
+                if stats["sdr_clipped_fraction"] > 0.0001:
+                    sdr_clipped_records += 1
 
                 index.write(json.dumps({
                     "asset_id": stem,
@@ -257,6 +284,8 @@ def main() -> int:
                     "hdr_encoding": storage.mode,
                     "peak_nits": stats["peak_nits"],
                     "clipped_fraction": stats["clipped_fraction"],
+                    "sdr_clipped_fraction": stats["sdr_clipped_fraction"],
+                    "tonemap_ev": float(args.tonemap_ev),
                 }) + "\n")
                 written += 1
 
@@ -273,6 +302,9 @@ def main() -> int:
     print(f"  unsupported suffix   {unsupported:,} (only .exr/.tif ingest; .png sources are not HDR)")
     print(f"  records that clip    {clipped_records:,} ({clipped_records / max(written, 1):.2%})"
           f"   <- August corpus was 77.8%")
+    print(f"  SDR records that clip {sdr_clipped_records:,} "
+          f"({sdr_clipped_records / max(written, 1):.2%})   <- the -1 EV corpus was 0.57%; "
+          f"verify_dataset wants this ABOVE its floor")
     print(f"  index sha256         {digest[:16]}...")
     print(f"\nwrote {index_path}\nnext: pipeline/build_manifests.py --pairs-dir {args.dst}")
     return 0

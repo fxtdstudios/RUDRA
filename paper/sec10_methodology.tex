@@ -1,0 +1,67 @@
+\section{Evaluation methodology: three defects in our own harness}
+\label{sec:methodology}
+
+We report these because each silently corrupted a result we believed, and each
+is a mistake available to any comparable pipeline.
+
+\subsection{Selection on a maximum over noise}
+\label{sec:selection}
+
+The shipped checkpoint was chosen by the \emph{maximum} of the composite
+criterion
+\begin{equation}
+\texttt{composite\_gain} \;=\; \texttt{hard\_gain} + \min\!\big(0,\ \texttt{clean\_gain}\big)
+\label{eq:composite-gain}
+\end{equation}
+over 102 in-training evaluations. Across that run \texttt{clean\_gain} had mean
+\SI{-1.43}{\decibel} and standard deviation \SI{1.29}{\decibel}, with only 10 of
+102 evaluations positive; the shipped checkpoint's $+0.02$ ranked 9th of 102.
+Its promised hard gain of \SI{+1.80}{\decibel} measured \SI{+1.43}{\decibel} on
+held-out frames, between the evaluation mean ($+1.19$) and its selected maximum,
+which is exactly where an inflated in-training figure should land. Selection now
+uses a trailing median over five evaluations; replayed on the same series it
+selects step \num{72000} instead of \num{81000}.
+
+We then scored step \num{72000} on the same 429 frames, and the answer is not
+the clean vindication we expected. On the criterion the selector optimises it is
+better: composite gain \SI{-1.36}{\decibel} against the shipped checkpoint's
+\SI{-1.57}{\decibel}, and clean PU21 improves by \SI{+0.55}{\decibel}. On CVVDP
+it is \emph{worse on both conditions}, $-0.052$~JOD clean and $-0.071$~JOD hard,
+so the smoothed rule would have shipped a checkpoint that a perceptual metric
+likes less. This is the disagreement of \cref{sec:disagreement} reappearing
+inside the selection rule itself: median smoothing removes the noise it was
+designed to remove, and the objective it smooths is still PU21. Smoothing a
+selector does not fix choosing the wrong quantity to select on. We report the
+fix and its limit together, because reporting only the first would repeat the
+error this section is about.
+
+\subsection{An evaluation that read the front of the split}
+\label{sec:front-of-split}
+
+\texttt{DataLoader(val, shuffle=False)} with \texttt{max\_batches=N} evaluates
+the alphabetically \emph{first} $N$ records: 32 records across 11 scenes, every
+name between \texttt{abandoned\_factory} and \texttt{blau\_river}, with 403
+records and 87 scenes never measured. Since error correlates with headroom
+(\cref{sec:headroom}), that slice reported a clean gain of $+0.61$ where the
+benchmark measures $-3.0$. Fixed with a seeded permutation applied identically
+to both conditions.
+
+\subsection{A viewer that presented every frame upside down}
+\label{sec:flip}
+
+The default framebuffer places row 0 at the bottom and the display shader
+sampled its texture coordinate unchanged. No numeric test caught it, because
+they all compare the float composite, which a presentation flip leaves
+untouched, and the one test that read the canvas did so through
+\texttt{readPixels}, which returns rows bottom-first and cancelled the flip
+against itself. Master EXR output was never affected.
+
+\subsection{Two claims we corrected against fresh measurement}
+\label{sec:corrections}
+
+\Cref{sec:tail} has been rewritten twice against new measurements. The first
+draft claimed the model invents highlights; the second claimed the penalty was
+tail-carried. Both were wrong, and both were plausible. We record this beside
+the harness defects because the mechanism is the same: a hypothesis that
+explains the headline number is not thereby established, and in both cases the
+measurement that settled it was cheap.

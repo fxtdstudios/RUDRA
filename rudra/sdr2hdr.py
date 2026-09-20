@@ -67,15 +67,45 @@ def inverse_aces_approx(display_linear: torch.Tensor) -> torch.Tensor:
     return torch.maximum(root_a, root_b).clamp_min(0.0)
 
 
-def sdr_to_baseline_hdr(sdr: torch.Tensor) -> torch.Tensor:
-    """Map sRGB SDR to the normalized scene-linear convention used by G:\\data.
+# How the corpus renders its SDR side, and therefore what the analytic baseline
+# has to undo.
+#
+# training/prepare_training_data.py applies an exposure offset BEFORE the ACES
+# curve. The baseline is the inverse of that render, so it must apply the
+# opposite offset after inverting the curve. Getting this wrong is a whole-stop
+# error that looks like a grading choice rather than a bug, which is why the
+# factor is derived from the offset here instead of being written as a literal.
+#
+# LEGACY_CORPUS_EV is -1 EV, which is what every checkpoint up to and including
+# sdr2hdr_shadow_v1 was trained against. It has a cost that took a long time to
+# see: halving the scene radiance before a curve that saturates near 1.0 means
+# the SDR side almost never clips. Median clipped fraction on that corpus is
+# 0.000%, and 52.6% of frames have no clipped pixel at all, so the hardest part
+# of the task -- what is above a blown highlight -- barely occurs in training.
+#
+# CLIPPING_CORPUS_EV is 0 EV: the SDR side clips the way delivered SDR clips.
+# Corpora rendered that way record it, checkpoints trained on them carry it in
+# their config, and nothing has to be remembered.
+LEGACY_CORPUS_EV = -1.0
+CLIPPING_CORPUS_EV = 0.0
 
-    Preparation applies -1 EV before the ACES curve, then stores HDR as scene
-    linear * 203/10000.  Therefore inverse-ACES output is multiplied by
-    ``2 * 203/10000``.  The learned network handles other camera/tone curves.
+
+def sdr_to_baseline_hdr(sdr: torch.Tensor,
+                        corpus_ev: float = LEGACY_CORPUS_EV) -> torch.Tensor:
+    """Map sRGB SDR to the normalised scene-linear convention of the corpus.
+
+    ``corpus_ev`` is the exposure offset the corpus applied before its tone
+    curve. The default is the legacy -1 EV, so every existing checkpoint keeps
+    the baseline it was trained against and a caller that does not know about
+    this gets the old behaviour exactly.
+
+    The scale is ``2**(-corpus_ev) * 203/10000``: the first term undoes the
+    render's exposure, the second places diffuse white. At the legacy -1 EV that
+    is ``2 * 203/10000``, which is the constant this replaces.
     """
     display_linear = srgb_to_linear(sdr)
-    return inverse_aces_approx(display_linear) * (2.0 * 203.0 / 10000.0)
+    scale = (2.0 ** (-float(corpus_ev))) * (203.0 / 10000.0)
+    return inverse_aces_approx(display_linear) * scale
 
 
 def luminance(x: torch.Tensor) -> torch.Tensor:
@@ -253,6 +283,7 @@ class SDR2HDRNet(nn.Module):
     """Compact U-Net for direct SDR pixel to HDR radiance recovery."""
 
     def __init__(self, base_channels: int = 32, log_scale: float = 16.0, max_hdr: float = 4.0,
+                 corpus_ev: float = LEGACY_CORPUS_EV,
                  gate_conditioning: bool = False,
                  shadow_conditioning: bool = False):
         super().__init__()
@@ -264,6 +295,11 @@ class SDR2HDRNet(nn.Module):
         self.shadow_conditioning = bool(shadow_conditioning)
         self.log_scale = float(log_scale)
         self.max_hdr = float(max_hdr)
+        # Which corpus convention this network was trained against. Carried on
+        # the model so inference cannot use a baseline the weights never saw:
+        # a checkpoint whose config omits it is legacy, which is correct for
+        # every checkpoint that existed when this was added.
+        self.corpus_ev = float(corpus_ev)
         self.stem = nn.Conv2d(6, c, 3, padding=1)
         self.enc1 = nn.Sequential(ResidualBlock(c), ResidualBlock(c))
         self.down1 = nn.Conv2d(c, c * 2, 3, stride=2, padding=1)
@@ -295,7 +331,7 @@ class SDR2HDRNet(nn.Module):
             "gate_conditioning": bool(config.get("gate_conditioning", False)),
             "shadow_conditioning": bool(config.get("shadow_conditioning", False)),
         }
-        for key in ("log_scale", "max_hdr"):
+        for key in ("log_scale", "max_hdr", "corpus_ev"):
             if config.get(key) is not None:
                 kwargs[key] = float(config[key])
         kwargs.update(overrides)
@@ -325,7 +361,7 @@ class SDR2HDRNet(nn.Module):
             scale = max_side / longest
             view = F.interpolate(sdr, size=(max(1, round(sdr.shape[-2] * scale)),
                                             max(1, round(sdr.shape[-1] * scale))), mode="area")
-        _, _, m = self.encode(view, sdr_to_baseline_hdr(view))
+        _, _, m = self.encode(view, sdr_to_baseline_hdr(view, self.corpus_ev))
         return self.shadow_gate(m, sdr, luminance(sdr))
 
     @torch.no_grad()
@@ -354,7 +390,7 @@ class SDR2HDRNet(nn.Module):
             size = (max(1, round(sdr.shape[-2] * scale)),
                     max(1, round(sdr.shape[-1] * scale)))
             view = F.interpolate(sdr, size=size, mode="area")
-        _, _, m = self.encode(view, sdr_to_baseline_hdr(view))
+        _, _, m = self.encode(view, sdr_to_baseline_hdr(view, self.corpus_ev))
         # Pooled features come from the downscaled view -- alpha is a whole-frame
         # judgement and that is what makes the encode affordable. The statistics
         # come from the NATIVE frame, because the evidence that an input arrived
@@ -378,7 +414,7 @@ class SDR2HDRNet(nn.Module):
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         sdr = sdr.float().clamp(0.0, 1.0)
-        baseline = sdr_to_baseline_hdr(sdr)
+        baseline = sdr_to_baseline_hdr(sdr, self.corpus_ev)
         e1, e2, m = self.encode(sdr, baseline)
         u2 = F.interpolate(m, size=e2.shape[-2:], mode="bilinear", align_corners=False)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
