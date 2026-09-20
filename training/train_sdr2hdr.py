@@ -425,7 +425,7 @@ def train(args: argparse.Namespace) -> Path:
             merged.update({f"hard_{k}": v for k, v in hard.items()})
             if args.best_eval == "hard":
                 chosen = hard
-        if args.best_metric == "composite_gain" and val_hard_loader is not None:
+        if args.best_metric in ("composite_gain", "preserved_composite_gain") and val_hard_loader is not None:
             # Reward the gain on degraded SDR, subtract any HARM done to clean
             # SDR, and count a clean gain as worth nothing -- clean input is a
             # constraint, not an objective. Negated because lower wins.
@@ -435,8 +435,9 @@ def train(args: argparse.Namespace) -> Path:
             # (hard +1.81, clean -4.22) while step 44,000 sat right there at
             # hard +1.71 for only -0.90 clean -- nearly all of the upside for a
             # fifth of the damage.
-            merged["composite_gain"] = (merged["hard_gain_db"]
-                                        + min(0.0, merged["clean_gain_db"]))
+            gain_key = "preserved_gain_db" if args.best_metric == "preserved_composite_gain" else "gain_db"
+            merged["composite_gain"] = (merged[f"hard_{gain_key}"]
+                                        + min(0.0, merged[f"clean_{gain_key}"]))
             return merged, -merged["composite_gain"]
         return merged, chosen[args.best_metric]
 
@@ -603,7 +604,7 @@ def parse_args() -> argparse.Namespace:
                              "and promised +1.80 dB where the benchmark measured +1.43. "
                              "Pass 1 to restore the old single-eval behaviour.")
     parser.add_argument("--best-metric",
-                        choices=("composite_gain", "loss", "log_l1"), default="composite_gain",
+                        choices=("composite_gain", "preserved_composite_gain", "loss", "log_l1"), default="composite_gain",
                         help="composite_gain = hard_gain_db + min(0, clean_gain_db): the "
                              "improvement on degraded SDR, less any damage done to clean "
                              "SDR. 'loss' selects on the raw objective, which falls "

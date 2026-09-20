@@ -87,7 +87,7 @@ def _tile_weight(height: int, width: int, overlap: int, y: int, x: int,
 
 @torch.inference_mode()
 def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
-                  tile_size: int, overlap: int, recovery_mode: str = "highlights",
+                  tile_size: int, overlap: int, recovery_mode: str = "all",
                   recovery_strength: float = 1.0) -> torch.Tensor:
     """Memory-bounded image inference with overlap feathering."""
     if sdr.shape[0] != 1:
@@ -98,13 +98,14 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     # would predict from its own window and a patch of sky inside a dim
     # interior would reconstruct as if the whole frame were a sunset.
     scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
+    shadow_weight = model.predict_shadow_weight(sdr) if hasattr(model, "predict_shadow_weight") else None
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if sdr.is_cuda else contextlib.nullcontext()
         with amp:
             return model(sdr, preserve_outside=preserve_outside,
                          recovery_mode=recovery_mode,
                          residual_strength=recovery_strength,
-                         residual_scale=scale).hdr.float()
+                         residual_scale=scale, shadow_weight=shadow_weight).hdr.float()
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
     result = torch.zeros((1, 3, height, width), device=sdr.device, dtype=torch.float32)
@@ -117,7 +118,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                 prediction = model(tile, preserve_outside=preserve_outside,
                                    recovery_mode=recovery_mode,
                                    residual_strength=recovery_strength,
-                                   residual_scale=scale).hdr.float()
+                                   residual_scale=scale, shadow_weight=shadow_weight).hdr.float()
             weight = _tile_weight(tile.shape[-2], tile.shape[-1], overlap, y, x,
                                   height, width, sdr.device)
             result[..., y:y + tile.shape[-2], x:x + tile.shape[-1]] += prediction * weight
@@ -222,6 +223,9 @@ def predict_temporal(model: TemporalHDRRefiner, sdr: torch.Tensor, initial: torc
 
 def write_outputs(rgb: np.ndarray, output_stem: Path, write_png16: bool = True) -> None:
     output_stem.parent.mkdir(parents=True, exist_ok=True)
+    from rudra.delivery.exr import write_exr
+    write_exr(output_stem.with_suffix(".exr"), rgb * (10000.0 / 203.0), half=False,
+              attributes={"rudra:nitsScale": "203"})
     bgr = cv2.cvtColor(rgb.astype(np.float32), cv2.COLOR_RGB2BGR)
     if not cv2.imwrite(str(output_stem.with_suffix(".tif")), bgr):
         raise RuntimeError(f"Failed to write {output_stem.with_suffix('.tif')}")
@@ -260,6 +264,8 @@ def write_outputs(rgb: np.ndarray, output_stem: Path, write_png16: bool = True) 
         "max_nits": float(np.max(rgb) * 10000.0),
         "mean_nits": float(np.mean(rgb) * 10000.0),
         "master": str(output_stem.with_suffix(".tif").name),
+        "delivery_master": str(output_stem.with_suffix(".exr").name),
+        "delivery_nits_scale": 203.0,
         "raw_linear_16bit": str(output_stem.with_name(output_stem.name + "_16bit").with_suffix(".png").name) if write_png16 else None,
         "display_16bit": str(output_stem.with_name(output_stem.name + "_display16").with_suffix(".png").name) if write_png16 else None,
         "preview": str(output_stem.with_name(output_stem.name + "_preview").with_suffix(".png").name),
@@ -288,7 +294,7 @@ def infer_video(path: Path, output_dir: Path, model: SDR2HDRNet,
                 temporal: TemporalHDRRefiner | None, device: torch.device,
                 clip_length: int, write_png16: bool, transfer: str, value_range: str,
                 tile_size: int, tile_overlap: int, recovery_mode: str,
-                recovery_strength: float) -> None:
+                recovery_strength: float, preserve_outside: bool = True) -> None:
     capture = cv2.VideoCapture(str(path))
     if not capture.isOpened():
         raise RuntimeError(f"Failed to open video {path}")
@@ -301,7 +307,7 @@ def infer_video(path: Path, output_dir: Path, model: SDR2HDRNet,
     def process(chunk: list[torch.Tensor], start: int) -> None:
         sdr = torch.cat(chunk, dim=0)
         initial = torch.cat([
-            predict_image(model, frame[None], False, tile_size, tile_overlap,
+            predict_image(model, frame[None], preserve_outside, tile_size, tile_overlap,
                           recovery_mode, recovery_strength)
             for frame in sdr
         ], dim=0)
@@ -330,6 +336,7 @@ def infer_video(path: Path, output_dir: Path, model: SDR2HDRNet,
         "source": str(path.resolve()), "fps": fps, "frames": index,
         "encoding": "scene-linear RGB; 1.0 = 10000 nits",
         "temporal_refiner": temporal is not None,
+        "preserve_outside": preserve_outside,
         "input_transfer": transfer, "input_range": value_range,
         "tile_size": tile_size, "tile_overlap": tile_overlap,
         "recovery_mode": recovery_mode, "recovery_strength": recovery_strength,
@@ -339,7 +346,7 @@ def infer_video(path: Path, output_dir: Path, model: SDR2HDRNet,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
-    parser.add_argument("--image-checkpoint", required=True)
+    parser.add_argument("--image-checkpoint", "--checkpoint", required=True)
     parser.add_argument("--temporal-checkpoint")
     parser.add_argument("--output-dir", type=Path, default=Path("outputs/sdr2hdr"))
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -366,7 +373,7 @@ def main() -> None:
                         help="Spatial tile size for bounded VRAM use; <=0 disables tiling")
     parser.add_argument("--tile-overlap", type=int, default=64)
     parser.add_argument("--recovery-mode", choices=("highlights", "all", "shadows", "off"),
-                        default="highlights",
+                        default="all",
                         help="Where learned recovery may alter the physical baseline")
     parser.add_argument("--recovery-strength", type=float, default=1.0)
     parser.add_argument("--no-png16", action="store_true")
@@ -374,20 +381,31 @@ def main() -> None:
     device = torch.device(args.device)
     model, temporal = load_models(args.image_checkpoint, args.temporal_checkpoint, device)
     paths = sorted(args.input.rglob("*")) if args.input.is_dir() else [args.input]
+    paths = [p for p in paths if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS | VIDEO_EXTENSIONS]
+    destinations = set()
     for path in paths:
+        relative = path.relative_to(args.input) if args.input.is_dir() else Path(path.name)
+        destination = args.output_dir / relative.with_suffix("")
+        key = str(destination.resolve()).casefold()
+        if key in destinations or destination.exists() or any(destination.parent.glob(destination.name + ".*")):
+            raise ValueError(f"Output collision: {destination}")
+        destinations.add(key)
+    for path in paths:
+        relative = path.relative_to(args.input) if args.input.is_dir() else Path(path.name)
+        output_dir = args.output_dir / relative.parent
         suffix = path.suffix.lower()
         if suffix in IMAGE_EXTENSIONS:
             transfer = "srgb" if args.input_transfer == "auto" else args.input_transfer
-            infer_image(path, args.output_dir, model, device, args.preserve_outside,
+            infer_image(path, output_dir, model, device, args.preserve_outside,
                         not args.no_png16, transfer, args.input_range,
                         args.tile_size, args.tile_overlap,
                         args.recovery_mode, args.recovery_strength)
         elif suffix in VIDEO_EXTENSIONS:
             transfer = "rec709" if args.input_transfer == "auto" else args.input_transfer
-            infer_video(path, args.output_dir, model, temporal, device, args.clip_length,
+            infer_video(path, output_dir, model, temporal, device, args.clip_length,
                         not args.no_png16, transfer, args.input_range,
                         args.tile_size, args.tile_overlap,
-                        args.recovery_mode, args.recovery_strength)
+                        args.recovery_mode, args.recovery_strength, args.preserve_outside)
 
 
 if __name__ == "__main__":

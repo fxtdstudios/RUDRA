@@ -45,6 +45,7 @@ import re
 import socketserver
 import sys
 import threading
+import tempfile
 import time
 import traceback
 import webbrowser
@@ -104,6 +105,23 @@ def registry() -> dict:
         return {"default": None, "models": []}
     return {"default": data.get("default"),
             "models": [m for m in data.get("models", []) if isinstance(m, dict)]}
+
+
+def training_candidate() -> dict:
+    """Expose completed local assessment without silently promoting weights."""
+    run = REPO / "outputs" / "finetune_views_20260920"
+    report = run / "assessment.json"
+    if not report.is_file():
+        return {"available": False, "promoted": False}
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+        seed = data.get("selected_seed")
+        path = run / f"gate_{seed}" / "best.pt" if seed else None
+        return {"available": bool(path and path.is_file()), "promoted": bool(data.get("promoted")),
+                "selected_seed": seed, "path": str(path) if path else None,
+                "license": data.get("license"), "validation": data.get("validation", {}).get(f"hard/{seed}") if seed else None}
+    except Exception as exc:
+        return {"available": False, "promoted": False, "error": str(exc)}
 
 
 def loadable_models() -> list[dict]:
@@ -511,7 +529,47 @@ MASTER_DIR = UI_DIR / "_masters"
 SAFE_STEM = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
+def master_targets(params):
+    folder = Path(str(params.get('render_dir', '')).strip()).expanduser()
+    if not folder.is_absolute():
+        raise ValueError('Choose an absolute render folder on the Studio computer')
+    folder = folder.resolve()
+    name = str(params.get('render_name', 'master')).strip()
+    if not name or name in ('.', '..') or re.search(r'[^A-Za-z0-9_.-]', name):
+        raise ValueError('Render name must contain only letters, numbers, dots, underscores or hyphens')
+    count = int(params.get('render_count', 1))
+    start = int(params.get('frame_start', 1))
+    sequence = params.get('render_mode', 'image') == 'sequence'
+    if count < 1 or count > 100000 or start < 0 or start + count > 100000000:
+        raise ValueError('Invalid frame range')
+    if not sequence and count != 1: raise ValueError('Image render requires one frame')
+    targets = [folder / (f'{name}.{start+i:06d}.exr' if sequence else f'{name}.exr') for i in range(count)]
+    for out in targets:
+        if out.exists() or out.with_suffix('.json').exists():
+            raise ValueError(f'Refusing to overwrite existing render: {out}')
+    return targets
+
+
 def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
+    targets = master_targets(params)
+    if len(targets) != 1: raise ValueError('Submit one sequence frame per render request')
+    out = targets[0]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # Stage both files, then publish without replacing any existing file.
+    with tempfile.TemporaryDirectory(prefix='.rudra-render-', dir=out.parent) as staging:
+        staged = Path(staging) / out.name
+        result = _render_master(model, image_bytes, params, args, staged)
+        os.link(staged, out)
+        try:
+            os.link(staged.with_suffix('.json'), out.with_suffix('.json'))
+        except Exception:
+            out.unlink()
+            raise
+    result.update(path=str(out), file=out.name, sidecar=str(out.with_suffix('.json')))
+    return result
+
+
+def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> dict:
     """Reconstruct at full resolution and write a real EXR master.
 
     Scene-linear, diffuse white = 1.0, which is the convention every other
@@ -533,8 +591,8 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     started = time.time()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     # Full resolution: a master is the one output that must not be downsampled.
-    limit = int(params.get("master_max_side", 4096))
-    if max(image.size) > limit:
+    limit = int(params.get("master_max_side", 0))
+    if limit > 0 and max(image.size) > limit:
         ratio = limit / max(image.size)
         image = image.resize((max(1, int(image.width * ratio)),
                               max(1, int(image.height * ratio))), Image.LANCZOS)
@@ -583,8 +641,6 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
     stats = dm.analyze_frame(nits, index=0)
     maxcll, maxfall = dm.maxcll_maxfall([stats])
 
-    MASTER_DIR.mkdir(parents=True, exist_ok=True)
-    stem = SAFE_STEM.sub("_", Path(str(params.get("name", "frame"))).stem)[:60] or "frame"
     container = params.get("container", "aces")
     provenance = {
         "rudra:checkpoint": str(params.get("checkpoint", "")),
@@ -596,12 +652,10 @@ def run_master(model, image_bytes: bytes, params: dict, args) -> dict:
         "rudra:tiled": str(bool(tile_size)),
     }
     if container == "aces":
-        out = MASTER_DIR / f"{stem}_rudra_aces.exr"
         # HALF tops out near 65,504; scene-linear here is nits/203, so a
         # 1,000,000-nit sun is ~4,926 -- comfortably inside. Keep half.
         write_aces_exr(scene_linear, out, source_space="rec2020", provenance=provenance)
     else:
-        out = MASTER_DIR / f"{stem}_rudra_linear.exr"
         write_exr(out, scene_linear, half=True, attributes=provenance)
 
     sidecar = out.with_suffix(".json")
@@ -690,6 +744,8 @@ def make_handler(args):
             if self.path.startswith("/api/model"):
                 _, info = ensure_model(args)
                 return self._json(info)
+            if self.path.startswith("/api/training"):
+                return self._json(training_candidate())
             if self.path.startswith("/api/master/download"):
                 return self._send_master()
             if self.path.split("?")[0] in ("/", "/index.html"):
@@ -783,6 +839,9 @@ def make_handler(args):
                     header["gpu"] = info_used.get("gpu")
                     return self._binary(header, body)
                 if self.path.startswith("/api/master"):
+                    if self.path == '/api/master/plan':
+                        targets = master_targets(params)
+                        return self._json(dict(ok=True, paths=[str(p) for p in targets]))
                     payload = run_master(model, raw, params, args)
                 else:
                     payload = run_inference(model, raw, params, args)
