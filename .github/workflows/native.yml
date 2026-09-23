@@ -1,0 +1,109 @@
+name: native
+
+# The native app (native/, docs/NATIVE_ARCHITECTURE.md). Four jobs:
+#   layers  - the dependency rule, tools/check_layers.py
+#   core    - librudra + CLI + GoogleTest on Windows, macOS and Linux, no runtimes
+#   parity  - Gate A: export the shipped checkpoint, build with LibTorch and
+#             ONNX Runtime, and run the package's golden frames in C++
+#   app     - the Qt shell compiles and starts headless
+
+on:
+  push:
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/check_layers.py",
+            "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+  pull_request:
+    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+  workflow_dispatch:
+
+jobs:
+  layers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - run: python tools/check_layers.py
+
+  core:
+    name: core, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v7
+      - name: GoogleTest and JSON (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
+      - name: GoogleTest and JSON (macOS)
+        if: runner.os == 'macOS'
+        run: brew install googletest nlohmann-json ninja
+      - name: GoogleTest and JSON (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json --triplet x64-windows
+          echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+      - name: Configure
+        shell: bash
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON ${TOOLCHAIN:-}
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  parity:
+    name: Gate A (LibTorch + ONNX Runtime, CPU)
+    runs-on: ubuntu-24.04
+    env:
+      ORT_VERSION: "1.22.0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Python side
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[test]" onnx onnxruntime
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
+      - name: Core goldens are current
+        run: |
+          python tools/emit_core_golden.py
+          git diff --exit-code native/tests/golden/core/index.json
+      - name: Export the shipped model package
+        run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
+      - name: ONNX Runtime C API
+        run: |
+          curl -sSL -o ort.tgz "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar xzf ort.tgz
+          echo "ORT_ROOT=$PWD/onnxruntime-linux-x64-${ORT_VERSION}" >> "$GITHUB_ENV"
+      - name: Configure
+        run: |
+          cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" \
+            -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')" \
+            -DRUDRA_TEST_PACKAGE="$PWD/dist/models/sdr2hdr_shadow_v1"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Gate A
+        run: |
+          export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
+          ctest --test-dir build --output-on-failure
+          build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
+
+  app:
+    name: Qt shell
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libgl-dev nlohmann-json3-dev ninja-build
+      - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=OFF
+      - run: cmake --build build --parallel
+      - name: Starts headless
+        run: |
+          set +e
+          QT_QPA_PLATFORM=offscreen timeout 5 build/app/RUDRA
+          code=$?
+          test "$code" = "124" || { echo "RUDRA exited with $code before the timeout"; exit 1; }

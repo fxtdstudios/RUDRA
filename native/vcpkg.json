@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "rudra-native",
+  "version-semver": "0.1.0",
+  "description": "RUDRA native app: layered C++20 core, QRhi viewer, LibTorch and ONNX Runtime inference",
+  "dependencies": [
+    "nlohmann-json"
+  ],
+  "features": {
+    "tests": {
+      "description": "GoogleTest suite",
+      "dependencies": ["gtest"]
+    },
+    "app": {
+      "description": "Qt 6 application with the QRhi viewer",
+      "dependencies": [
+        { "name": "qtbase", "features": ["widgets", "gui"] },
+        "qtshadertools"
+      ]
+    },
+    "media": {
+      "description": "Readers, writers and colour (Phase 4)",
+      "dependencies": [
+        "openexr",
+        "opencolorio",
+        { "name": "ffmpeg", "default-features": false, "features": ["avcodec", "avformat", "avfilter", "swscale"] }
+      ]
+    }
+  }
+}
