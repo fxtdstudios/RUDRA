@@ -421,6 +421,16 @@ Next, Phase 1 (librudra, 15 days; plan in
   resumable from either side, same frame order and messages
 - [ ] CI green on three OSes
 
+Then Phase 2 (the QRhi viewer, 20 days; plan in
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 15):
+- [x] The browser Studio as oracle: `ui/compositor.js` and `ui/app.js` run
+  unmodified in headless Chromium; its composite matches `composite.cpp`
+- [ ] Display pass (image, false colour, difference, wipe) on the CPU and in GLSL 440
+- [ ] HDR output from the display pass: scRGB, HDR10, EDR
+- [ ] GPU reductions, probe, sample and scopes equal to the browser's
+- [ ] The viewer in the Qt shell, with the frame path, zoom, pan and guides
+- [ ] Every backend, budgets recorded
+
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
 [`native/README.md`](native/README.md).

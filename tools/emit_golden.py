@@ -7,6 +7,7 @@ tests instead of drifting silently.
 
     python tools/emit_golden.py              # every emitter
     python tools/emit_golden.py decode core  # just these
+    python tools/emit_golden.py --except viewer   # all but these
 
 Emitters, in order:
     core       tools/emit_core_golden.py       baseline, curve, tile weights
@@ -17,6 +18,7 @@ Emitters, in order:
     qc         tools/emit_qc_golden.py         QC checks and report text
     queue      tools/emit_queue_golden.py      queue state files and refusals
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
+    viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
 """
 from __future__ import annotations
 
@@ -34,12 +36,18 @@ EMITTERS = {
     "qc": "emit_qc_golden.py",
     "queue": "emit_queue_golden.py",
     "sequence": "emit_sequence_golden.py",
+    "viewer": "emit_viewer_golden.py",
 }
 
 
 def main(argv: list[str]) -> int:
-    names = argv or list(EMITTERS)
-    unknown = [n for n in names if n not in EMITTERS]
+    if argv[:1] == ["--except"]:
+        skip = argv[1:]
+        names = [n for n in EMITTERS if n not in skip]
+        unknown = [n for n in skip if n not in EMITTERS]
+    else:
+        names = argv or list(EMITTERS)
+        unknown = [n for n in names if n not in EMITTERS]
     if unknown:
         print(f"unknown emitter(s): {', '.join(unknown)}; known: {', '.join(EMITTERS)}")
         return 2
