@@ -1,8 +1,9 @@
 name: native
 
-# The native app (native/, docs/NATIVE_ARCHITECTURE.md). Four jobs:
+# The native app (native/, docs/NATIVE_ARCHITECTURE.md). Five jobs:
 #   layers  - the dependency rule, tools/check_layers.py
-#   core    - librudra + CLI + GoogleTest on Windows, macOS and Linux, no runtimes
+#   core    - librudra + CLI + GoogleTest on Windows, macOS and Linux against
+#             goldens re-emitted by each runner's Python; OpenCV, no runtimes
 #   parity  - Gate A: export the shipped checkpoint, build with LibTorch and
 #             ONNX Runtime, and run the package's golden frames in C++
 #   app     - the Qt shell compiles and starts headless
@@ -31,31 +32,54 @@ jobs:
       - run: python tools/check_layers.py
 
   core:
+    # Every module against goldens this runner's Python emits: the exact ones
+    # must equal what is committed, the rest are re-emitted and the C++ tests
+    # run against them. OpenCV on every OS, so still decode is tested too.
     name: core, ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-14, windows-2022]
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
     steps:
       - uses: actions/checkout@v7
-      - name: GoogleTest and JSON (Linux)
-        if: runner.os == 'Linux'
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Python side
+        shell: bash
         run: |
-          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
-          echo "OPENCV=-DRUDRA_WITH_OPENCV=ON" >> "$GITHUB_ENV"
-      - name: GoogleTest and JSON (macOS)
+          python -m pip install --upgrade pip
+          if [ "$RUNNER_OS" = "macOS" ]; then pip install torch; else pip install torch --index-url https://download.pytorch.org/whl/cpu; fi
+          pip install -e ".[test]"
+      - name: GoogleTest, JSON, OpenCV (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
+      - name: GoogleTest, JSON, OpenCV (macOS)
         if: runner.os == 'macOS'
-        run: brew install googletest nlohmann-json ninja
-      - name: GoogleTest and JSON (Windows)
+        run: brew install googletest nlohmann-json ninja opencv
+      - name: vcpkg binary cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.vcpkg-cache
+          key: vcpkg-x64-windows-gtest-json-opencv4-core-jpeg-png-tiff-webp-v1
+      - name: GoogleTest, JSON, OpenCV (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json --triplet x64-windows
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json "opencv4[core,jpeg,png,tiff,webp]" --triplet x64-windows
           echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+      - name: Every golden, from this Python
+        shell: bash
+        run: |
+          python tools/emit_golden.py
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON ${TOOLCHAIN:-} ${OPENCV:-}
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test

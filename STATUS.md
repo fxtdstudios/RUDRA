@@ -12,9 +12,19 @@
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
-> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below) |
+> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run |
 >
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+>
+> **24 Sep 2026, native app: Phase 1 (line F).** librudra now does, in C++
+> and against the Python it ports: still decode (bit-exact), grade, HDR10/HLG,
+> metadata sidecars, EXR/ACES/OCIO (byte-identical), `rudra-native master`
+> (the Studio master within 1 half-float ulp, no Python), QC (same report
+> text), the batch queue (state byte-identical and resumable from either
+> side) and sequence open. Found on the way: the Python wrote its sidecars,
+> OCIO config and queue state with the platform's line ending, so the same
+> master had different bytes on Windows; they now write LF everywhere. The
+> Phase 1 exit waits on CI green on three OSes and the Mac runs from Phase 0.
 >
 > **23 Sep 2026, native app: Phase 0 go/no-go (line F).** The two questions
 > Phase 0 had to answer (docs/NATIVE_ARCHITECTURE.md section 12), measured on

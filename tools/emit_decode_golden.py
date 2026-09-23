@@ -105,7 +105,7 @@ def main() -> int:
                          "source": d.source})
         cases.append(case)
     (OUT / "index.json").write_text(json.dumps({"oracle": "rudra/decode.py decode_sdr",
-                                                "cases": cases}, indent=2))
+                                                "cases": cases}, indent=2), encoding="utf-8", newline="\n")
     print(f"wrote {len(cases)} decode fixtures to {OUT}")
     return 0
 

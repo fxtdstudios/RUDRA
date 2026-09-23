@@ -207,7 +207,7 @@ def main() -> int:
         index["matrices"].append({"src": src, "dst": dst,
                                   "m": [[float(v) for v in row] for row in rgb_to_rgb_matrix(src, dst)]})
 
-    (OUT / "index.json").write_text(json.dumps(index, indent=2))
+    (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8", newline="\n")
     total = sum(f.stat().st_size for f in OUT.glob("*.npy"))
     print(f"wrote {len(list(OUT.glob('*.npy')))} arrays ({total / 1024:.0f} KB) to {OUT}")
     return 0

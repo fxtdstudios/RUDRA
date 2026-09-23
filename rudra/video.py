@@ -420,7 +420,7 @@ def convert_video(args, progress=None):
                                              system_gamma=1.2+.42*math.log10(args.peak_nits/1000))
             report.update(max_cll=max_cll,max_fall=max_fall,elapsed_seconds=time.monotonic()-started)
             staged_json=Path(staging)/sidecar.name
-            staged_json.write_text(json.dumps(report,indent=2),encoding='utf-8')
+            staged_json.write_text(json.dumps(report,indent=2),encoding='utf-8',newline='\n')
             if output.exists() or sidecar.exists(): raise ValueError('Output appeared during processing; refusing overwrite')
             staged.rename(output)
             staged_json.rename(sidecar)

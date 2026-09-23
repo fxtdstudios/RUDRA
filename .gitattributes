@@ -24,3 +24,8 @@
 # not exist, and the error names a file that is plainly there.
 *.bat  text eol=crlf
 *.sh   text eol=lf
+
+# Golden files are compared byte for byte by the native tests, and the queue
+# golden records the SHA-256 of its queue.json. A CRLF checkout on Windows
+# would change every one of them, so they are stored and checked out as-is.
+native/tests/golden/** -text

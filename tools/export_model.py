@@ -689,7 +689,7 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
     if lic.exists():
         shutil.copy2(lic, tmp / "LICENSE")
     (tmp / "golden" / "golden.json").write_text(json.dumps(
-        {"frames": index, "stitch": stitch, "layout": "sdr is (H,W,3); outputs are NCHW"}, indent=2))
+        {"frames": index, "stitch": stitch, "layout": "sdr is (H,W,3); outputs are NCHW"}, indent=2), encoding="utf-8", newline="\n")
 
     import onnx
     manifest = {
@@ -724,7 +724,7 @@ def build_package(checkpoint: Path, out_root: Path, opset: int = 17,
     }
     for key in ("torchscript", "onnx_frame", "onnx_tile"):
         manifest["files"][key + "_sha256"] = sha256(tmp / manifest["files"][key])
-    (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (tmp / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
 
     if not all(passed.values()):
         raise SystemExit(

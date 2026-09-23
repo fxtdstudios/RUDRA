@@ -817,7 +817,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "region_ev": regions if graded else None,
         "region_softness_stops": softness if graded else None,
         "tiled": bool(tile_size),
-    }, indent=2), encoding="utf-8")
+    }, indent=2), encoding="utf-8", newline="\n")
 
     return {
         "ok": True,
