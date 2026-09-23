@@ -69,6 +69,17 @@
 > this run's train split it is retrained on the rebuilt manifest (4 h), and
 > `scripts/next_steps_2026-09-22.ps1` does that decision by data.
 >
+> **23 Sep, 16:00 — hold-out check answered.** 97 of 97 paper-bench scenes are in
+> v4b; 96 were already in test, **one (`fireplace`, 348 records) was in train**.
+> The overnight Step 4 run trained on it, so it is not held out on the old
+> bench and is retrained on the rebuilt manifest (4 h). Evidence:
+> `reports/logs/ns_2_overlap_original_manifest_ffcd8bbb.json`.
+>
+> The rebuild then failed check 7 on test (largest scene 30.4% vs 25%):
+> `cap_scene_share` sized each dominant scene against the total as it stood,
+> so thinning `fireplace` after `carousel_fireworks` pushed carousel back
+> over. It now caps all dominant scenes jointly and re-checks the result.
+>
 > **Next steps, in order. Each has the gate it must pass before the next.**
 > *(`scripts/RUN_NEXT_STEPS.bat` runs 1, 2, 6, 3 and 5 unattended with markers in
 > `reports/logs/`; re-run it after each training window.)*

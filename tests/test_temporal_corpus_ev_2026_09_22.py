@@ -152,3 +152,27 @@ def test_swscale_is_given_the_matrix_name_it_knows():
     assert video.SWS_MATRIX == "bt2020" and video.MATRIX == "bt2020nc"
     src = (REPO / "rudra" / "delivery" / "video.py").read_text(encoding="utf-8")
     assert "out_color_matrix={SWS_MATRIX}" in src and "out_color_matrix={MATRIX}" not in src
+
+
+def test_scene_cap_holds_on_the_final_split_not_one_scene_at_a_time():
+    """corpus_v4b test split, 23 Sep 2026: carousel_fireworks (1,052) was capped
+    against a total that still held fireplace (348); fireplace was then thinned,
+    the total shrank, and carousel sat at 30.4% of test against a 25% cap."""
+    from collections import Counter
+    from pipeline.build_manifests import cap_scene_share
+
+    def scene(name, n, crops=3):
+        return [{"scene_id": name, "frame_index": i // crops, "source_take": "",
+                 "asset_id": f"{name}_{i}"} for i in range(n)]
+
+    rows = scene("carousel", 1052) + scene("fireplace", 348)
+    for i in range(96):
+        rows += scene(f"s{i}", 3)
+    out, trimmed = cap_scene_share(rows, 0.25)
+    counts = Counter(r["scene_id"] for r in out)
+    assert max(counts.values()) / sum(counts.values()) <= 0.25
+    assert {name for name, _, _ in trimmed} == {"carousel", "fireplace"}
+    # whole source frames survive together, so clips can still be formed
+    kept = [r for r in out if r["scene_id"] == "carousel"]
+    frames = Counter(r["frame_index"] for r in kept)
+    assert set(frames.values()) == {3}

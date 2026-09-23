@@ -202,34 +202,73 @@ def _thin_scene(rows: list[dict], target: int) -> list[dict]:
 
 
 def cap_scene_share(rows: list[dict], max_share: float) -> tuple[list[dict], list[tuple]]:
-    """Thin whichever scene dominates until no scene exceeds max_share of rows.
+    """Cap scene shares, re-checking the RESULT until it holds.
 
-    Self-tuning rather than a fixed record cap: to leave a scene at share s of
-    the total, keep s/(1-s) times the records every OTHER scene contributes.
-    Repeated because thinning the leader shrinks the total and can promote the
-    runner-up.
+    A stride lands at or below its target, so a capped scene can come out
+    smaller than solved for; the total shrinks and an uncapped scene can edge
+    over. Re-solve on the result, never re-thinning a scene already thinned.
     """
-    trimmed: list[tuple] = []
+    trimmed_all: list[tuple] = []
     done: set[str] = set()
-    for _ in range(8):
-        counts = Counter((r["scene_id"] for r in rows if r["scene_id"] not in done))
-        if not counts:
+    for _ in range(4):
+        rows, trimmed = _cap_scene_share_once(rows, max_share, done)
+        if not trimmed:
             break
-        total = sum(Counter(r["scene_id"] for r in rows).values())
-        scene, count = counts.most_common(1)[0]
-        if total == 0 or count / total <= max_share:
+        trimmed_all.extend(trimmed)
+        done.update(sc for sc, _, _ in trimmed)
+    return rows, trimmed_all
+
+
+def _cap_scene_share_once(rows: list[dict], max_share: float,
+                          frozen: set[str]) -> tuple[list[dict], list[tuple]]:
+    """Thin every dominant scene so none exceeds max_share of the FINAL rows.
+
+    All over-share scenes are capped together at one common size c, solved
+    from the scenes left alone (U records): with k capped scenes each at c,
+    c = s*(U + k*c)  =>  c = s*U / (1 - k*s). A scene is added to the capped
+    set while its count exceeds c, and c is re-solved.
+
+    The previous version capped one scene at a time, each against the total
+    as it stood: thinning the second scene shrank the total after the first
+    had been sized, so on 23 Sep 2026 corpus_v4b's test split came out with
+    carousel_fireworks at 30.4% against a 25% cap and failed check 7.
+    Thinning is still one stride pass per scene, so a scene is never halved
+    twice to shave a rounding remainder.
+    """
+    counts = Counter(r["scene_id"] for r in rows)
+    if not counts or max_share <= 0 or max_share >= 1:
+        return rows, []
+    capped: set[str] = set()
+    target = None
+    for _ in range(len(counts)):
+        free = sum(n for sc, n in counts.items() if sc not in capped)
+        k = len(capped)
+        if k and k * max_share >= 1.0:
             break
-        # One pass per scene, ever. Thinning is a stride over frames, so it
-        # lands where the stride lands; re-entering to shave a rounding
-        # remainder is how a scene gets halved.
-        done.add(scene)
-        others = total - count
-        target = max(1, int(max_share * others / (1.0 - max_share)))
+        target = max_share * free / (1.0 - k * max_share) if k else None
+        total = sum(counts.values())
+        over = [sc for sc, n in counts.items() if sc not in capped and sc not in frozen and
+                (n > target if target is not None else n / total > max_share)]
+        if not over:
+            break
+        # Largest first; with k=0 the first entrant defines the cap.
+        capped.add(max(over, key=lambda sc: counts[sc]))
+    if not capped or target is None:
+        return rows, []
+    # Floor, then one stride pass per capped scene. The stride lands at or
+    # below the target, so shares only move down from here.
+    size = max(1, int(target))
+    trimmed: list[tuple] = []
+    out = [r for r in rows if r["scene_id"] not in capped]
+    for scene in sorted(capped, key=lambda sc: -counts[sc]):
         scene_rows = [r for r in rows if r["scene_id"] == scene]
-        kept = _thin_scene(scene_rows, target)
+        if len(scene_rows) <= size:
+            out.extend(scene_rows)
+            continue
+        kept = _thin_scene(scene_rows, size)
         trimmed.append((scene, len(scene_rows), len(kept)))
-        rows = [r for r in rows if r["scene_id"] != scene] + kept
-    return rows, trimmed
+        out.extend(kept)
+    return out, trimmed
 
 
 def split_scenes(scenes: list[str], val_frac: float, test_frac: float,
