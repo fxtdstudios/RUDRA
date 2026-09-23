@@ -1,6 +1,6 @@
 #pragma once
-// Reader for NumPy .npy files (format 1.0 to 3.0), little-endian float32 (and
-// float64 through read_npy_f64).
+// Reader for NumPy .npy files (format 1.0 to 3.0), little-endian float32 and
+// uint8 (widened to float, exactly), and float64 through read_npy_f64.
 // It is how the golden files the Python writes reach the native tests and the
 // model-package self-test.
 

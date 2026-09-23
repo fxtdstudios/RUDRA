@@ -425,7 +425,9 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 15):
 - [x] The browser Studio as oracle: `ui/compositor.js` and `ui/app.js` run
   unmodified in headless Chromium; its composite matches `composite.cpp`
-- [ ] Display pass (image, false colour, difference, wipe) on the CPU and in GLSL 440
+- [x] Display pass (image, false colour, difference, wipe) on the CPU, specified in
+  [`docs/view.spec.md`](docs/view.spec.md): the browser's canvas to within one code
+- [ ] The display pass in GLSL 440 on every backend
 - [ ] HDR output from the display pass: scRGB, HDR10, EDR
 - [ ] GPU reductions, probe, sample and scopes equal to the browser's
 - [ ] The viewer in the Qt shell, with the frame path, zoom, pan and guides

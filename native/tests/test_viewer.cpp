@@ -20,6 +20,7 @@
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/half.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/platform/npy.hpp"
 
@@ -177,6 +178,50 @@ TEST(Viewer, BrowserCompositeMatchesCompositeCpp) {
             EXPECT_NEAR(r.peak, c.at("peak_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * r.peak) << cname;
             EXPECT_NEAR(r.mean, c.at("mean_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * r.mean) << cname;
             EXPECT_NEAR(base_r.peak, c.at("base_peak_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * base_r.peak) << cname;
+        }
+    }
+}
+
+// ---- step 3: the display pass on the CPU against the browser's canvas ------
+
+namespace {
+
+NetworkLinearImage image_of(const NpyArray& a) {
+    return NetworkLinearImage(PlanarBuffer(3, int(a.shape[0]), int(a.shape[1]), planar_of(a)));
+}
+
+ViewParams view_params(const json& j) {
+    ViewParams v;
+    v.mode = static_cast<ViewMode>(j.at("view").get<int>());
+    v.display_nits = j.at("displayNits").get<double>();
+    v.show = j.at("show").get<std::string>() == "baseline" ? ViewSource::Baseline : ViewSource::Model;
+    v.wipe = j.at("wipe").get<double>();
+    if (j.contains("diffGain")) v.diff_gain = j.at("diffGain").get<double>();
+    return v;
+}
+
+}  // namespace
+
+TEST(Viewer, DisplayPassMatchesTheBrowserCanvas) {
+    for (const auto& frame : index_json().at("frames")) {
+        const std::string name = frame.at("name").get<std::string>();
+        // The views were presented on the first composite case.
+        const auto model = image_of(npy(frame.at("cases").at(0).at("model").get<std::string>()));
+        const auto base = image_of(npy(frame.at("base").get<std::string>()));
+        for (const auto& v : frame.at("views")) {
+            const std::string vname = name + " " + v.at("name").get<std::string>();
+            const Rgb8Image got = render_view_rgb8(model, base, view_params(v.at("params")));
+            const NpyArray want = npy(v.at("pixels").get<std::string>());   // (H, W, 3) uint8 as float
+            ASSERT_EQ(got.rgb.size(), want.data.size()) << vname;
+            int worst = 0;
+            std::size_t off_by_one = 0;
+            for (std::size_t i = 0; i < want.data.size(); ++i) {
+                const int d = std::abs(int(got.rgb[i]) - int(want.data[i]));
+                worst = std::max(worst, d);
+                off_by_one += d == 1;
+            }
+            EXPECT_LE(worst, 1) << vname;
+            ::testing::Test::RecordProperty(vname, std::to_string(worst) + "/" + std::to_string(off_by_one));
         }
     }
 }
