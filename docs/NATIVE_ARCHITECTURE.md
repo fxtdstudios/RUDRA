@@ -581,3 +581,38 @@ could test it and it stands until Phase 1 does.
 8. **ADR-008** `queue.json` and sidecar stay byte-compatible with Python.
 9. **ADR-009** Supported hardware: Apple Silicon only on macOS; DX12 GPUs on
    Windows; the Linux GPU and compositor matrix for HDR.
+
+---
+
+## 14. Phase 1: librudra, the next fifteen working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): every Python module the product
+depends on exists in C++ and passes its golden test on three OSes, ending in a
+master EXR rendered with no Python on the machine. Same rules as Phase 0: the
+Python is the oracle, each module lands with its goldens and tests, the README
+is ticked in the same commit.
+
+Already ported in Phase 0: baseline, tiling, composite, Region EV, anchor,
+chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
+`measure`.
+
+| # | Deliverable | Oracle | Done when | Days | Status |
+|---|---|---|---|---|---|
+| 1 | One golden harness: `tools/emit_golden.py` runs every emitter; CI re-emits on all three OSes and runs the native tests against fresh arrays | the emitters | a Python change that moves a number fails CI | 0.5 | |
+| 2 | Still decode in `media/`: PNG 8/16-bit, JPEG, TIFF 8/16, EXR (display-referred only; scene-linear refused), bit depth and distinct codes reported | `rudra/decode.py` `decode_sdr` | same float pixels, bits and refusals on a fixture set of every format and depth | 2 | |
+| 3 | Grade controls: exposure, highlight desaturation, shoulder to peak, `apply_grade`, `itm_strength_map` | `rudra/delivery/controls.py` | golden arrays, rtol 1e-12 | 1 | |
+| 4 | HDR10 and profiles: PQ OETF/EOTF, `master_to_peak`, `master_to_pq`, delivery profiles | `rudra/hdr10.py`, `delivery/profiles.py` | golden arrays; PQ codes exact at 10 and 12 bit | 1 | |
+| 5 | Metadata writers: `detect_shots`, `l1_per_shot`, Dolby Vision generate JSON, HDR10+ JSON, the RUDRA sidecar | `delivery/metadata.py` | byte-identical JSON on a multi-shot fixture | 1.5 | |
+| 6 | EXR and ACES writers on OpenEXR: half pixels, chromaticities, provenance attributes, AP0 container | `delivery/exr.py`, `delivery/aces.py` | pixels exact after the half cast; every header attribute equal when read back by Python | 2 | |
+| 7 | **`rudra-native master <package> <image> --out x.exr`**: decode, infer, composite, master chain, measure, EXR, sidecar | `ui/server.py` `_render_master` | the same EXR within 1 half-float ulp and the same sidecar numbers as the Studio master, on three stills, no Python installed | 2 | |
+| 8 | QC: `check_frame`, thresholds file, report text | `rudra/qc.py` | same pass/fail and identical report text on the fixtures | 1.5 | |
+| 9 | Queue: `queue.json` read, write, lock, atomic save, resume, artifact digests | `rudra/batch.py` | a queue started by Python resumes in C++ and the other way round | 1.5 | |
+| 10 | Sequence open by path: frame folders and numbering rules (video frames wait for libav in Phase 4) | `ui/sequence.py` | same frame list and order on the fixture folders | 1 | |
+| 11 | Review: CI green on Windows, macOS, Linux; Mac runs from Phase 0 folded in; Phase 1 exit written into `STATUS.md` | | every module passes its golden on three OSes | 1 | |
+
+New third-party code, all through vcpkg and CMake, none in the public headers
+(principle P6): libspng, libjpeg-turbo, libtiff, OpenEXR (with Imath). OCIO
+waits until a module needs it; nothing in this list does.
+
+Order: 1 first, then 2 to 6 in any order, 7 as soon as 2 and 6 land (it is the
+milestone that proves the port end to end), then 8 to 11.
