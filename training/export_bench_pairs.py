@@ -34,6 +34,11 @@ It is NOT pixel-identical to the eval's hard frames: the eval degrades a
 different realisation. Treat the two as the same *condition*, not the same
 images -- the numbers here are not directly comparable with `hard_gain_db`.
 
+`--condition out-of-generator` re-tone-maps the reference with a Hable curve
+and a real H.264 round trip -- neither of which the model's training ever saw.
+It is the one condition that asks whether the model generalises past its own
+training augmentation, rather than how well it undoes it.
+
 The reference is decoded WITHOUT the network's max_hdr clamp. Clamping it would
 score the model against a ground truth cropped to the model's own ceiling,
 which flatters it for free.
@@ -104,6 +109,60 @@ def degrade_like_eval(sdr: torch.Tensor, index: int) -> torch.Tensor:
         torch.random.set_rng_state(torch_state)
 
 
+def codec_round_trip_single(rgb01: np.ndarray, crf: int) -> np.ndarray:
+    """One frame through a real H.264 encoder and back out.
+
+    8-bit sRGB in, 8-bit sRGB out. A single frame is an I-frame, so this is a
+    real 4:2:0 subsample + quantise + block-codec round trip rather than the
+    synthetic corruption ``degrade_sdr`` applies. The training augmentation
+    never saw H.264, which is what makes it out-of-generator.
+    """
+    import subprocess
+    import tempfile
+
+    eight = np.clip(rgb01 * 255.0 + 0.5, 0, 255).astype(np.uint8)
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        if not cv2.imwrite(str(work / "in.png"), eight[..., ::-1]):
+            raise RuntimeError("could not stage frame for H.264")
+        encoded = work / "frame.mp4"
+        encode = ["ffmpeg", "-y", "-loglevel", "error",
+                  "-framerate", "24", "-i", str(work / "in.png"),
+                  "-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p",
+                  str(encoded)]
+        decode = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(encoded),
+                  str(work / "out_%05d.png")]
+        for command in (encode, decode):
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"ffmpeg failed ({command[0]}): {result.stderr}")
+        image = cv2.imread(str(work / "out_00001.png"), cv2.IMREAD_UNCHANGED)
+        if image is None:
+            raise RuntimeError("ffmpeg returned no frame")
+        return cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+
+
+def out_of_generator_sdr(hdr_np: np.ndarray, crf: int) -> torch.Tensor:
+    """SDR the model never saw: a Hable tone curve + a real H.264 round trip.
+
+    ``hdr_np`` is the reference in network units (nits / 10 000). Convert to
+    scene-linear (diffuse white = 1.0), tone-map with Hable instead of the
+    ACES curve the corpus used, sRGB-encode, then put it through a real H.264
+    round trip. Returns a [1, 3, H, W] float tensor in [0, 1].
+
+    Deterministic: the Hable curve and a single-frame H.264 encode are both
+    pure functions of the reference, so this condition is reproducible without
+    a seed.
+    """
+    from training.prepare_training_data import hable_tonemap, oetf_srgb
+
+    scene_linear = hdr_np * (NETWORK_PEAK_NITS / DIFFUSE_WHITE_NITS)
+    tone = hable_tonemap(scene_linear)
+    srgb = oetf_srgb(tone)
+    coded = codec_round_trip_single(srgb, crf)
+    return torch.from_numpy(coded.astype(np.float32)).permute(2, 0, 1)[None]
+
+
 def load_model(checkpoint: Path, device: torch.device) -> SDR2HDRNet:
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
     config = payload.get("config", {}) or {}
@@ -123,8 +182,13 @@ def main() -> int:
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--split", default="test")
-    parser.add_argument("--condition", choices=("clean", "hard"), default="clean",
-                        help="hard applies the eval's seeded camera/codec degradation")
+    parser.add_argument("--condition", choices=("clean", "hard", "out-of-generator"),
+                        default="clean",
+                        help="hard applies the eval's seeded camera/codec degradation; "
+                             "out-of-generator re-tone-maps the reference with a Hable "
+                             "curve and a real H.264 round trip -- SDR the model never saw")
+    parser.add_argument("--oog-crf", type=int, default=28,
+                        help="H.264 CRF for --condition out-of-generator (default 28)")
     parser.add_argument("--max-side", type=int, default=0,
                         help="0 keeps native resolution")
     parser.add_argument("--tile-size", type=int, default=0,
@@ -227,6 +291,8 @@ def main() -> int:
                 mode="area")[0].permute(1, 2, 0).numpy()
         if args.condition == "hard":
             sdr = degrade_like_eval(sdr[0], index)[None]
+        elif args.condition == "out-of-generator":
+            sdr = out_of_generator_sdr(reference, args.oog_crf)
         sdr = sdr.to(device)
 
         def predict(tile_size: int) -> torch.Tensor:
@@ -278,6 +344,7 @@ def main() -> int:
         "checkpoint": str(Path(args.checkpoint).resolve()),
         "manifest": str(Path(args.manifest).resolve()),
         "split": args.split, "condition": args.condition,
+        "oog_crf": args.oog_crf,
         "test_name": args.test_name,
         "preserve_outside": bool(args.preserve_outside),
         "recovery_mode": args.recovery_mode,

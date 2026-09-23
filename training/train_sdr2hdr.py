@@ -335,6 +335,18 @@ def train(args: argparse.Namespace) -> Path:
             raise ValueError("--image-checkpoint is required for temporal training")
         image_model, _ = load_image_checkpoint(args.image_checkpoint, device)
         image_model.eval().requires_grad_(False)
+        # The refiner learns a residual over the image model's output, and the
+        # image model's output is a residual over its baseline at ITS corpus
+        # exposure. If that exposure is not the video corpus's, the refiner
+        # spends itself undoing a constant stop and every eval reads as a gain.
+        # sdr2hdr_temporal_v4 (22 Sep 2026) was started exactly this way:
+        # image model at -1 EV, clips at 0 EV.
+        if abs(float(image_model.corpus_ev) - float(corpus_ev)) > 1e-6:
+            raise SystemExit(
+                f"error: --image-checkpoint {args.image_checkpoint} was trained against a "
+                f"{image_model.corpus_ev:+.2f} EV baseline but {args.manifest} was rendered "
+                f"at {corpus_ev:+.2f} EV. One model has one baseline: train the image model "
+                f"on this corpus first, or point at one that was.")
         model = TemporalHDRRefiner(channels=args.temporal_channels).to(device)
 
     if args.freeze_except_gate:

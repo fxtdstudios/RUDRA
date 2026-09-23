@@ -9,10 +9,17 @@ skipped its gates and cost a retrain.
 
 ---
 
-## Phase 0 — fix the units. Blocking, before anything is rendered.
+## Phase 0 — fix the units. ✅ done (16 Sep 2026, commit `732d0d9`)
 
-The corpus has two luminance defects, in opposite directions, from two ingest
-paths. Re-rendering before they are fixed bakes both into the new corpus.
+`tonemap_ev` now travels manifest → `corpus_ev` in the checkpoint config → frame
+header → compositor uniform, and `SDR2HDRNet.from_config` reads it back, so the
+analytic baseline always undoes the exposure the render actually applied.
+`verify_dataset.py` check 3b puts a floor on SDR clipping (commit `f3f2749`).
+The historical defect this phase fixed is kept below for the record.
+
+The corpus had two luminance defects, in opposite directions, from two ingest
+paths. Re-rendering before they were fixed would have baked both into the new
+corpus.
 
 | set | pairs | symptom | cause |
 |---|---:|---|---|
@@ -53,8 +60,7 @@ python training\fetch_corpus.py --fetch
 ```
 
 Leave `polyhaven` off. You already hold it at 2K (E:, 11.6 GB) and 4K
-(`RUDRA_v02\panoramas`, 47.3 GB); a 16K third copy adds nothing until Phase 0
-proves the ingest handles it.
+(`RUDRA_v02\panoramas`, 47.3 GB); a 16K third copy adds nothing until the ingest is proven to handle it.
 
 **1.2 — on the critical path, and it is a web form.** LIVE-TMHDR: 40 scenes a
 commissioned colourist graded by hand, licensed *"for any purpose"*,
@@ -65,7 +71,7 @@ commercially clean. Nothing else on the list is all three.
 **1.3** Measure what landed:
 
 ```
-python pipeline\scan_sources.py G:\datasets_rudra --out G:\datasets_rudra\_inv\inventory.jsonl
+python pipeline\scan_sources.py G:\datasets\sources --out G:\datasets\_inv\inventory.jsonl
 ```
 
 > **GATE 1** — `independent_moving_sources` ≥ 6 per set, and ≥ 60 across the
@@ -132,8 +138,8 @@ python training\prepare_training_data.py --tonemap-ev 0
 time:
 
 ```
-python training\pilot_clipping.py --src G:\datasets_rudra\netflix_sparks
-python training\pilot_clipping.py --src G:\datasets_rudra\live_tmhdr
+python training\pilot_clipping.py --src G:\datasets\sources\netflix_sparks
+python training\pilot_clipping.py --src G:\datasets\sources\live_tmhdr
 ```
 
 > **GATE 3 — the one that matters.** Median `clipped_fraction` > 0, and the

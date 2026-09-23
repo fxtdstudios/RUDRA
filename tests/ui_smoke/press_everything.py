@@ -411,9 +411,12 @@ def main(URL, FRAMES):
                "MaxCLL" in tail and "failed" not in tail.splitlines()[-1], logtail(2))
 
         # ---- a filename is attacker-controlled text -----------------------------
-        hostile = Path(FRAMES[0]).parent / "<img src=x onerror=window.__pwned=1>.png"
-        hostile.write_bytes(Path(FRAMES[0]).read_bytes())
-        pg.set_input_files("#file", str(hostile))
+        # Windows forbids < and > in filesystem paths, so we must not create a
+        # file with that name.  Playwright's set_input_files accepts a dict with
+        # a separate 'name' key so the hostile string only ever appears in the
+        # multipart Content-Disposition header -- exactly the surface being tested.
+        hostile_name = "<img src=x onerror=window.__pwned=1>.png"
+        pg.set_input_files("#file", {"name": hostile_name, "path": str(FRAMES[0])})
         pg.wait_for_timeout(4000)
         pwned = pg.evaluate("() => !!window.__pwned")
         names = pg.eval_on_selector_all(".shot .name", "els => els.map(e => e.textContent)")

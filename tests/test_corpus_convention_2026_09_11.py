@@ -145,3 +145,14 @@ def test_clipped_fraction_measures_what_it_says():
     half = np.zeros((2, 4, 3), np.uint8)
     half[0] = 255
     assert prep.clipped_fraction(half) == pytest.approx(0.5)
+
+
+def test_measure_clipping_scores_the_baseline_at_the_corpus_exposure():
+    """measure_clipping.py --score compares RUDRA against the analytic inverse
+    on clipped pixels. That baseline must invert the exposure the corpus
+    actually applied -- ``model.corpus_ev`` -- not the legacy -1 EV default.
+    On a 0 EV corpus the default is one stop off, which corrupts exactly the
+    "RUDRA minus baseline" number the tool exists to produce."""
+    src = (REPO / "training" / "measure_clipping.py").read_text(encoding="utf-8")
+    assert "sdr_to_baseline_hdr(x, model.corpus_ev)" in src, \
+        "measure_clipping.py must score its baseline contender at model.corpus_ev"

@@ -24,6 +24,7 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.pytest_tmp/
 .ipynb_checkpoints/
 
 # ── Env / IDE / OS ────────────────────────────────────────────────────────────
@@ -87,6 +88,12 @@ ui/_masters/
 !checkpoints/
 !checkpoints/*.pt
 !checkpoints/README.md
+# Shipped weights are the *.pt at the checkpoints root. A training run
+# writes a subdirectory (best.pt, step_*.pt, train.jsonl); those are
+# run outputs, not releases -- promote one by copying it up a level.
+checkpoints/*/
+# Exported bench trees (ref/test/baseline/sdr PNGs): gigabytes, regenerable.
+/bench/
 
 # secrets -- nothing matched a scan on 3 Sep 2026; this keeps it that way
 .env
@@ -123,5 +130,13 @@ Claude outputs/
 # Local helper scripts: they carry absolute paths from this machine and are
 # regenerated per task. Not part of the project.
 COMMIT_*.ps1
-AUDIT_*.ps1
+/AUDIT_*.ps1
 SCRUB_TRAILERS.txt
+
+# Repo housekeeping (22 Sep 2026): one-shot scripts and dated reports
+# live out of the root and out of git.
+/scripts/archive/
+/scripts/finalize_*.ps1
+/scripts/next_*.ps1
+/scripts/RUN_NEXT_STEPS.bat
+/reports/

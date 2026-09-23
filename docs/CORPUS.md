@@ -176,7 +176,7 @@ been deleted stops being reproducible the moment you need to defend it.
 
 ```
 python training/survey_datasets.py ^
-    --root G:\datasets_rudra --root E:\source_hdr ^
+    --root G:\datasets\sources --root G:\datasets\corpora ^
     --root E:\RUDRA_v3_20260822 --root E:\RUDRA_postfix_20260818 ^
     --manifest E:\RUDRA_v3_20260822\sdr_hdr_manifest.jsonl ^
     --manifest E:\RUDRA_v3_20260822\video_manifest_9f.jsonl ^

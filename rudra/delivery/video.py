@@ -146,7 +146,8 @@ def shoulder_to_peak(rgb_nits: np.ndarray, peak_nits: float) -> np.ndarray:
 # some builds and not others, so both libx265 targets now state them outright.
 
 PRIMARIES = "bt2020"
-MATRIX = "bt2020nc"
+MATRIX = "bt2020nc"          # the tag: -colorspace, colr atom, x265 VUI
+SWS_MATRIX = "bt2020"         # the same matrix as swscale names it
 TRANSFER_NAME = {"pq": "smpte2084", "hlg": "arib-std-b67"}
 
 
@@ -430,7 +431,11 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
             # came out Y'/Cb/Cr 1044/1591/3397 where BT.2020 is 946/1673/3392)
             # under a bt2020nc tag, and the tag check cannot see it because
             # the tag is right. This filter makes the matrix what the tag says.
-            "-vf", f"scale=out_color_matrix={MATRIX}:out_range=tv",
+            # swscale names the BT.2020 matrix "bt2020". FFmpeg 4.x also let
+            # "bt2020nc" through; 7.x parses the option as a constant and
+            # rejects it ("[Eval] Undefined constant", 23 Sep 2026, Windows).
+            # The container/VUI tag below stays bt2020nc, which is its name there.
+            "-vf", f"scale=out_color_matrix={SWS_MATRIX}:out_range=tv",
             *spec.codec, "-pix_fmt", spec.pix_fmt,
             "-color_primaries", PRIMARIES, "-colorspace", MATRIX,
             "-color_trc", TRANSFER_NAME[spec.transfer],
@@ -499,8 +504,13 @@ def encode_sequence(frames, output: Path, target: str = "hdr10", fps: float = 24
         pass
     stderr = process.stderr.read().decode("utf-8", "replace").strip()
     if process.wait() != 0:
+        # The whole tail, not the last line: "Error opening output files:
+        # Invalid argument" is the last line of every bad-option failure and
+        # names no option (23 Sep 2026). The command travels with it.
+        lines = stderr.splitlines() or ["unknown error"]
         raise EncodeError(f"ffmpeg failed after {written} frame(s): "
-                          + (stderr.splitlines() or ["unknown error"])[-1])
+                          + " | ".join(lines[-6:])
+                          + "\n  command: " + " ".join(args))
     if verify_tags:
         _verify_tags(output, target)
     return output

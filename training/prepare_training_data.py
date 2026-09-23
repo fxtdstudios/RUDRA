@@ -333,6 +333,36 @@ def tonemap_aces_approx(lin: np.ndarray, ev: float = None) -> np.ndarray:
     return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
+def hable_tonemap(lin: np.ndarray, exposure_stops: float = 1.0) -> np.ndarray:
+    """Hable (Uncharted 2) filmic tone map — a *different* curve from ACES.
+
+    The corpus SDR is generated with ``tonemap_aces_approx``, and the model
+    learns to invert that specific curve. An SDR made with a different curve is
+    the out-of-generator condition: it asks whether the model generalises past
+    the exact tone curve it was trained on, or has only memorised the inverse
+    of Narkowicz.
+
+    Input:  scene-linear float32 (any range, diffuse white = 1.0)
+    Output: [0,1] display-linear (apply sRGB OETF afterwards)
+
+    The constants are John Hable's published Uncharted 2 filmic curve, with the
+    published exposure bias of 2.0 (``exposure_stops=1.0``) and white point
+    W = 11.2. Diffuse white lands near 0.49 display-linear here against ~0.80
+    for ACES, so the two curves differ in both overall exposure and shoulder
+    shape — which is the point of the comparison.
+    """
+    x = np.maximum(lin, 0.0) * (2.0 ** exposure_stops)
+    a, b, c, d, e, f = 0.15, 0.50, 0.10, 0.20, 0.02, 0.30
+    w = 11.2
+
+    def curve(v: np.ndarray) -> np.ndarray:
+        return ((v * (a * v + c * b) + d * e)
+                / (v * (a * v + b) + d * f)) - e / f
+
+    out = curve(x) / curve(np.float32(w))
+    return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+
 def clipped_fraction(sdr_u8: np.ndarray) -> float:
     """Fraction of pixels with any channel at the top code.
 

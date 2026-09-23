@@ -69,11 +69,18 @@ def guess_encoding(path: Path, declared: str | None = None) -> tuple[str, str]:
     if declared:
         return declared, "declared:cli"
     blob = " ".join(p.lower() for p in path.parts)
+    suffix = path.suffix.lower()
     for encoding, keywords in ENCODING_KEYWORDS:
+        # A float container is scene-linear whatever the dataset is called: the
+        # Sparks ACES EXRs live under netflix_sparks/, "netflix" is a PQ keyword,
+        # and 1,799 of them were decoded as PQ codes and dropped for peaking
+        # below 1 nit (corpus_v4b, 18 Sep 2026). Camera-log names still win --
+        # a LogC EXR is a real thing -- but the display-referred keywords do not.
+        if encoding in ("pq", "hlg") and suffix in (".exr", ".hdr"):
+            continue
         for word in keywords:
             if word in blob:
                 return encoding, f"keyword:{word}"
-    suffix = path.suffix.lower()
     if suffix in (".exr", ".hdr"):
         return "linear", "extension:float-format"
     if suffix in (".tif", ".tiff", ".dpx"):

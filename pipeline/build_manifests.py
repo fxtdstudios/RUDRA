@@ -254,9 +254,45 @@ def split_scenes(scenes: list[str], val_frac: float, test_frac: float,
     return assignment
 
 
+def scene_tail(scene_id: str) -> str:
+    """The drive-independent part of a scene id.
+
+    scan_sources.scene_key() builds ``<parent path>::<stem>``, so the same
+    footage ingested from E:\\source_hdr and from G:\\datasets\\sources gets
+    two ids. Hold-out matching uses the parent's last component plus the stem,
+    which is what actually names the shot.
+    """
+    parent, _, stem = str(scene_id).replace("\\", "/").rpartition("::")
+    return f"{parent.rstrip('/').rsplit('/', 1)[-1]}::{stem}".lower()
+
+
+def load_hold_out_scenes(path: Path) -> set[str]:
+    """Scenes that must land in *test*, as tails (see scene_tail).
+
+    Accepts a manifest (.jsonl: the scene_ids of its ``split == "test"`` rows,
+    or of every row when it has no split) or a text file with one scene id
+    per line. Pointing it at the previous corpus's manifest keeps that
+    corpus's benchmark scenes out of this corpus's training set, which is the
+    only way a number on the old bench still means "held out".
+    """
+    tails: set[str] = set()
+    text = Path(path).read_text(encoding="utf-8")
+    if Path(path).suffix.lower() == ".jsonl":
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("split", "test") == "test" and row.get("scene_id"):
+                tails.add(scene_tail(row["scene_id"]))
+    else:
+        tails.update(scene_tail(l.strip()) for l in text.splitlines() if l.strip())
+    return tails
+
+
 def build_image_manifest(records: list[dict], val_frac: float, test_frac: float,
                          seed: int, min_video_share: float,
-                         max_eval_scene_share: float = 0.0) -> tuple[list[dict], dict]:
+                         max_eval_scene_share: float = 0.0,
+                         hold_out: set[str] | None = None) -> tuple[list[dict], dict]:
     by_kind: dict[bool, set[str]] = defaultdict(set)
     for record in records:
         by_kind[bool(record.get("is_video", False))].add(record["scene_id"])
@@ -267,6 +303,17 @@ def build_image_manifest(records: list[dict], val_frac: float, test_frac: float,
     for is_video, scenes in by_kind.items():
         offset = 1 if is_video else 0
         assignment.update(split_scenes(sorted(scenes), val_frac, test_frac, seed + offset))
+
+    # Scenes the previous corpus benchmarked on stay out of training here, or
+    # the acceptance step scores a model on frames it trained on (22 Sep 2026:
+    # the paper's 429 frames come from E:\\RUDRA_v3's test split, and the same
+    # sources were re-ingested into corpus_v4b under a fresh split).
+    held = 0
+    if hold_out:
+        for scene in list(assignment):
+            if scene_tail(scene) in hold_out:
+                assignment[scene] = "test"
+                held += 1
 
     out = []
     for record in records:
@@ -324,6 +371,12 @@ def build_image_manifest(records: list[dict], val_frac: float, test_frac: float,
     if leaked:
         problems.append(f"{len(leaked)} scenes straddle a split boundary: {leaked[:5]}")
 
+    if hold_out:
+        stats["held_out_scenes"] = held
+        stats["hold_out_requested"] = len(hold_out)
+        if held == 0:
+            problems.append(f"--hold-out-scenes listed {len(hold_out)} scenes and none of them "
+                            f"exist in this corpus -- wrong file, or the ids do not line up")
     stats["problems"] = problems
     return out, stats
 
@@ -372,6 +425,12 @@ def build_video_manifest(image_rows: list[dict], clip_length: int, stride: int,
                 # Carried through so the temporal loss censors graded highlights
                 # the same way the image loss does; one scene, one ceiling.
                 "ceiling_nits": window[0].get("ceiling_nits"),
+                # The exposure the render applied, carried per clip so
+                # corpus_ev_of() reads the same value from a video manifest
+                # as from the image manifest. Without it a temporal run fell
+                # back to the legacy -1 EV over a 0 EV corpus (22 Sep 2026).
+                "tonemap_ev": window[0].get("tonemap_ev"),
+                "metadata_path": window[0].get("metadata_path"),
             })
 
     with out_path.open("w", encoding="utf-8") as handle:
@@ -429,6 +488,13 @@ def main() -> int:
                              "are dropped on a uniform stride so clips still form. "
                              "0 disables.")
     parser.add_argument("--seed", type=int, default=20260822)
+    parser.add_argument("--hold-out-scenes", type=Path, default=None,
+                        help="A previous manifest (.jsonl; its test rows) or a text file of "
+                             "scene ids. Those scenes are forced into TEST here, matched on "
+                             "the drive-independent tail of the id, so a model trained on "
+                             "this corpus can still be scored on the old benchmark as held "
+                             "out. Point it at E:\\RUDRA_v3_20260822\\sdr_hdr_manifest.jsonl "
+                             "before training anything that will be compared with the paper.")
     parser.add_argument("--allow-problems", action="store_true",
                         help="Write manifests even when guards fail (you must say why)")
     parser.add_argument("--require-temporal", action="store_true",
@@ -440,9 +506,13 @@ def main() -> int:
     args = parser.parse_args()
 
     records = load_records(args.pairs_dir, args.min_peak_nits)
+    hold_out = load_hold_out_scenes(args.hold_out_scenes) if args.hold_out_scenes else None
     rows, image_stats = build_image_manifest(
         records, args.val_frac, args.test_frac, args.seed, args.min_video_share,
-        args.max_eval_scene_share)
+        args.max_eval_scene_share, hold_out)
+    if hold_out is not None:
+        print(f"  hold-out: {image_stats.get('held_out_scenes', 0)} of {len(hold_out)} listed "
+              f"scenes found in this corpus and pinned to test")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     image_path = args.out_dir / "sdr_hdr_manifest.jsonl"

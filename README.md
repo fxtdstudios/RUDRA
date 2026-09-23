@@ -224,10 +224,12 @@ Full tables, the failure analysis, and how to recompute every number:
 | [`paper/main.pdf`](paper/main.pdf) | the measured write-up |
 | [`docs/RESULTS.md`](docs/RESULTS.md) | every benchmark table, and how to recompute it |
 | [`docs/TRAINING.md`](docs/TRAINING.md) | training on your own footage, end to end |
+| [`docs/TRAINING_STEPS.md`](docs/TRAINING_STEPS.md) | the next training run, step by step, with the gate each step has to pass |
+| [`docs/RETRAIN_RUNBOOK.md`](docs/RETRAIN_RUNBOOK.md) | rebuilding the corpus: sources, licences, the ingest, the gates |
 | [`docs/INTERNALS.md`](docs/INTERNALS.md) | the composite, the units, the gate |
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what a training set has to contain |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
-| [`STATUS.md`](STATUS.md) | what is finished and what is open |
+| [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |
 
 ---
 

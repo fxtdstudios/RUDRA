@@ -43,9 +43,15 @@ def corpus_ev_of(manifest_path: str | Path, records: list[dict] | None = None) -
     unknown = 0
     for row in rows:
         value = row.get("tonemap_ev")
-        if value is None and row.get("metadata_path"):
+        # An image row carries one sidecar; a clip row (video manifest) carries
+        # one per frame. Either way the first one that exists speaks for the row.
+        sidecar = row.get("metadata_path")
+        if sidecar is None:
+            paths = row.get("metadata_paths") or []
+            sidecar = next((m for m in paths if m), None)
+        if value is None and sidecar:
             try:
-                value = json.loads(Path(str(row["metadata_path"])).read_text(
+                value = json.loads(Path(str(sidecar)).read_text(
                     encoding="utf-8")).get("tonemap_ev")
             except (OSError, ValueError):
                 value = None

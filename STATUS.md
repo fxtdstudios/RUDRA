@@ -1,8 +1,8 @@
 # RUDRA — Training & Research Status
 
-> **Updated 16 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 22 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
-> holds **four separate lines of work** that share a name, and "is RUDRA
+> holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
 >
 > | line | what it is | state |
@@ -11,6 +11,120 @@
 > | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
+>
+> | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+>
+> **22 Sep 2026 — dataset audit (line E).** What was done since 16 Sep, checked:
+>
+> - Sources moved to `G:\datasets\sources` (`pipeline/migrate_datasets_to_g.ps1`);
+>   `E:\source_hdr` is a junction. `BUILD_CORPUS_V4.ps1` re-ingests at 0 EV
+>   through the pipeline path into **`G:\datasets\corpora\corpus_v4b`**: 20,628
+>   records, 783 train scenes, **check 3b passes at 29.3%** (the shipped corpus
+>   was 0.57%), check 8 passes with 12 train + 2 held-out video scenes, check 9
+>   WARNs (2% of targets above 40,000 nits; left at `max_hdr=4.0` on purpose).
+>   The smoke run on it reads `corpus_ev 0.0` and a step-0 baseline of 48.99 dB
+>   clean `psnr_log`. The corpus is sound. `docs/TRAINING_STEPS.md` has the run.
+> - **Three checkpoint runs are invalid and quarantined** in
+>   `checkpoints/_invalid_corpus_v4/` (README inside): `sdr2hdr_image_v4` (70k
+>   steps), `sdr2hdr_image_v4_gate` (8k) and `sdr2hdr_temporal_v4` (111 steps,
+>   stopped). The first two trained on the *first* `G:\corpus_v4` — old ingest,
+>   no sidecars, so `corpus_ev -1.0` over a 0 EV render — and their "+13.9 dB
+>   clean gain" is the baseline's one-stop error, learned (that baseline reads
+>   25 dB; on v4b it reads 49). The temporal run took the invalid image model
+>   over the 0 EV clips, and nothing stopped it because the video manifest never
+>   carried `tonemap_ev`: `corpus_ev_of` fell back to -1 EV and agreed with the
+>   wrong checkpoint by accident.
+> - **Fixed, each with a test in `tests/test_temporal_corpus_ev_2026_09_22.py`:**
+>   clips carry `tonemap_ev` and a sidecar path; `corpus_ev_of` reads a clip
+>   row's sidecars (v4b's existing video manifest needs no rebuild); temporal
+>   training exits when the image checkpoint's `corpus_ev` is not the manifest's;
+>   `build_manifests.py --hold-out-scenes` pins a previous manifest's test scenes
+>   to test, matched on the drive-independent tail of the id, so the paper's 429
+>   frames stay held out of anything trained on v4b (`BUILD_CORPUS_V4.ps1
+>   -Manifest` passes it by default); `.gitignore` stops `checkpoints/*/` and
+>   `/bench/` — 816 MB of step checkpoints and exported bench PNGs were staged.
+> - **Not done, now measurable:** the out-of-generator condition is exported
+>   (`bench/oog`, 429 frames from `sdr2hdr_shadow_v1.pt` on the v3 test split;
+>   Hable + H.264 CRF 28) but not scored. The synthetic-clip protocol
+>   (`measure_clipping.py --score` on 0/+1/+2 EV re-renders) is still the only
+>   measurement of the highlight claim and has not been run.
+> - **`rudra deliver` failed every encode on FFmpeg 7.x** (found 23 Sep on the
+>   Windows box): swscale's `out_color_matrix` takes `bt2020`; `bt2020nc` is the
+>   tag's name and 7.x rejects it as an undefined constant. 4.4 (CI) accepted
+>   it, so CI was green. Filter now gets `bt2020`, tags stay `bt2020nc`;
+>   verified on 4.4.2 and 7.0.2, pinned by a test.
+> - Repo root organised: one-shot commit/push scripts → `scripts/archive/`
+>   (git-ignored), dated reports → `reports/`, `scripts/AUDIT_REPO.ps1` kept.
+>   `codex/rudra-final-release` (20 Sep, +2,309 lines: batch/video delivery,
+>   quality benchmark, recovery ablation, finetune scripts, 14 test files) is a
+>   worktree branch off 6 Sep and has not been reviewed or merged; nothing here
+>   depends on it.
+>
+> **23 Sep 2026, 02:00 — Step 4 ran.** Launched on v4b at 21:51 (manifest
+> `ffcd8bbb…`, before the hold-out rebuild), `corpus_ev 0.0`, 50k steps in
+> 4 h 08 min. `best.pt` = step 36,000: **+1.80 dB clean, +0.82 dB hard**
+> `psnr_log` over its own analytic baseline (25.29 / 19.96 dB). Both signs
+> positive, which v5 never managed. Acceptance waits on
+> `pipeline/check_holdout_overlap.py`: if any of the paper's bench scenes are in
+> this run's train split it is retrained on the rebuilt manifest (4 h), and
+> `scripts/next_steps_2026-09-22.ps1` does that decision by data.
+>
+> **Next steps, in order. Each has the gate it must pass before the next.**
+> *(`scripts/RUN_NEXT_STEPS.bat` runs 1, 2, 6, 3 and 5 unattended with markers in
+> `reports/logs/`; re-run it after each training window.)*
+>
+> 1. **Push the 22 Sep batch** — `scripts/finalize_2026-09-22.ps1` (pytest, then
+>    one commit, then push). Gate: CI green; `git ls-files checkpoints/` shows
+>    only root-level weights.
+> 2. **Rebuild v4b manifests with the hold-out** — `BUILD_CORPUS_V4.ps1 -Manifest
+>    -Verify` (no re-ingest; minutes). Gate: the hold-out line reports > 0 scenes
+>    pinned, `verify_dataset.py` exits 0 with 3b still passing, and test's
+>    largest-scene share stays ≤ 25%. If the hold-out pushes test over the cap,
+>    raise `--test-frac`, not the cap.
+> 3. **Step 4 — image model on v4b** — ran 22–23 Sep (above). Gate: the run's
+>    manifest is the rebuilt one, or the overlap check finds no old bench scene
+>    in its train split; otherwise retrain (4 h). `config.json` must read
+>    `corpus_ev 0.0` (it does). Note the 49 dB smoke baseline was a 40-item
+>    subset; the full val baseline is 25.3 dB clean, and that is not a defect.
+> 4. **Step 5 — the conditioning head**, from item 3's `best.pt`, 8k steps.
+> 5. **Step 7 — acceptance on the paper's bench**, re-exported from the *same*
+>    429 reference frames at 0 EV (`export_bench_pairs.py` from the v4b manifest's
+>    test rows once step 2 has pinned them; `clean`, `hard`, and
+>    `out-of-generator`). Score v5, shadow_v1 and the v4b model each against the
+>    render it was trained to invert. Then `measure_clipping.py --score`. Gate:
+>    RUDRA beats the analytic inverse on clipped pixels in stops; if it ties to
+>    the digit again, corpus content was not the constraint — write that down and
+>    stop the corpus programme.
+> 6. **Score `bench/oog`** with the shipped `sdr2hdr_shadow_v1.pt` now (no GPU
+>    time to speak of) and put the row in `docs/RESULTS.md`; it answers the
+>    review's "one out-of-generator degradation" today, before any retrain.
+> 7. **Step 6 — temporal on v4b**, only after 3 and 5, and only because check 8
+>    passed. Line D closed on a rendered corpus; 12 real video scenes with real
+>    parallax is the one thing STATUS said would reopen it. Kill it if the first
+>    three evals do not beat the step-0 baseline.
+> 8. **Promote or drop.** A v4b `best.pt` that passes step 5 is copied to
+>    `checkpoints/` under a release name with `SHA256SUMS` and `models.json`
+>    updated; `sdr2hdr_temporal_v1.pt` ("Unevaluated") and v6 (4× capacity, no
+>    gain) get measured or pulled from `models.json` in the same commit.
+> 9. **Sparks scale — cause found, fix in, corpus not yet rebuilt (23 Sep).** The
+>    Sparks download is ACES EXRs under `netflix_sparks/`; `scan_sources.py`
+>    matched the PQ keyword "netflix" before looking at the container, so
+>    scene-linear values were decoded as PQ codes and 1,799 pairs "peaked below
+>    1 nit". A float container is now linear regardless of dataset name (camera
+>    log names still win); `tests/…_2026_09_22.py` pins it. Verify on the box:
+>    `python pipeline\scan_sources.py G:\datasets\sources\netflix_sparks --out
+>    reports\logs\sparks_inventory.jsonl` and read `encoding_guess` and
+>    `peak_nits_estimate` (expect thousands of nits). Then a **corpus_v4c**
+>    re-ingest with Sparks in, before the `rudra-studio` (no-HdM) retrain. Not
+>    before this run's acceptance: one variable at a time.
+> 10. **`codex/rudra-final-release` reviewed** (23 Sep,
+>     `reports/CODEX_BRANCH_REVIEW_2026-09-23.md`): nothing merges as-is —
+>     `rudra/video.py` duplicates `rudra deliver` and feeds the network
+>     Rec.2020 input; the benchmark scripts score the baseline at the legacy
+>     −1 EV; the UI diff is against the pre-re-skin page and writes EXRs to any
+>     folder a request names. Five small cherry-picks are listed (eval-seed for
+>     the gate, `preserved_composite_gain`, infer's EXR master + collision
+>     check, CUDA→CPU fallback, per-region PU21 for the bench).
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
 > the earlier manuscript, which was about line B; what was withdrawn from that
@@ -39,7 +153,7 @@
 > markers remain.
 >
 > **Line C, 16 Sep 2026 review (engineer / colourist / researcher; the full
-> text is local, `FINAL_REVIEW_2026-09-16.md`).** Fixed the same day, each
+> text is local, `reports/FINAL_REVIEW_2026-09-16.md`).** Fixed the same day, each
 > with a test in `tests/test_review_fixes_2026_09_16.py`:
 >
 > - `rudra deliver` encoded **BT.601 chroma under a bt2020nc tag** — swscale's
@@ -90,7 +204,9 @@
 >
 > **Still open from the review, in order:** the synthetic-clip protocol
 > (`measure_clipping.py --score` on 0/+1/+2 EV re-renders — the only measurement
-> of the highlight claim); one out-of-generator degradation beside "hard";
+> of the highlight claim); one out-of-generator degradation beside "hard"
+> (**code now in `export_bench_pairs.py --condition out-of-generator`** — a Hable
+> curve + real H.264; the measurement is still to run);
 > per-shot smoothing of the gate, anchor and chroma scalars; a BT.1886 input
 > option and a conforming baseline (a retrain — belongs with the corpus
 > programme); an ExpandNet row on the hard condition; §4 provenance and the

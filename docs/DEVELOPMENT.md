@@ -29,12 +29,25 @@ ui/               RUDRA Studio: the page, its GPU compositor, the inference
 run_studio.bat    One-file launchers: set up on the first run, check and start
 run_studio.sh     on every run after that
 paper/            LaTeX source and the built PDF; build.sh and mkarxiv.sh
-docs/             RESULTS.md, TRAINING.md, INTERNALS.md and CORPUS.md; paper
-                  figures, the
-                  Studio screenshot, the comparison strips and make_compare.py,
-                  which rebuilds them from a scored bench
-checkpoints/      Every SDR to HDR model, plus models.json, the registry the
-                  viewer reads (see its README)
+docs/             RESULTS.md, TRAINING.md, TRAINING_STEPS.md (the next run,
+                  step by step), RETRAIN_RUNBOOK.md, INTERNALS.md and CORPUS.md;
+                  paper figures, the Studio screenshot, the comparison strips
+                  and make_compare.py, which rebuilds them from a scored bench
+checkpoints/      Every released SDR to HDR model as checkpoints/*.pt, plus
+                  models.json, the registry the viewer reads (see its README).
+                  A training run writes checkpoints/<run>/ (best.pt, step_*.pt,
+                  train.jsonl); those directories are git-ignored and a run is
+                  promoted by copying its best.pt up a level under a release
+                  name. checkpoints/_invalid_corpus_v4/ is quarantine, not a
+                  release
+BUILD_CORPUS_V4.ps1  The corpus build: scan → ingest at 0 EV → manifests (with
+                  the previous manifest's test scenes held out) → the gate
+scripts/          AUDIT_REPO.ps1 (secrets and provenance over the full
+                  history) and finalize_*.ps1 batches; scripts/archive/ holds
+                  the one-shot commit/push scripts that did earlier pushes,
+                  git-ignored, kept because their headers say why each push
+                  happened
+reports/          Dated audits and reviews (HTML and Markdown), git-ignored
 config/, configs/ VAE registry and training recipes
 tests/            Curve round-trips, corpus guards, delivery, target decode,
                   censored highlights, GPU/torch composite parity, canvas

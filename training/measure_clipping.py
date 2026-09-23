@@ -88,7 +88,11 @@ def score_clipped(rows: list[dict], ref_root: Path, checkpoint: Path,
         with torch.no_grad():
             hdr = predict_image(model, x, preserve_outside=True, tile_size=0, overlap=64,
                                 recovery_mode="all", recovery_strength=1.0)
-            base = sdr_to_baseline_hdr(x)
+            # The baseline contender must invert the exposure the corpus
+            # actually applied, not the legacy -1 EV default: on a 0 EV corpus
+            # the default is one stop off and the "RUDRA minus baseline"
+            # comparison -- the whole point of this tool -- is corrupted.
+            base = sdr_to_baseline_hdr(x, model.corpus_ev)
         preds = {
             "clamp": np.full_like(ref, DIFFUSE_WHITE_NITS),
             "baseline": base[0].numpy().transpose(1, 2, 0).astype(np.float64) * NETWORK_PEAK_NITS,

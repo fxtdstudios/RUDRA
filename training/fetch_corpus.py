@@ -978,7 +978,7 @@ def mode_report(args) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dest", default=r"G:\datasets_rudra")
+    ap.add_argument("--dest", default=r"G:\datasets\sources")
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--plan", action="store_true")
     g.add_argument("--check", action="store_true")
