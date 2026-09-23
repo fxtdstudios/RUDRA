@@ -410,16 +410,26 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | composite pass: `rudra-gpu-parity --bench` [Windows run pending] |
-| composite + view, 4K, GPU | ≤ 12 ms | composite pass: `rudra-gpu-parity --bench` [Windows run pending] |
-| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32: `rudra-native bench` [Windows run pending]; fp16 not built yet |
-| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | `rudra-native bench` [Windows run pending] |
+| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; the view pass is Phase 2 |
+| composite + view, 4K, GPU | ≤ 12 ms | composite pass 0.505 ms (D3D12), 0.508 (Vulkan), 0.507 (D3D11), 0.366 (OpenGL) |
+| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
+| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
 | first frame after open (warm) | ≤ 2 s | [Phase 0] |
 | scrub to cached frame | ≤ 1 display frame | [Phase 0] |
 
 Instrumentation: Tracy zones on every actor message and GPU timer queries on
 every render pass (QRhi GPU timestamps), from the first commit.
+
+Read of the numbers (23 Sep 2026): the composite is 35 times inside its 1080p
+budget and 24 times inside its 4K budget, so every control runs at display
+rate with room for the view pass and scopes. Inference is the only cost that
+matters and it is paid once per frame, not per slider move: 150 to 170 ms at
+1080p untiled on the RTX 4080 SUPER in true fp32. Tiling costs 1.7x on CUDA and
+3.3x on DirectML (per-call overhead on twelve 512 tiles), so tiles are for
+memory, not for speed, as the Studio already treats them. A reduced-precision
+path (fp16/bf16, own tolerance, never the default) is the first speed item in
+Phase 1.
 
 ---
 
@@ -526,7 +536,7 @@ later phase builds on.
 | 7 | `composite.spec.md` written from `compositor.js`, `composite.cpp`, golden vs browser Studio readback | exact on 5 test frames | **done** 23 Sep: [`composite.spec.md`](composite.spec.md); `composite.cpp` matches `predict_image` on 5 mode/strength/preserve cases on 2 frames (rtol 2e-4), Region EV and the whole master chain to AP0 match `_render_master` stage by stage; browser readback moves to day 8 with the shader |
 | 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend | **Windows done** 23 Sep: `render/shaders/composite.frag`, `GpuCompositor`, `rudra-gpu-parity`; on an RTX 4080 SUPER D3D12 (fp32 3.0e-6), D3D11, Vulkan and OpenGL (1.7e-6) all pass with fp16 at 1 half ulp, 12 cases each; llvmpipe passes too. Metal open |
 | 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled | **port done** 23 Sep: `analyze_frame`, MaxCLL/MaxFALL and the Studio `measure()` match the Python; timing in place: `rudra-native bench` (inference) and `rudra-gpu-parity --bench` (composite pass, QRhi GPU timestamps), run by both gate scripts; §6.6 numbers from the Windows run; Tracy open |
-| 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` |  |
+| 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` | **done** 23 Sep: GO for Phase 1 on Windows; macOS conditional on its three gates (`STATUS.md`, line F) |
 
 If Gate A fails, the fix is in the export (usually a traced branch or a
 dtype, or for ONNX an op that needs rewriting in the wrapper); nothing else
@@ -535,7 +545,24 @@ and HDR-out follows; the renderer does not change.
 
 ---
 
-## 13. Decisions to record as ADRs before day 3
+## 13. Decisions, recorded as ADRs
+
+Status after the Phase 0 review, 23 Sep 2026. Accepted means the Phase 0
+evidence supports it; accepted, not yet exercised means nothing in Phase 0
+could test it and it stands until Phase 1 does.
+
+| ADR | Status | Evidence |
+|---|---|---|
+| 001 | accepted | both graphs exported and verified; TorchScript bit-exact, ONNX 5.8e-5 |
+| 002 | accepted | Qt 6.8.3 builds the probe and the GPU composite on MSVC (VS 2026 Build Tools), GCC and, for the Windows headers, MinGW |
+| 003 | accepted | the composite passes readback parity on D3D12, D3D11, Vulkan and OpenGL; Metal open |
+| 004 | accepted | four Windows backends pass Gate A; TF32 off by default on CUDA |
+| 005 | accepted | scRGB and HDR10 carry 1 000 and 2 000 nits to the swapchain; the SDR fallback reports FAIL |
+| 006 | accepted, not yet exercised | decode is Phase 1 |
+| 007 | accepted | contract 1.0 read and verified by `rudra-native`; `gpu_fp32` added without a major bump |
+| 008 | accepted, not yet exercised | the queue is Phase 3 |
+| 009 | accepted | Windows DX12 on an RTX 4080 SUPER measured; the Apple Silicon row waits on the Mac run |
+
 
 1. **ADR-001** Model package carries TorchScript and ONNX; AOTInductor and
    TensorRT are later speed backends, never the only format.

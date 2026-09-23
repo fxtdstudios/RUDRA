@@ -131,5 +131,6 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | Gate A | Windows passes on all four: LibTorch CPU and CUDA, ONNX Runtime CPU and DirectML |
 | Gate B | Windows passes: D3D12 scRGB and HDR10, D3D11 scRGB on a 418-nit HDR display; XDR Mac open |
 | Composite shader in GLSL 440, readback parity | done on Windows: D3D12, D3D11, Vulkan, OpenGL (fp16 1 half ulp); Metal open |
-| Budgets (NATIVE_ARCHITECTURE.md 6.6) | timing tools in both gate scripts; numbers recorded from the next Windows run |
+| Budgets (NATIVE_ARCHITECTURE.md 6.6) | recorded: composite 0.11 ms 1080p, 0.51 ms 4K; inference 150 ms (DirectML) and 172 ms (CUDA) at 1080p fp32 |
+| Phase 0 | closed 23 Sep 2026: GO on Windows, macOS conditional on MPS/Core ML, Metal EDR and Metal parity runs |
 | Decode, encode, engine, viewer, app | Phase 1 onward |

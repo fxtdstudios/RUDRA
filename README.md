@@ -382,7 +382,7 @@ The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against; the state before that work
 is tagged `webui-v1`.
 
-Progress: Phase 0, days 1 to 9 of 10 (days 4, 5 and 8 on Windows; Mac open).
+Progress: Phase 0 closed 23 Sep 2026, GO for Phase 1 on Windows; the Mac runs are open.
 - [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
   with eager; ONNX within tolerance)
 - [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
@@ -405,7 +405,9 @@ Progress: Phase 0, days 1 to 9 of 10 (days 4, 5 and 8 on Windows; Mac open).
   composite (`rudra-gpu-parity`): passes on D3D12, D3D11, Vulkan and OpenGL
   (RTX 4080 SUPER, fp16 within 1 half-float ulp)
 - [ ] GPU composite parity on Metal
-- [ ] Budget numbers (1080p and 4K composite, 1080p inference) recorded
+- [x] Budgets recorded: composite 0.11 ms at 1080p and 0.51 ms at 4K,
+  inference 150 to 172 ms at 1080p fp32
+- [x] Phase 0 go/no-go: GO on Windows, macOS on its three runs (`STATUS.md`)
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
