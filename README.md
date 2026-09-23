@@ -431,7 +431,7 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 - [x] HDR output from the display pass: scRGB, HDR10, EDR, from the source primaries
   (the glass check moves to the viewer window)
 - [x] GPU reductions and the probe equal to the browser's, bit for bit
-- [ ] Sample and scopes equal to the browser's
+- [x] Sample, measurements and scopes (waveform, histogram, vectorscope) equal to the browser's, bit for bit
 - [ ] The viewer in the Qt shell, with the frame path, zoom, pan and guides
 - [ ] Every backend, budgets recorded
 

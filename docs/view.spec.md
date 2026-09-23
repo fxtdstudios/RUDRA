@@ -180,7 +180,7 @@ each rounded half to even into 8 bits.
 | probe, index, sample | exact | texel reads and integers |
 | peak (step 6) | exact against the same target | a maximum |
 | sum (step 6) | exact when evaluated in the ladder's order; measured: equal to the browser's and the shader's | the order is specified, so no bound is needed |
-| waveform, histogram, vectorscope bins (step 8) | exact | integer counts on the same sample |
+| waveform, histogram, vectorscope bins (step 8) | exact; measured: equal, and every `computeStats` number too | integer counts on the same sample |
 | HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
 

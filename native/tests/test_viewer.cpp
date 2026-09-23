@@ -13,6 +13,7 @@
 #include <span>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -22,6 +23,7 @@
 #include "rudra/core/gamut.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/half.hpp"
+#include "rudra/core/scopes.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/platform/npy.hpp"
@@ -340,6 +342,107 @@ TEST(Viewer, ProbeEqualsTheBrowsersExactly) {
                 EXPECT_EQ(sample->rgb_nits[1], w.at("g").get<double>()) << what << key;
                 EXPECT_EQ(sample->rgb_nits[2], w.at("b").get<double>()) << what << key;
                 EXPECT_EQ(sample->nits, w.at("nits").get<double>()) << what << key;
+            }
+        }
+    }
+}
+
+// ---- step 8: sample, measurements and scopes, against the browser -----------
+
+namespace {
+
+struct Masks {
+    std::vector<float> highlight, shadow;
+    std::vector<std::uint8_t> sdr8;
+};
+Masks masks_of(const json& frame) {
+    const json& hd = frame.at("header");
+    const std::size_t n = hd.at("width").get<std::size_t>() * hd.at("height").get<std::size_t>();
+    std::ifstream in(kDir / frame.at("body").get<std::string>(), std::ios::binary);
+    const std::vector<unsigned char> body((std::istreambuf_iterator<char>(in)), {});
+    const std::size_t off_shadow = hd.at("offsets").at("shadow").get<std::size_t>();
+    const std::size_t off_sdr = hd.at("offsets").at("sdr").get<std::size_t>();
+    Masks m;
+    for (std::size_t i = 0; i < n; ++i) {
+        m.highlight.push_back(half_to_float(std::uint16_t(body[i * 8 + 6] | (body[i * 8 + 7] << 8))));
+        m.shadow.push_back(half_to_float(std::uint16_t(body[off_shadow + i * 2] | (body[off_shadow + i * 2 + 1] << 8))));
+    }
+    m.sdr8.assign(body.begin() + std::ptrdiff_t(off_sdr), body.begin() + std::ptrdiff_t(off_sdr + n * 3));
+    return m;
+}
+
+// JSON numbers, with the emitter's "nan" for NaN.
+double num(const json& v) {
+    return v.is_string() ? std::numeric_limits<double>::quiet_NaN() : v.get<double>();
+}
+void expect_same(double got, const json& want, const std::string& what) {
+    const double w = num(want);
+    if (std::isnan(w)) EXPECT_TRUE(std::isnan(got)) << what;
+    else EXPECT_EQ(got, w) << what;
+}
+
+}  // namespace
+
+TEST(Viewer, SampleMeasurementsAndScopesEqualTheBrowsers) {
+    for (const auto& frame : index_json().at("frames")) {
+        const std::string name = frame.at("name").get<std::string>();
+        const Masks mk = masks_of(frame);
+        const MaskCoverage cov = mask_coverage(mk.highlight, mk.shadow, mk.sdr8);
+        EXPECT_EQ(cov.highlight_pct, frame.at("mask_pct").at("highlight").get<double>()) << name;
+        EXPECT_EQ(cov.shadow_pct, frame.at("mask_pct").at("shadow").get<double>()) << name;
+        EXPECT_EQ(cov.clipped_pct, frame.at("mask_pct").at("clipped").get<double>()) << name;
+
+        const auto base = image_of(npy(frame.at("base").get<std::string>()));
+        const int w = base.width(), h = base.height();
+        const SampleGrid grid = sample_grid(w, h);
+        const Reductions rb = reduce_ladder(base.buffer());
+        const PlanarBuffer base_sample = take_sample(base.buffer(), grid);
+        for (const auto& c : frame.at("cases")) {
+            if (!c.at("model").is_string()) continue;
+            const std::string what = name + " " + c.at("name").get<std::string>();
+            const auto model = image_of(npy(c.at("model").get<std::string>()));
+            if (c.contains("sample")) {
+                EXPECT_EQ(grid.width, c.at("sample").at("width").get<int>()) << what;
+                EXPECT_EQ(grid.height, c.at("sample").at("height").get<int>()) << what;
+                const NpyArray idx = npy(c.at("sample").at("index").get<std::string>());
+                ASSERT_EQ(idx.data.size(), grid.index.size()) << what;
+                for (std::size_t i = 0; i < grid.index.size(); ++i)
+                    ASSERT_EQ(grid.index[i], int(idx.data[i])) << what << " sample " << i;
+            }
+            const PlanarBuffer model_sample = take_sample(model.buffer(), grid);
+            const Measured got = measure_view(model_sample, base_sample, grid, mk.highlight, mk.shadow, cov,
+                                              reduce_ladder(model.buffer()), rb, std::size_t(w) * std::size_t(h));
+            const json& m = c.at("metrics");
+            const ViewerMetrics& g = got.metrics;
+            for (const auto& [key, v] : std::vector<std::pair<const char*, double>>{
+                     {"maxcll", g.maxcll}, {"maxfall", g.maxfall}, {"peak_nits", g.peak_nits},
+                     {"baseline_peak_nits", g.baseline_peak_nits}, {"headroom_stops", g.headroom_stops},
+                     {"headroom_highlight_stops", g.headroom_highlight_stops},
+                     {"headroom_shadow_stops", g.headroom_shadow_stops}, {"departure_rms_stops", g.departure_rms_stops},
+                     {"p99_nits", g.p99_nits}, {"median_nits", g.median_nits},
+                     {"above_diffuse_white_pct", g.above_diffuse_white_pct},
+                     {"above_1000_nits_pct", g.above_1000_nits_pct}, {"highlight_mask_pct", g.highlight_mask_pct},
+                     {"shadow_mask_pct", g.shadow_mask_pct}})
+                expect_same(v, m.at(key), what + " " + key);
+
+            const json& s = c.at("scopes");
+            for (const auto& [key, v] : std::vector<std::pair<const char*, const std::vector<double>*>>{
+                     {"lo", &got.scopes.lo}, {"q1", &got.scopes.q1}, {"mid", &got.scopes.mid}, {"q3", &got.scopes.q3},
+                     {"hi", &got.scopes.hi}, {"histogram", &got.scopes.histogram}})
+                EXPECT_EQ(*v, s.at(key).get<std::vector<double>>()) << what << " " << key;
+
+            if (c.contains("vector")) {
+                const auto img = vectorscope(model_sample);
+                const NpyArray want = npy(c.at("vector").get<std::string>());
+                ASSERT_EQ(img.size(), want.data.size()) << what;
+                std::size_t off = 0;
+                int worst = 0;
+                for (std::size_t i = 0; i < img.size(); ++i) {
+                    const int d = std::abs(int(img[i]) - int(want.data[i]));
+                    worst = std::max(worst, d);
+                    off += d != 0;
+                }
+                EXPECT_EQ(worst, 0) << what << " vectorscope, " << off << " values differ";
             }
         }
     }
