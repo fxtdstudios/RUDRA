@@ -1,268 +1,248 @@
-# RUDRA Studio Desktop: cross-platform plan
+# RUDRA Studio Desktop: native cross-platform plan
 
-> 23 Sep 2026. Proposal, not started. Mockup: the "RUDRA Studio Desktop" design
-> canvas (five boards: main window, first run, deliver dialog, render queue,
-> architecture). Nothing in `ui/`, `rudra/` or `training/` changes behaviour
-> until Phase 1 lands behind the existing tests.
+> 23 Sep 2026, revision 2. Proposal, not started. Stack: **Qt 6, OpenGL, C++20,
+> LibTorch**. No Python at runtime. Mockup: the "RUDRA Studio Desktop" design
+> canvas (architecture, main window, first run, deliver dialog, render queue).
+> Revision 1 (Electron + Python sidecar) is superseded.
 
 ## 1. What we are building
 
-RUDRA Studio today is `python ui/server.py` plus a browser tab: 5.1k lines of
-HTML/JS/CSS (`ui/app.js`, `ui/compositor.js`, `ui/shell.js`) in front of a
-Python HTTP server that loads `SDR2HDRNet`, reads shots by path, and masters EXR.
-Video delivery (`rudra video`, `rudra batch`) exists only on the command line;
-the Deliver panel says so.
+A native RUDRA Studio for Windows x64, Linux x64 and macOS arm64 that does
+everything the browser Studio does (`ui/`, 5.1k lines of HTML/JS/CSS over
+`ui/server.py`) plus what only the CLI does today (`rudra video`, `rudra batch`),
+with no Python interpreter shipped or required:
 
-The desktop app is the same instrument, installed and double-clickable, on
-Windows x64, macOS arm64 and Linux x64, with four things a browser tab cannot do:
+1. Footage opened by real path: native dialogs, OS drag and drop, nothing uploaded.
+2. The same composite, false colour, difference, wipe, probe, scopes and pipe bar,
+   rendered by OpenGL.
+3. SDR2HDRNet run through **LibTorch** (C++), from a TorchScript export.
+4. HDR10, HLG, ProRes 422 / 422 HQ / 4444 delivery with the queue, resume, QC
+   and sidecar the Python implements.
+5. Real HDR on the glass where OpenGL can do it (Windows), honest SDR-out elsewhere.
 
-1. **Real paths.** Native open/save dialogs and OS drag and drop hand the backend
-   a path, so a 4K EXR sequence is read where it sits. Nothing is uploaded.
-2. **Real HDR on the glass.** Where the OS and display allow it, the viewer
-   emits values above SDR white instead of simulating PQ on an SDR canvas.
-3. **Delivery wired in.** HDR10, HLG, ProRes 422/422 HQ/4444 from the Deliver
-   panel, with the queue, resume, QC and sidecar that `rudra.batch` and
-   `rudra.video` already implement.
-4. **A managed runtime.** GPU detection, the right torch build, checkpoints
-   verified against `checkpoints/SHA256SUMS`, FFmpeg capability probed, the
-   non-commercial weights licence accepted once.
+Python stays the training stack, the export tool, and the **reference oracle**:
+every C++ module is accepted only when it matches golden outputs produced by the
+Python on the same inputs.
 
-Out of scope: a mobile build, a web-hosted version, training from the app,
-any change to the model or its numbers.
+Out of scope: training in the app, model changes, mobile, web.
 
-## 2. Decision: Electron + Python sidecar
-
-| | Electron | Tauri 2 | PySide6 / Qt |
-|---|---|---|---|
-| Reuses `ui/` as is | yes | yes | no, rewrite 5.1k lines |
-| One render engine on all three OSes | yes, Chromium everywhere | no: WebView2 / WKWebView / WebKitGTK | yes |
-| HDR canvas output | Chromium WebGPU `rgba16float` + extended tone mapping, to verify in Phase 0 | differs per OS webview; WebKitGTK has none | possible via QRhi, but new code |
-| Float textures / WebGL2 parity for `compositor.js` | identical to today's Chrome | varies | n/a |
-| Installer size | ~110 MB shell | ~15 MB shell | ~80 MB |
-| Size that matters | torch CUDA ~2.5 GB, dwarfs any shell | same | same |
-
-**Electron.** The Studio is a measurement instrument: the same pixel must
-render the same way on every OS, and the pipe bar's "clipped on screen, not in
-the master" warning must be computed by one engine. Tauri's smaller shell is
-irrelevant next to torch, and its per-OS webviews are exactly the variance an
-instrument cannot have. Qt would mean rewriting a working UI.
-
-The Python backend stays Python: `ui/server.py` becomes a sidecar process the
-shell starts, watches and stops.
-
-## 3. Architecture
+## 2. Architecture
 
 ```
-┌──────────────── Electron main (Node) ────────────────┐
-│ window, native menus, dialogs, drag-drop paths,       │
-│ single instance, taskbar/dock progress, notifications │
-│ power-save blocker during renders, auto-update        │
-│ sidecar supervisor: spawn, handshake, health, restart │
-└───────┬─────────────────────────────┬─────────────────┘
-        │ preload (contextBridge)     │ spawn + stdout handshake
-┌───────▼─────────────┐       ┌───────▼──────────────────────────┐
-│ Renderer = ui/      │ HTTP  │ Sidecar = ui/server.py           │
-│ app.js, compositor  │◄─────►│ 127.0.0.1:<ephemeral>, token     │
-│ WebGL2 → WebGPU HDR │  SSE  │ /api/frame /api/sequence/*       │
-│ window.rudraDesktop │       │ /api/master  + NEW /api/jobs,    │
-└─────────────────────┘       │ /api/deliver, /api/health,       │
-                              │ /api/events (SSE)                │
-                              │ rudra.video · rudra.batch · torch│
-                              └──────────────┬───────────────────┘
-                                             │ subprocess
-                                        ffmpeg / ffprobe
+┌──────────────────────── app/  (Qt 6 Widgets) ─────────────────────────┐
+│ QMainWindow, QDockWidget rails, tabs, transport, pipe bar, QSS theme  │
+│ native QMenuBar (macOS), QFileDialog, drag-drop QUrl, QShortcut table │
+│ first-run wizard, checkpoint manager, render queue window             │
+└───────┬───────────────────────┬──────────────────────────┬────────────┘
+        │                       │                          │
+┌───────▼────────┐   ┌──────────▼──────────┐   ┌───────────▼───────────┐
+│ viewer/        │   │ infer/              │   │ deliver/              │
+│ QOpenGLWidget  │   │ LibTorch            │   │ libav decode (LGPL)   │
+│ GLSL 410/450   │   │ torch::jit::load    │   │ ffmpeg CLI encode     │
+│ RGBA16F        │   │ tiles, CUDA stream  │   │ QC, sidecar, queue    │
+│ scopes compute │   │ worker thread       │   │ resume                │
+└───────┬────────┘   └──────────┬──────────┘   └───────────┬───────────┘
+        └───────────────────────┼──────────────────────────┘
+                     ┌──────────▼───────────────────────────┐
+                     │ core/  librudra, C++20, no Qt        │
+                     │ decode, anchor, chroma, radiometry,  │
+                     │ controls/regions, metadata (MaxCLL), │
+                     │ exr (OpenEXR), aces (OpenColorIO),   │
+                     │ qc, sidecar JSON, batch queue        │
+                     └──────────────────────────────────────┘
+        + cli/  headless `rudra` binary on librudra, diffable against the Python CLI
 ```
 
-### 3.1 Sidecar contract (changes to `ui/server.py`)
+### 2.1 Model export (`tools/export_torchscript.py`, Python, runs once per checkpoint)
 
-- `--port 0 --host 127.0.0.1 --token-file <path>`: bind an ephemeral loopback
-  port, print one JSON line `{"rudra":"ready","port":N,"pid":P,"device":"cuda"}`
-  to stdout, then serve. The shell reads that line; no fixed 8422, no clash
-  with a second copy.
-- Every `/api/*` request carries `X-Rudra-Token`; anything else is 403. Keeps
-  other local processes and web pages off the model.
-- `GET /api/health` (loaded checkpoint, sha256, device, VRAM, ffmpeg caps).
-- `POST /api/deliver`: one `rudra video` job, same option names as the CLI.
-- `GET/POST /api/jobs`: read and edit a `queue.json`, run it through
-  `rudra.batch.run_queue` in a worker thread, `retry_failed` exposed.
-- `GET /api/events`: Server-Sent Events for job progress and log lines, fed by
-  the `progress()` callback `run_queue` already has.
-- `POST /api/shutdown`: finish the current frame write, then exit. The shell
-  calls it on quit; SIGTERM / `TerminateProcess` after 10 s.
-- `webbrowser.open` is skipped when `--no-browser` (desktop always passes it).
-- Browser mode (`python ui/server.py`) keeps working unchanged: same page, same
-  endpoints, token optional when bound to loopback without `--token-file`.
+- `SDR2HDRNet` is conv, `F.interpolate`, `sigmoid`, `cat`, `where`,
+  `expm1`: all TorchScript- and `torch.export`-clean. The training-only paths
+  (`binary_cross_entropy_with_logits`, loss helpers) are not in the exported graph.
+- Export the inference forward that `ui/server.py` calls (fields: residual,
+  highlight mask, shadow mask), with `torch.jit.script` where control flow
+  depends on mode, `trace` otherwise.
+- Write `sdr2hdr_shadow_v1.ts` + `sdr2hdr_shadow_v1.ts.json` (source `.pt`
+  sha256, export torch version, input contract, `corpus_ev`) and add both to
+  `SHA256SUMS`.
+- Emit golden tensors for 16 fixed bench frames; the app's first-run self-test
+  re-runs them and refuses a model that drifts.
+- Optional later: `torch.export` + AOTInductor package per GPU architecture for
+  speed. TorchScript first because it loads on any LibTorch build of the same
+  version with no per-arch compile.
 
-### 3.2 Preload API (`window.rudraDesktop`)
+### 2.2 Inference (`infer/`)
 
-Narrow, typed, nothing else reaches Node:
+- One LibTorch version pinned across export and app (same minor as training).
+- Worker `QThread` owns the module and a CUDA stream; UI never blocks on it.
+- 512 px tiles with overlap, like `rudra.video` (`--tile-size 0` equivalent
+  for untiled when VRAM allows). fp32 default, fp16 autocast as an option that
+  is labelled in the status bar and sidecar.
+- Read-ahead cache of N decoded frames and their fields in front of the
+  playhead (today's server does the same).
+- Devices: CUDA on Windows/Linux, CPU everywhere. MPS on macOS only after a
+  parity test passes; until then macOS is CPU.
+
+### 2.3 Viewer (`viewer/`)
+
+- `ui/compositor.js` is already GLSL ES 3.0 (`COMMON`, `COMPOSITE`, `DISPLAY`
+  programs, `uSdr`, `uFields`, `uShadow`, region uniforms). Port to GLSL 410
+  core as one source with `#version` injected per platform; uniforms, units and
+  maths unchanged.
+- Textures RGBA16F; the composite target RGBA32F so the probe and measurement
+  read exactly what the master writes.
+- Scopes (waveform, RGB histogram, vectorscope, all nits, log axis): compute
+  shaders on GL 4.3+ (Windows, Linux); CPU path on macOS (GL 4.1 has no compute).
+- `measure()` (MaxCLL / MaxFALL per CTA-861.3, peak, P99, share above 1,000
+  nits, share clipped) runs in librudra on the composited float buffer, the
+  same code the master uses, as today.
+
+### 2.4 HDR output with OpenGL
+
+| OS | Path | v1 |
+|---|---|---|
+| Windows | `QSurfaceFormat` 16-bit float RGBA + scRGB linear colour space via WGL float pixel format; values above 1.0 reach the HDR display when "Use HDR" is on | **HDR out**, verified per driver in Phase 0 |
+| macOS | GL deprecated, capped at 4.1; EDR only through the legacy NSOpenGL surface | **SDR out**, today's PQ simulation |
+| Linux | no dependable HDR path for GL | **SDR out** |
+
+The pipe bar states which one is live, and the "clipped on screen, not in the
+master" warning uses the real output headroom. Keeping one GLSL source means a
+Metal backend (via QRhi) can be added for macOS later without touching the maths.
+
+### 2.5 UI (`app/`)
+
+- Qt Widgets, not QML: dense instrument UI, native menus, precise layout.
+- QSS generated at build time from `ui/theme.css` custom properties, so the
+  neutral surround (R = G = B), accent, gold and status colours stay one source.
+  IBM Plex Mono and Plex Sans Condensed embedded (OFL).
+- Every `data-act` id in `ui/index.html` becomes a `QAction` with the same
+  shortcut; macOS uses the native menubar, Windows/Linux an in-window menubar
+  in a frameless titlebar.
+- Panels: Media rail (drop zone, shot list, probe), viewer toolbar
+  (Compare, Layer, Probe, Guides, Zoom, HDR-out badge), transport with
+  timecode, queue dock, right rail (scopes, Reconstruct / Grade / Deliver tabs,
+  Frame measurements), pipe bar.
+
+### 2.6 Delivery (`deliver/`)
+
+- Decode: libavformat/libavcodec linked dynamically from an **LGPL** build.
+  Enforces the same input rules as `rudra.video` (progressive, square pixels,
+  CFR, even dimensions, colour tags or explicit overrides; rejects HDR,
+  interlaced, rotated, anamorphic, VFR).
+- Encode: the **ffmpeg CLI** as a subprocess, fed 16-bit frames on a pipe
+  (today: PNG spool). x265 is GPL; keeping it in a separate process keeps the
+  app binary free of it. Presets, filters, tags and the `bt2020` vs `bt2020nc`
+  handling ported from `rudra/delivery/video.py`.
+- QC before publish, same list as the CLI: dimensions, every timestamp, frame
+  count, colour tags, HDR metadata, audio alignment, complete decode.
+  Never overwrites. `.json` sidecar with checkpoint sha, settings, per-frame stats.
+- Queue: `queue.json` format kept identical to `rudra.batch` so either tool can
+  run or resume the other's queue. Atomic save + file lock as in `batch.py`.
+- ffmpeg probe on start (`-encoders`, `-filters`: libx265, prores_ks, zscale)
+  plus a 16-frame HDR10 self-test per ffmpeg binary hash, cached.
+
+## 3. Port map
+
+| Python / JS | Lines | C++ target | Test |
+|---|---:|---|---|
+| `rudra/decode.py`, `radiometry.py`, `anchor.py`, `chroma.py` | 392 | `core/decode`, `core/anchor`, `core/chroma` | golden arrays, max abs diff |
+| `rudra/delivery/controls.py`, `colorspace.py`, `profiles.py` | 359 | `core/controls`, `core/colorspace` | golden arrays |
+| `rudra/delivery/metadata.py`, `hdr10.py` | 320 | `core/metadata` | MaxCLL/MaxFALL exact |
+| `rudra/delivery/exr.py`, `exr_io.py`, `aces.py` | 389 | `core/exr`, `core/aces` (OpenEXR, OCIO) | header attributes + pixels |
+| `rudra/qc.py` | 213 | `core/qc` | same pass/fail on fixtures |
+| `rudra/video.py`, `rudra/delivery/video.py` | 978 | `deliver/` | existing video test fixtures |
+| `rudra/batch.py` | 169 | `core/queue` | cross-run: Python queue resumed by C++ and back |
+| `ui/sequence.py`, `server.py` (measure, sequence, master) | ~600 | `core/sequence`, `core/master` | same master bytes |
+| `ui/compositor.js` | 655 | `viewer/` GLSL | probe values vs browser Studio |
+| `ui/app.js`, `shell.js`, `index.html`, CSS | ~3,000 | `app/` | UI smoke tests (Qt Test) |
+
+About 3,300 lines of Python and 3,650 of JS/HTML/CSS. The existing pytest suite
+becomes the generator of the golden files: a `pytest --emit-golden` pass writes
+inputs and outputs to `tests/golden/`, GoogleTest reads them.
+
+## 4. Build, packaging, runtime
+
+- CMake presets + vcpkg manifest: Qt 6 (LTS), OpenEXR, OpenColorIO, FFmpeg
+  (LGPL features), nlohmann-json, spdlog, GoogleTest. LibTorch from the official
+  archives (not vcpkg): cxx11 ABI on Linux, MSVC build on Windows, arm64 on macOS.
+- Compilers: MSVC 2022, clang (macOS), gcc 12+ (Linux). C++20.
+- Deploy: `windeployqt` + NSIS or WiX; `macdeployqt` + DMG, Developer ID +
+  notarization; `linuxdeploy` AppImage + .deb.
+- **Compute packs.** Installers ship LibTorch CPU (~200 MB) so the app works
+  immediately. The CUDA 12.x pack (LibTorch CUDA + cuDNN, ~2.4 GB) downloads on
+  first run into user data, resumable, sha-verified, versioned with the app.
+  A Windows offline installer includes it.
+- Checkpoints: `.ts` files listed from `checkpoints/models.json`, verified
+  against `SHA256SUMS`, golden-frame self-test on first load. The non-commercial
+  weights licence (`checkpoints/LICENSE`) accepted before any download.
+  `_invalid_*` never listed.
+- Updates: app via a signed appcast (Sparkle on macOS, WinSparkle on Windows,
+  AppImage zsync on Linux); compute packs only re-download when the LibTorch
+  version changes.
+- CI: GitHub Actions matrix (windows-2022, macos-14, ubuntu-22.04). Stages:
+  pytest (emits golden) → CMake build → GoogleTest parity → Qt Test UI smoke →
+  package → packaged smoke (open `ui/assets/cinematic_hdr_sunset.png` on CPU,
+  master EXR, compare with the Python master).
+
+## 5. Repository layout
 
 ```
-pickFrames() -> string[]          pickFolder(kind) -> string
-pickSaveTarget(preset) -> string  pathForDroppedFile(File) -> string
-reveal(path)                      openExternal(url)   (allow-listed)
-setProgress(0..1 | null)          notify(title, body)
-displayInfo() -> {hdr, headroom, colorSpace}
-onMenu(cb)  (native menu → the same data-act ids index.html uses)
+native/
+  CMakeLists.txt  CMakePresets.json  vcpkg.json
+  core/      librudra (no Qt)
+  infer/     LibTorch wrapper
+  viewer/    QOpenGLWidget, shaders/*.glsl
+  deliver/   libav decode, ffmpeg encode, QC
+  app/       Qt Widgets, qss generated from ../../ui/theme.css
+  cli/       headless rudra
+  tests/     GoogleTest + Qt Test, reads ../../tests/golden
+  packaging/ nsis, dmg, appimage, icons from ui/assets/rudra-mark.png
+tools/export_torchscript.py
 ```
 
-`app.js` feature-detects `window.rudraDesktop`; when absent it behaves exactly
-as today. The render-folder text field becomes a field plus a Browse button.
+`rudra/`, `ui/`, `training/` stay as they are.
 
-### 3.3 Menus
-
-`index.html`'s `data-act` table is the single source. On macOS the HTML
-menubar is hidden and a native `Menu` is built from the same ids (App menu,
-File, Edit, Clip, Reconstruct, Measure, Deliver, Window, Help). On Windows and
-Linux the existing in-page menubar stays and becomes the custom titlebar
-(`titleBarOverlay`, window controls on the right). Shortcuts are unchanged;
-Cmd replaces Ctrl on macOS.
-
-### 3.4 HDR viewer path
-
-- **Detect:** `matchMedia('(dynamic-range: high)')` plus Electron `screen`
-  display info; report headroom in the pipe bar ("view PQ · Rec.2020 · HDR out
-  · 1000 nits" vs "SDR out · PQ simulated").
-- **Output:** a WebGPU canvas configured `rgba16float` with extended tone
-  mapping and a Rec.2020-linear or display-P3 colour space, fed by the same
-  composite `compositor.js` computes today. WebGL2 SDR stays the fallback and
-  is the reference for the parity test.
-- **Honesty rule:** if the display cannot show the frame's MaxCLL the existing
-  warning fires, with the display's measured headroom in place of the slider
-  value. Never tone-map silently.
-- Windows needs "Use HDR" on; macOS uses EDR headroom (varies with
-  brightness, so read it live); Linux ships SDR-out in v1 (Wayland HDR in
-  Chromium is not dependable yet) and says so in the pipe bar.
-
-## 4. Runtime and dependencies
-
-### 4.1 Python and torch
-
-- Ship **python-build-standalone 3.12** inside the app (~40 MB) plus **uv**.
-- Ship a lockfile (`desktop/runtime/uv.lock`) generated from `pyproject.toml`.
-- First run detects the GPU and installs one torch variant into the app's data
-  dir, not into Program Files:
-  - NVIDIA on Windows/Linux: CUDA 12.x wheel (~2.5 GB download, once).
-  - macOS arm64: default wheel, `--device mps`.
-  - Anything else: CPU wheel (~200 MB).
-- An **offline installer** variant (Windows CUDA, ~3 GB) for studio machines
-  without internet.
-- Runtime is re-synced by `uv sync` only when the lockfile hash changes, so an
-  app update that does not touch Python does not re-download torch.
-- **MPS is new.** `ui/server.py` and `rudra.video` accept `cuda|cpu` today.
-  Adding `mps` needs a parity test (MPS vs CPU on the 429 bench frames, max
-  abs diff in log space) before it is offered; until then macOS is CPU.
-- macOS Intel is not supported: torch stopped publishing x86_64 macOS wheels.
-
-### 4.2 Checkpoints
-
-- Checkpoint manager lists `checkpoints/models.json` entries and local files,
-  verifies each against `SHA256SUMS` (or the Hub file's sha) before loading,
-  shows the hash in the status bar (it already shows the path).
-- Download from the Hugging Face repo with resume; stored in
-  `<appData>/RUDRA/checkpoints`.
-- The **non-commercial weights licence** (`checkpoints/LICENSE`) is shown on
-  first run and must be accepted before any weights download. Code licence
-  (Apache 2.0) and `NOTICE` in About.
-- Quarantined runs (`checkpoints/_invalid_*`) are never listed.
-
-### 4.3 FFmpeg
-
-- **Probe, do not assume.** On start: `ffmpeg -version`, `-encoders`,
-  `-filters`; required: `libx265`, `prores_ks`, `zscale`. Minimum version
-  pinned. The 23 Sep `bt2020` vs `bt2020nc` break on 7.x is the reason: the
-  probe runs the existing encode self-test (one 16-frame HDR10 clip, full QC)
-  and caches the verdict per ffmpeg binary hash.
-- **Not bundled in v1.** An x265-enabled build is GPL; shipping it inside an
-  Apache-2.0 app obliges source distribution for it. v1 finds a system ffmpeg
-  or offers a one-click download of a named GPL build into app data, with its
-  licence shown. Stills and EXR mastering never need ffmpeg.
-
-## 5. Security
-
-- `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict
-  CSP (`default-src 'self' http://127.0.0.1:<port>`), no remote content.
-- Loopback bind plus per-launch token (§3.1).
-- `openExternal` allow-list (fxtdstudios.com, the GitHub repo, the Hub page).
-- Code signing on every platform; unsigned Python in AppData is the most
-  common antivirus false positive, so the embedded interpreter is signed too.
-
-## 6. Packaging, updates, CI
-
-| | Windows x64 | macOS arm64 | Linux x64 |
-|---|---|---|---|
-| Format | NSIS installer + offline variant | DMG | AppImage + .deb |
-| Signing | Authenticode (Azure Trusted Signing or EV) | Developer ID + notarization | detached gpg |
-| Updates | electron-updater, GitHub Releases | same | AppImage zsync; .deb via apt repo later |
-| GPU runtime | CUDA 12.x | MPS (after parity) / CPU | CUDA 12.x |
-
-- `electron-builder` config in `desktop/`.
-- GitHub Actions matrix: `windows-latest`, `macos-14`, `ubuntu-22.04`.
-  Existing `pytest` runs first; then a Playwright-for-Electron smoke test
-  launches the packaged app on CPU, opens `ui/assets/cinematic_hdr_sunset.png`,
-  masters EXR, and compares the output against the browser-mode master of the
-  same frame (tolerance: bit-exact on CPU).
-- Release channel `stable`, plus `beta` for Ahmed and FXTD staff.
-
-## 7. Repository layout
-
-```
-desktop/
-  package.json            electron, electron-builder, electron-updater
-  src/main.ts             window, menus, lifecycle
-  src/sidecar.ts          spawn, handshake, health, restart, shutdown
-  src/preload.ts          window.rudraDesktop
-  src/runtime.ts          python-standalone + uv, GPU detect, torch install
-  src/ffmpeg.ts           probe + self-test
-  src/checkpoints.ts      list, verify, download
-  runtime/uv.lock
-  build/                  icons (from ui/assets/rudra-mark.png), entitlements
-  test/smoke.spec.ts
-ui/                       renderer, unchanged except feature-detected hooks
-rudra/                    unchanged except `mps` device + /api additions' helpers
-```
-
-## 8. Phases
+## 6. Phases
 
 | # | Phase | Work | Exit gate | Est. |
 |---|---|---|---|---|
-| 0 | Spike | Electron loads `ui/` against a hand-started sidecar. HDR output test page on Win HDR monitor + MacBook XDR: a 1000-nit patch must measure above SDR white | HDR patch verified on both, or HDR-out dropped from v1 | 3 d |
-| 1 | Shell | Sidecar supervisor + handshake + token; native dialogs; drag-drop paths; menus; single instance; logs to `<appData>/RUDRA/logs` | Browser mode and desktop mode pass the same UI smoke test | 1 w |
-| 2 | Runtime | First-run flow: licence, GPU detect, torch install, checkpoint verify/download, ffmpeg probe + self-test | Clean VM on each OS to first reconstruction with no terminal | 1 w |
-| 3 | Deliver | Deliver dialog → `/api/deliver`; queue window on `rudra.batch`; SSE progress; resume; QC report and sidecar viewer; notifications, taskbar progress | A 3-clip queue killed mid-clip resumes and every output passes `rudra.video` QC | 1.5 w |
-| 4 | HDR view | WebGPU extended output; live headroom; pipe bar reports HDR-out/SDR-out; parity test vs WebGL2 SDR path | Probe values identical in both paths; warning fires correctly on SDR display | 1 w |
-| 5 | Package | Signing, notarization, updater, offline installer, CI matrix, smoke test on packaged builds | Signed builds install and update on all three | 1 w |
-| 6 | Harden | MPS parity (if pursued), crash/restart of sidecar mid-render, low-disk, missing GPU, 8K frames, long queues | No open P0 | 1 w |
+| 0 | Export + spike | TorchScript export; LibTorch loads it in a 50-line C++ app; GL window with RGBA16F scRGB on a Windows HDR monitor | CPU fp32 LibTorch vs Python on the 429 bench frames, max abs diff in log space ≤ 1e-5; 1,000-nit patch measured above SDR white | 1 w |
+| 1 | librudra | Port decode, anchor, chroma, controls, colorspace, metadata, exr, aces, qc, queue; golden emitter in pytest | Every module passes its golden test on all three OSes | 3 w |
+| 2 | GL viewer | Shaders ported; composite, display, false colour, difference, wipe, probe, guides; scopes; measure | Probe and measurements equal the browser Studio's on the same frame | 3 w |
+| 3 | Qt UI | Main window, rails, tabs, transport, pipe bar, menus, shortcuts, QSS, first-run wizard, checkpoint manager | Full Studio workflow with no Python installed | 3 w |
+| 4 | Deliver | libav decode, ffmpeg encode, five presets, QC, sidecar, queue window, resume | 3-clip queue killed mid-clip resumes; every output passes QC; C++ and Python resume each other's queue | 2.5 w |
+| 5 | Package | Installers, signing, notarization, compute packs, updater, CI matrix | Signed builds install and update on all three | 1.5 w |
+| 6 | Harden | 8K frames, long queues, VRAM exhaustion, missing GPU, low disk, driver matrix for Windows HDR, MPS parity if pursued | No open P0 | 2 w |
 
-About 7.5 weeks for one engineer. Phase 0 is the only real unknown; everything
-else is plumbing around code that already works.
+About 16 weeks for one engineer. Phase 0 is the go/no-go: if LibTorch parity
+fails, the fix is in the export, before any porting starts.
 
-## 9. Acceptance criteria for v1
+## 7. Acceptance criteria for v1
 
-- [ ] Installs and opens on Windows 11, macOS 14+, Ubuntu 22.04 without a terminal.
-- [ ] Master EXR from desktop is bit-identical to browser mode on CPU for the same frame and settings.
-- [ ] Drag a 4K EXR folder from Explorer/Finder: opens by path, no upload, first frame under 2 s after warm start.
-- [ ] HDR10, HLG, ProRes 422 HQ, ProRes 4444 exported from the Deliver dialog pass the same QC the CLI applies; `.json` sidecar written; never overwrites.
-- [ ] Queue survives app quit, sidecar crash and reboot; resumes at the interrupted clip.
-- [ ] Viewer reports HDR-out or SDR-out truthfully; the clipped-on-screen warning uses the real display headroom.
-- [ ] Weights licence accepted before any weights are downloaded; checkpoint sha shown before it is used.
-- [ ] Cold start after first run under 5 s to an interactive window (model load may continue behind it, stated in the status bar).
+- [ ] Installs and runs on Windows 11, Ubuntu 22.04, macOS 14+ with no Python present.
+- [ ] Master EXR from the native app matches the Python master within 1 half-float ULP on CPU.
+- [ ] Every ported module passes its golden test on every OS in CI.
+- [ ] Drag a 4K EXR folder from Explorer/Finder: opens by path, first frame under 2 s warm.
+- [ ] All five video presets pass the same QC as the CLI; sidecar written; never overwrites.
+- [ ] Queue survives quit, crash and reboot; `queue.json` interchangeable with `rudra batch`.
+- [ ] Pipe bar reports HDR out or SDR out truthfully; on-screen clip warning uses real headroom.
+- [ ] Weights licence accepted before download; model sha and golden self-test before first use.
 
-## 10. Decisions for Ahmed
+## 8. Decisions for Ahmed
 
-1. Electron (recommended) or Tauri 2.
-2. macOS: CPU-only in v1, or spend Phase 6 on MPS parity.
-3. FFmpeg: find/download (recommended) or bundle a GPL build with a source offer.
-4. Torch: online first-run install (recommended) plus a Windows offline installer, or offline everywhere.
-5. Distribution: public GitHub Releases, or FXTD-internal only while weights are non-commercial.
+1. **Model format:** TorchScript (recommended for v1, loads anywhere) or AOTInductor (faster, compiled per GPU arch and OS).
+2. **macOS viewer:** GL 4.1 SDR-out in v1 (recommended), or a Metal backend now for EDR.
+3. **Qt licence:** LGPL with dynamic linking (fine for a closed app if Qt is relinkable) or a commercial Qt licence.
+4. **Browser Studio:** keep `ui/` as the reference implementation during the port (recommended), or retire it at v1.
+5. **Distribution:** public releases, or FXTD-internal while the weights are non-commercial.
 
-## 11. Risks
+## 9. Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Chromium HDR canvas behaves differently on Win vs mac | HDR-out wrong on one OS | Phase 0 gate; measured patch test; SDR fallback is today's behaviour |
-| 2.5 GB torch download on first run | bad first impression, fails on studio networks | progress + resume; offline installer; CPU path usable meanwhile |
-| MPS numerics differ from CUDA/CPU | macOS masters not comparable | CPU default on mac until parity test passes |
-| FFmpeg version drift (the 7.x `bt2020` break) | silent bad encodes | per-binary self-test with full QC before first delivery |
-| Antivirus flags embedded Python | install blocked | sign interpreter and app; submit to Defender |
-| Sidecar crash mid-render | lost work | `rudra.batch` already writes durable per-job state; shell restarts sidecar and resumes |
+| TorchScript export differs from eager | wrong reconstruction | Phase 0 parity gate on 429 frames before any porting |
+| Two implementations drift (Python keeps changing) | app and paper disagree | golden files regenerated in CI on every commit; a failing parity test blocks merge |
+| Windows HDR via GL float pixel format is driver-dependent | HDR out missing on some GPUs | per-driver verification; SDR-out fallback with the warning |
+| macOS GL deprecated | future macOS drops it | single GLSL source, Metal backend as a planned follow-up |
+| LibTorch CUDA size (~2.4 GB) | slow first run | CPU works immediately; resumable pack; offline installer |
+| libav / ffmpeg version drift (the 7.x `bt2020` break) | bad encodes | per-binary self-test with full QC before first delivery |
+| Port effort (~7k lines) underestimated | late v1 | librudra first, CLI diff against Python gives early signal |
