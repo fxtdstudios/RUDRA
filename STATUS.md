@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 22 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 23 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -12,7 +12,36 @@
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
+> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below) |
+>
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+>
+> **23 Sep 2026, native app: Phase 0 go/no-go (line F).** The two questions
+> Phase 0 had to answer (docs/NATIVE_ARCHITECTURE.md section 12), measured on
+> an RTX 4080 SUPER under Windows 11 with an ASUS PA279CRV in HDR:
+>
+> - **Gate A, does C++ compute what Python computes?** Yes, on every Windows
+>   backend: LibTorch CPU 1.2e-7 (bound 1e-5), LibTorch CUDA 1.4e-5 in true
+>   fp32 (TF32 was costing 4e-4 and is now off; `gpu_fp32` bound 5e-5 +
+>   1e-5|ref|), ONNX Runtime CPU 5.8e-5 and DirectML 3.3e-6 (bound 3e-4 +
+>   1e-4|ref|). The composite, master chain to AP0 and every measurement match
+>   the Python stage by stage (35 native tests).
+> - **Gate B, does HDR reach the glass?** Yes: D3D12 scRGB and D3D11 scRGB
+>   carry 203, 1 000 and 2 000 nits exactly, D3D12 HDR10 to within 10-bit PQ
+>   quantisation; Windows reports the output as G2084/P2020. The composite
+>   shader matches `composite.cpp` on D3D12, D3D11, Vulkan and OpenGL (fp16
+>   within 1 half-float ulp).
+> - **Budgets:** composite 0.11 ms at 1080p and 0.51 ms at 4K (budgets 4 and
+>   12 ms); inference 150 to 172 ms at 1080p fp32 untiled.
+>
+> **Decision: GO for Phase 1 on Windows.** macOS is GO on condition of three
+> runs on an Apple Silicon Mac with an XDR panel, none of which needs new code:
+> Gate A on MPS and Core ML, Gate B on Metal EDR, the composite parity on
+> Metal (`scripts/native_gate_b.sh`, `rudra-native diff`). Linux ships SDR-out
+> first; its composite already passes on OpenGL. Still open and not blocking:
+> the 429-frame bench through Gate A (`NATIVE_GATE_A.ps1 -BenchDir`), Tracy,
+> and a reduced-precision inference path. Phase 1 (decode, engine, the viewer
+> in the Qt shell) starts from `native/` on the `native` branch.
 >
 > **22 Sep 2026 — dataset audit (line E).** What was done since 16 Sep, checked:
 >

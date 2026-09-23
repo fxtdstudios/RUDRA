@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "defaults": {
+    "checkpoint": "ckpt.pt",
+    "format": "hdr10",
+    "peak_nits": 1000
+  },
+  "jobs": [
+    {
+      "input": "a.mov",
+      "output": "out/a.mp4"
+    },
+    {
+      "input": "b.mov",
+      "output": "out/b.mp4",
+      "options": {
+        "crf": 14
+      }
+    },
+    {
+      "input": "c.mov",
+      "output": "out/c.mov",
+      "options": {
+        "format": "prores422hq"
+      }
+    }
+  ]
+}

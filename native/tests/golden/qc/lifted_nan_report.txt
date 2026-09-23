@@ -1,0 +1,14 @@
+QC — lifted_nan.png
+  176x128
+  VERDICT: FAIL
+    FAIL       nan                               1   1 NaN sample(s)
+    PASS       inf                               0   0 Inf sample(s)
+    FAIL       negative                          2   2 negative sample(s)
+    PASS       at_ceiling_pct                    0   0.0000% pinned at 40000 nits
+    FAIL       do_no_harm_median               nan   nanx on unclipped picture
+    FAIL       do_no_harm_within_1pct            0   0.0% within 1%
+    FAIL       chroma_shift_uv                 nan   median duv nan
+    PASS       clip_gain                         6   6.00x on 5.14% of px
+    PASS       clip_structure_pct             14.1   14.1% relative variation
+    FAIL       hf_excess                       nan   nan% actual vs nan% predicted
+  First failure: nan (FAIL) — 1 NaN sample(s)

@@ -1,0 +1,14 @@
+QC — anchored.png
+  176x128
+  VERDICT: FAIL
+    PASS       nan                               0   0 NaN sample(s)
+    PASS       inf                               0   0 Inf sample(s)
+    PASS       negative                          0   0 negative sample(s)
+    PASS       at_ceiling_pct                    0   0.0000% pinned at 40000 nits
+    PASS       do_no_harm_median                 1   1.000x on unclipped picture
+    PASS       do_no_harm_within_1pct            1   100.0% within 1%
+    PASS       chroma_shift_uv           7.797e-09   median duv 0.0000
+    PASS       clip_gain                     2.999   3.00x on 5.14% of px
+    PASS       clip_structure_pct            14.17   14.2% relative variation
+    FAIL       hf_excess                     20.71   16.0% actual vs 0.8% predicted
+  First failure: hf_excess (FAIL) — 16.0% actual vs 0.8% predicted

@@ -7,16 +7,18 @@ name: native
 #             ONNX Runtime, and run the package's golden frames in C++
 #   app     - the Qt shell compiles and starts headless
 #   probe   - Gate B's rudra-hdr-probe builds on Qt 6.8 on all three OSes and
-#             reports its SDR fallback honestly on a headless Linux runner
+#             reports its SDR fallback honestly on a headless Linux runner;
+#             the composite shader matches the C++ composite on llvmpipe
 
 on:
   push:
-    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py",
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_master_golden.py", "tools/emit_qc_golden.py", "tools/emit_queue_golden.py", "tools/emit_sequence_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
             "tools/check_layers.py", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
-            "rudra/delivery/**", "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
+            "rudra/delivery/**", "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
+            ".github/workflows/native.yml"]
   pull_request:
-    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py", "rudra/delivery/**",
-            "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
+    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "rudra/decode.py", "rudra/anchor.py", "rudra/chroma.py", "rudra/delivery/**",
+            "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
   workflow_dispatch:
 
 jobs:
@@ -39,7 +41,9 @@ jobs:
       - uses: actions/checkout@v7
       - name: GoogleTest and JSON (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
+          echo "OPENCV=-DRUDRA_WITH_OPENCV=ON" >> "$GITHUB_ENV"
       - name: GoogleTest and JSON (macOS)
         if: runner.os == 'macOS'
         run: brew install googletest nlohmann-json ninja
@@ -51,7 +55,7 @@ jobs:
           echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON ${TOOLCHAIN:-}
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON ${TOOLCHAIN:-} ${OPENCV:-}
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
@@ -71,16 +75,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[test]" onnx onnxruntime
-          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build
-      - name: Core goldens are current
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
+      - name: Every golden, from this Python
+        # tools/emit_golden.py runs every emitter. Core, decode, queue and
+        # sequence are exact and must not move; composite, delivery, master and qc are re-emitted, not diffed (torch on the
+        # runner may differ in the last bit) and the C++ tests below then run
+        # against what the Python on this runner computes.
         run: |
-          python tools/emit_core_golden.py
-          git diff --exit-code native/tests/golden/core/index.json
-      - name: Composite goldens from this Python
-        # Re-emitted, not diffed: torch on the runner may differ from the
-        # committed files in the last bit. The C++ tests below then run against
-        # what the Python on this runner computes, which is the real check.
-        run: python tools/emit_composite_golden.py
+          python tools/emit_golden.py
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API
@@ -91,7 +94,7 @@ jobs:
       - name: Configure
         run: |
           cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" \
+            -DRUDRA_WITH_LIBTORCH=ON -DRUDRA_WITH_ONNXRUNTIME=ON -DONNXRUNTIME_ROOT="$ORT_ROOT" -DRUDRA_WITH_OPENCV=ON \
             -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')" \
             -DRUDRA_TEST_PACKAGE="$PWD/dist/models/sdr2hdr_shadow_v1"
       - name: Build
@@ -138,7 +141,7 @@ jobs:
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |
@@ -149,3 +152,6 @@ jobs:
           test "$code" = "1"
           grep -q '"output_path": "SDR"' probe.json
           grep -q '"verdict": "FAIL"' probe.json
+      - name: GPU composite parity on llvmpipe (Linux, OpenGL)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a build/render/probe/rudra-gpu-parity --api gl

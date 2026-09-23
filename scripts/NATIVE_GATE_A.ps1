@@ -10,7 +10,7 @@
     2. Download ONNX Runtime with DirectML (NuGet) and the DirectML runtime it
        depends on, into tmp/native_deps (git-ignored). Nothing is installed.
     3. Configure and build native/ with Visual Studio 2022:
-         - LibTorch from this Python's torch (CUDA if the CUDA toolkit is present)
+         - LibTorch from this Python's torch, CUDA included, no CUDA toolkit needed
          - ONNX Runtime DirectML
     4. Run rudra-native diff on: LibTorch CPU, LibTorch CUDA, ONNX Runtime CPU,
        ONNX Runtime DirectML. Each is compared with the package's golden frames
@@ -20,8 +20,7 @@
   Needs: Visual Studio 2022 or 2026 (or its Build Tools) with the C++ tools,
   which ship CMake; -InstallBuildTools installs the Build Tools with winget if
   none is found. And a Python with torch, onnx, onnxruntime, numpy, opencv.
-  For LibTorch CUDA, the CUDA toolkit matching torch.version.cuda must be
-  installed (CUDA_PATH set); without it the CUDA row is skipped, not failed.
+  The LibTorch CUDA row runs when this torch is a CUDA build and sees a GPU.
 
 .EXAMPLE
   .\scripts\NATIVE_GATE_A.ps1
@@ -36,6 +35,7 @@ param(
     [string]$OrtVersion = "1.22.0",
     [switch]$SkipExport,
     [switch]$SkipBuild,
+    [switch]$NoBench,
     [switch]$InstallBuildTools
 )
 
@@ -69,38 +69,14 @@ if ($LASTEXITCODE -ne 0) {
     if ($LASTEXITCODE -ne 0) { Fail "pip install onnx onnxruntime" }
 }
 
-$CudaToolkit = $env:CUDA_PATH
-$HasToolkit = $CudaToolkit -and (Test-Path (Join-Path $CudaToolkit "bin\nvcc.exe"))
-$WithCuda = ($TorchCuda -ne "") -and ($CudaAvail -eq "1") -and $HasToolkit
-$LibTorchPrefix = $TorchCMake
-$WithLibTorch = $true
-if ($TorchCuda -ne "" -and -not $HasToolkit) {
-    # A CUDA build of torch makes CMake look for the CUDA toolkit, and that
-    # cannot be switched off from outside. Without the toolkit, use the CPU
-    # LibTorch of the same version instead: the CPU row still runs, the CUDA
-    # row is reported as skipped.
-    Write-Host "CUDA toolkit not found (CUDA_PATH): using CPU LibTorch $TorchVersion; the CUDA row is skipped." -ForegroundColor Yellow
-    Write-Host "Install CUDA $TorchCuda and re-run to measure LibTorch CUDA." -ForegroundColor Yellow
-    $base = $TorchVersion.Split("+")[0]
-    $ltDir = Join-Path $Deps "libtorch-cpu-$base"
-    if (-not (Test-Path "$ltDir\libtorch\share\cmake\Torch")) {
-        $zip = Join-Path $Deps "libtorch-cpu-$base.zip"
-        $url = "https://download.pytorch.org/libtorch/cpu/libtorch-win-shared-with-deps-$base%2Bcpu.zip"
-        try {
-            Write-Host "download $url"
-            Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-            Expand-Archive -Path $zip -DestinationPath $ltDir -Force
-            Remove-Item $zip
-        } catch {
-            Write-Host "CPU LibTorch $base could not be downloaded: LibTorch rows skipped." -ForegroundColor Yellow
-            $WithLibTorch = $false
-        }
-    }
-    if ($WithLibTorch) {
-        $LibTorchPrefix = "$ltDir\libtorch\share\cmake"
-        $TorchLib = "$ltDir\libtorch\lib"
-    }
-}
+# LibTorch comes from this Python's torch, imported directly (RUDRA_TORCH_ROOT)
+# rather than through TorchConfig: a CUDA torch's TorchConfig demands the CUDA
+# toolkit at torch's version, wired into this Visual Studio, to build a program
+# that compiles no CUDA. The run needs only torch's own DLLs, loaded from PATH.
+$TorchRoot = Split-Path $TorchLib
+$WithLibTorch = Test-Path (Join-Path $TorchRoot "include\torch\script.h")
+if (-not $WithLibTorch) { Write-Host "torch headers not found under $TorchRoot`: LibTorch rows skipped." -ForegroundColor Yellow }
+$WithCuda = $WithLibTorch -and ($TorchCuda -ne "") -and ($CudaAvail -eq "1")
 
 # ---------------------------------------------------------------------------
 if (-not $SkipExport) {
@@ -155,7 +131,7 @@ if (-not $SkipBuild) {
     $cfg = @("-S", "native", "-B", $Build, "-G", $tc.Generator, "-A", "x64",
              "-DRUDRA_BUILD_TESTS=OFF", "-DRUDRA_BUILD_APP=OFF",
              "-DRUDRA_WITH_ONNXRUNTIME=ON", "-DONNXRUNTIME_ROOT=$OrtRoot")
-    if ($WithLibTorch) { $cfg += @("-DRUDRA_WITH_LIBTORCH=ON", "-DCMAKE_PREFIX_PATH=$LibTorchPrefix") }
+    if ($WithLibTorch) { $cfg += @("-DRUDRA_WITH_LIBTORCH=ON", "-DRUDRA_TORCH_ROOT=$TorchRoot") }
     else { $cfg += @("-DRUDRA_WITH_LIBTORCH=OFF") }
     & $cmake @cfg
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
@@ -180,13 +156,20 @@ $rows = @(
     @{ Name = "ONNX Runtime DirectML"; Runtime = "onnxruntime"; Device = "directml"; Run = $true }
 )
 $log = @("RUDRA native Gate A, $Stamp", "package $Package", "torch $TorchVersion (cuda '$TorchCuda'), ONNX Runtime $OrtVersion, DirectML $DmlVersion", "")
-& $Exe info $Package | Tee-Object -Variable infoOut | Out-Null
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$infoOut = & $Exe info $Package 2>&1 | ForEach-Object { "$_" }
+$ErrorActionPreference = $prev
 $log += $infoOut; $log += ""
 $summary = @()
 foreach ($r in $rows) {
     if (-not $r.Run) { $summary += [pscustomobject]@{ Backend = $r.Name; Result = "skipped"; "Worst |d|" = "" }; continue }
-    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device 2>&1
+    # Windows PowerShell turns any stderr line of a native program into a
+    # terminating error under "Stop"; a runtime's warning is not a failure,
+    # the exit code is. Collect both streams as text and judge by the code.
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
     $log += "---- $($r.Name)"; $log += $out; $log += ""
     $worst = ($out | Select-String "max \|d\| ([0-9.e+-]+)" -AllMatches | ForEach-Object { $_.Matches } | ForEach-Object { [double]$_.Groups[1].Value } | Measure-Object -Maximum).Maximum
     $result = switch ($code) { 0 { "PASS" } 1 { "FAIL" } default { "ERROR" } }
@@ -194,6 +177,27 @@ foreach ($r in $rows) {
     $summary += [pscustomobject]@{ Backend = $r.Name; Result = $result; "Worst |d|" = $worst }
 }
 $log += ($summary | Format-Table -AutoSize | Out-String)
+
+# ---------------------------------------------------------------------------
+# Inference time at 1080p on every backend that passed, for the budget table
+# (NATIVE_ARCHITECTURE.md 6.6). Wall time to fields in host memory.
+$bench = @()
+if (-not $NoBench) {
+    Say "Inference time, 1920x1080, fp32 (median of 5)"
+    foreach ($r in $rows) {
+        $row = $summary | Where-Object { $_.Backend -eq $r.Name }
+        if ($row.Result -ne "PASS") { continue }
+        $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --size 1920x1080 --iters 5 2>&1 | ForEach-Object { "$_" }
+        $ErrorActionPreference = $prev
+        $log += "---- bench $($r.Name)"; $log += $out; $log += ""
+        $ms = @{}
+        foreach ($l in ($out | Where-Object { $_ -match "^BENCH " })) { $f = $l -split " "; $ms[$f[4]] = [double]$f[5] }
+        $bench += [pscustomobject]@{ Backend = $r.Name; "untiled ms" = $ms["untiled"]; "tiled 512/64 ms" = $ms["tiled"] }
+    }
+    $bench | Format-Table -AutoSize | Out-String | Write-Host
+    $log += ($bench | Format-Table -AutoSize | Out-String)
+}
 $log | Set-Content -Encoding utf8 $Report
 
 Say "Result"

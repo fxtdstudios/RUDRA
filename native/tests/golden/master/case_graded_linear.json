@@ -1,0 +1,39 @@
+{
+  "maxcll_nits": 2387,
+  "maxfall_nits": 250,
+  "peak_nits": 2386.1,
+  "resolution": [
+    131,
+    97
+  ],
+  "source_bits": 16,
+  "container": "scene-linear Rec.2020",
+  "transfer": "linear",
+  "diffuse_white_nits": 203.0,
+  "checkpoint": "sdr2hdr_shadow_v1.pt",
+  "recovery_mode": "all",
+  "residual_strength": 1.0,
+  "preserve_outside": true,
+  "region_ev": [
+    {
+      "label": "highlights",
+      "low_nits": 400.0,
+      "high_nits": 2000.0,
+      "ev": 0.6
+    },
+    {
+      "label": "speculars",
+      "low_nits": 2000.0,
+      "high_nits": 8000.0,
+      "ev": -0.4
+    },
+    {
+      "label": "shadows",
+      "low_nits": 0.05,
+      "high_nits": 12.0,
+      "ev": 0.8
+    }
+  ],
+  "region_softness_stops": 0.5,
+  "tiled": false
+}

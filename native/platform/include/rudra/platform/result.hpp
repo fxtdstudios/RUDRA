@@ -20,6 +20,7 @@ enum class ErrorCode {
     IntegrityError,     // a hash did not match
     BackendError,       // an inference runtime failed
     ParityError,        // a result disagreed with its golden beyond tolerance
+    Busy,               // someone else holds it (a queue already running)
 };
 
 const char* to_string(ErrorCode code) noexcept;

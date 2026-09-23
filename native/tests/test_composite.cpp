@@ -195,7 +195,7 @@ TEST_P(PerFrame, AnalyzeFrame) {
     const FrameStats s = analyze_frame(nits);
     const auto& w = a.at("stats");
     EXPECT_NEAR(s.min_nits, w.at("min_nits").get<double>(), 1e-9);
-    EXPECT_NEAR(s.avg_nits, w.at("avg_nits").get<double>(), 1e-9 * w.at("avg_nits").get<double>());
+    EXPECT_EQ(s.avg_nits, w.at("avg_nits").get<double>());   // numpy pairwise sum, reproduced
     EXPECT_DOUBLE_EQ(s.max_nits, w.at("max_nits").get<double>());
     expect_close(s.maxscl_nits, w.at("maxscl_nits").get<std::vector<double>>(), 0.0, 0.0, "maxscl");
     expect_close(s.percentiles_nits, w.at("percentiles_nits").get<std::vector<double>>(), 1e-12, 1e-12, "percentiles");

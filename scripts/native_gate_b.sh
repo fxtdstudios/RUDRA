@@ -22,8 +22,8 @@ STAMP=$(date +%Y-%m-%d_%H%M)
 mkdir -p "$DEPS" reports
 
 case "$(uname -s)" in
-  Darwin) HOST=mac; ARCH=clang_64; QT_DIR=macos; RUNS="metal:p3 metal:scrgb" ;;
-  Linux)  HOST=linux; ARCH=linux_gcc_64; QT_DIR=gcc_64; RUNS="vulkan:scrgb vulkan:hdr10 gl:scrgb" ;;
+  Darwin) HOST=mac; ARCH=clang_64; QT_DIR=macos; RUNS="metal:p3 metal:scrgb"; PARITY_APIS="metal gl" ;;
+  Linux)  HOST=linux; ARCH=linux_gcc_64; QT_DIR=gcc_64; RUNS="vulkan:scrgb vulkan:hdr10 gl:scrgb"; PARITY_APIS="vulkan gl" ;;
   *) echo "use scripts/NATIVE_GATE_B.ps1 on Windows" >&2; exit 2 ;;
 esac
 QT_ROOT="$DEPS/Qt/$QT_VERSION/$QT_DIR"
@@ -39,8 +39,9 @@ GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
 cmake -S native -B build/native_gate_b "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release \
   -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
   -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" >/dev/null
-cmake --build build/native_gate_b --target rudra-hdr-probe --parallel
+cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity --parallel
 EXE=build/native_gate_b/render/probe/rudra-hdr-probe
+PARITY=build/native_gate_b/render/probe/rudra-gpu-parity
 
 status=1
 printf "\n%-8s %-6s %-6s %8s %8s %8s  %s\n" API ASKED GOT 203 1000 2000 VERDICT
@@ -61,4 +62,16 @@ PY
   fi
 done
 echo; echo "Reports in reports/. PASS is the swapchain half of the gate; confirm on the glass."
+
+echo; echo "== GPU composite parity (day 8)"
+for api in $PARITY_APIS; do
+  code=0
+  outp=$("$PARITY" --api "$api" --report "reports/native_gpu_parity_${api}_${STAMP}.json" --bench 2>&1) || code=$?
+  printf '%s\n' "$outp" | grep -E "^GPU composite|=>|^  [0-9]+x[0-9]+ " || true
+  case $code in
+    0) ;;
+    2) echo "  $api: not available here" ;;
+    *) echo "  $api: FAIL"; status=1 ;;
+  esac
+done
 exit $status

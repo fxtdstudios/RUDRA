@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QOffscreenSurface>
 #include <QPlatformSurfaceEvent>
+#include <QScreen>
 #include <QTextStream>
 #include <QFloat16>
 
@@ -15,6 +16,14 @@
 #include <cstring>
 
 #include "rudra/render/viewer_backend.hpp"
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX   // windows.h (via dxgi) would otherwise turn std::max into a macro
+#endif
+#include <dxgi1_6.h>
+#pragma comment(lib, "dxgi.lib")
+#endif
 
 namespace rudra::probe {
 namespace {
@@ -45,6 +54,48 @@ QString format_name(QRhiSwapChain::Format f) {
     }
     return "?";
 }
+
+#ifdef Q_OS_WIN
+// What Windows itself says about the output under the window, straight from
+// DXGI: the colour space is G2084/P2020 only when "Use HDR" is on for it.
+// Independent of Qt, so a FAIL can be told apart from a probe bug.
+QJsonObject dxgi_output_for(const QRect& screen_geometry) {
+    QJsonObject out;
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return out;
+    IDXGIAdapter1* adapter = nullptr;
+    for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+        IDXGIOutput* output = nullptr;
+        for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+            IDXGIOutput6* output6 = nullptr;
+            if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
+                DXGI_OUTPUT_DESC1 d{};
+                if (SUCCEEDED(output6->GetDesc1(&d))) {
+                    const RECT r = d.DesktopCoordinates;
+                    const QRect g(r.left, r.top, r.right - r.left, r.bottom - r.top);
+                    if (out.isEmpty() || g.intersects(screen_geometry)) {
+                        const bool hdr = d.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
+                        out = QJsonObject{};
+                        out["device"] = QString::fromWCharArray(d.DeviceName);
+                        out["color_space"] = hdr ? "G2084_P2020 (HDR on)"
+                                           : d.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709 ? "G22_P709 (HDR off)"
+                                           : QString::number(int(d.ColorSpace));
+                        out["windows_hdr_on"] = hdr;
+                        out["max_luminance"] = d.MaxLuminance;
+                        out["max_full_frame_luminance"] = d.MaxFullFrameLuminance;
+                        out["bits_per_color"] = int(d.BitsPerColor);
+                    }
+                }
+                output6->Release();
+            }
+            output->Release();
+        }
+        adapter->Release();
+    }
+    factory->Release();
+    return out;
+}
+#endif
 
 QString texture_format_name(QRhiTexture::Format f) {
     switch (f) {
@@ -230,6 +281,15 @@ bool HdrProbeWindow::init() {
         supported[format_name(f)] = sc_->isFormatSupported(f);
     report_["formats_supported"] = supported;
     report_["format"] = format_name(format_);
+    if (const QScreen* sc = screen()) {
+        report_["screen"] = sc->name();
+        report_["screen_model"] = sc->model();
+#ifdef Q_OS_WIN
+        const qreal dpr = sc->devicePixelRatio();
+        const QRect native_geometry(sc->geometry().topLeft() * dpr, sc->geometry().size() * dpr);
+        report_["windows_output"] = dxgi_output_for(native_geometry);
+#endif
+    }
     return true;
 }
 
@@ -276,9 +336,28 @@ void HdrProbeWindow::update_encoding() {
     hdr["luminance_behavior"] = display_referred ? "display_referred" : "scene_referred";
     hdr["sdr_white_level"] = info.sdrWhiteLevel;
     if (format_ == QRhiSwapChain::SDR) {
-        // Qt reports placeholder limits for an SDR swapchain; do not draw them.
-        hdr["note"] = "SDR swapchain: these are Qt's defaults, not the display's";
+        // No peak tick on an SDR card. What the limits mean depends on the
+        // API: OpenGL and Vulkan report Qt's placeholders (1000 / 0 / 200),
+        // D3D reports the display's own DXGI numbers even with HDR off.
+        const bool placeholder = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits &&
+                                 info.limits.luminanceInNits.maxLuminance == 1000.0f &&
+                                 info.limits.luminanceInNits.minLuminance == 0.0f;
         peak_nits_ = 0.0f;
+        if (placeholder) {
+            hdr["note"] = "SDR swapchain: Qt's placeholder limits, not the display's";
+        } else {
+            hdr["note"] = "the display reports these limits, but no HDR swapchain format is available on it";
+            const QJsonObject wo = report_.value("windows_output").toObject();
+            if (wo.value("windows_hdr_on").toBool()) {
+                report_["hint"] = "Windows says HDR is ON for this output, yet Qt offered no HDR swapchain format. "
+                                  "That points at the probe or the driver, not the settings: send the report JSON.";
+            } else {
+                report_["hint"] =
+                    "The display this window opened on is not in HDR mode. Windows: Settings > System > Display, "
+                    "select that display, turn on Use HDR (or press Win+Alt+B), then run again (--screen N picks "
+                    "another display). macOS: run on the XDR panel or an HDR display with High Dynamic Range on.";
+            }
+        }
     }
     report_["hdr_info"] = hdr;
 

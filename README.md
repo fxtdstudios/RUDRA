@@ -382,7 +382,7 @@ The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against; the state before that work
 is tagged `webui-v1`.
 
-Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
+Progress: Phase 0 closed 23 Sep 2026, GO for Phase 1 on Windows; the Mac runs are open.
 - [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
   with eager; ONNX within tolerance)
 - [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
@@ -395,10 +395,31 @@ Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
 - [x] Measurements in C++: MaxRGB stats, MaxCLL/MaxFALL, the Studio QC numbers
 - [x] Gate B probe: `rudra-hdr-probe` on QRhi, with `scripts/NATIVE_GATE_B.ps1`
   (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
-- [ ] Gate A on the 429 bench frames and on CUDA / DirectML / MPS / Core ML
-  (`scripts/NATIVE_GATE_A.ps1`)
-- [ ] Gate B on the glass: a Windows HDR display and an XDR display
-- [ ] Composite shader in GLSL 440 with readback parity (day 8)
+- [x] Gate A on Windows GPUs: LibTorch CUDA (true fp32) and ONNX Runtime
+  DirectML pass on an RTX 4080 SUPER (`scripts/NATIVE_GATE_A.ps1`)
+- [ ] Gate A on the 429 bench frames, MPS and Core ML
+- [x] Gate B on Windows: D3D12 scRGB and HDR10 carry 1 000 and 2 000 nits to
+  the swapchain on an HDR display
+- [ ] Gate B on an XDR Mac (Metal EDR)
+- [x] Composite shader in GLSL 440 on QRhi, read back against the C++
+  composite (`rudra-gpu-parity`): passes on D3D12, D3D11, Vulkan and OpenGL
+  (RTX 4080 SUPER, fp16 within 1 half-float ulp)
+- [ ] GPU composite parity on Metal
+- [x] Budgets recorded: composite 0.11 ms at 1080p and 0.51 ms at 4K,
+  inference 150 to 172 ms at 1080p fp32
+- [x] Phase 0 go/no-go: GO on Windows, macOS on its three runs (`STATUS.md`)
+
+Next, Phase 1 (librudra, 15 days; plan in
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 14):
+- [x] One golden harness across every emitter (`tools/emit_golden.py`), re-run in CI
+- [x] Still decode (PNG, JPEG, TIFF, BMP, WebP) bit-exact with `rudra/decode.py`
+- [x] Grade controls, HDR10/HLG, metadata sidecars, EXR/ACES/OCIO writers:
+  sidecars, EXRs and the OCIO config byte-identical with the Python
+- [x] `rudra-native master`: a Studio-identical master EXR with no Python
+  (within 1 half-float ulp, same header and sidecar, on both runtimes)
+- [x] QC, queue, sequence open: same report text, byte-identical queue state
+  resumable from either side, same frame order and messages
+- [ ] CI green on three OSes
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

@@ -17,13 +17,14 @@ inline constexpr double kLogHistLo = -14.0, kLogHistHi = 21.0;
 
 // MaxRGB statistics of one frame in absolute nits.
 struct FrameStats {
+    int index = 0;
     double min_nits = 0.0, avg_nits = 0.0, max_nits = 0.0;
     std::array<double, 3> maxscl_nits{};
     std::array<double, kStatPercentiles.size()> percentiles_nits{};
     std::array<double, kLogHistBins> log_hist{};    // fraction of pixels per bin
 };
 
-FrameStats analyze_frame(const NitsFrame& nits);
+FrameStats analyze_frame(const NitsFrame& nits, int index = 0);
 
 // CTA-861.3 static metadata: ceil of the brightest frame's MaxRGB peak and of
 // the brightest frame-average MaxRGB.

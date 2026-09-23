@@ -1,0 +1,138 @@
+{
+  "JSONInfo": {
+    "Generator": "RUDRA delivery",
+    "Version": "1.0",
+    "Units": "cd/m2"
+  },
+  "SceneInfoSummary": {
+    "SceneFirstFrameIndex": [
+      0,
+      5,
+      9
+    ],
+    "SceneFrameNumbers": [
+      5,
+      4,
+      3
+    ]
+  },
+  "SceneInfo": [
+    {
+      "SceneId": 0,
+      "SceneFirstFrameIndex": 0,
+      "SceneFrameNumbers": 5,
+      "TargetedSystemDisplayMaximumLuminance": 400,
+      "LuminanceParameters": {
+        "Units": "cd/m2",
+        "AverageMaxRGB": 828.6442292166015,
+        "MaxSCL": [
+          28773.88834742645,
+          40856.908603763855,
+          46285.76441118458
+        ],
+        "LuminanceDistributions": {
+          "DistributionIndex": [
+            1.0,
+            5.0,
+            10.0,
+            25.0,
+            50.0,
+            75.0,
+            90.0,
+            95.0,
+            99.98
+          ],
+          "DistributionValues": [
+            0.5551582660323937,
+            2.3708193079248328,
+            5.107318854230303,
+            18.310100065008104,
+            84.04158665377693,
+            413.15579583785825,
+            1432.9277537291357,
+            3545.951043129053,
+            45747.30315099995
+          ]
+        }
+      }
+    },
+    {
+      "SceneId": 1,
+      "SceneFirstFrameIndex": 5,
+      "SceneFrameNumbers": 4,
+      "TargetedSystemDisplayMaximumLuminance": 400,
+      "LuminanceParameters": {
+        "Units": "cd/m2",
+        "AverageMaxRGB": 22141.450194113182,
+        "MaxSCL": [
+          996446.2454786268,
+          1058940.8862798228,
+          1792466.1070785401
+        ],
+        "LuminanceDistributions": {
+          "DistributionIndex": [
+            1.0,
+            5.0,
+            10.0,
+            25.0,
+            50.0,
+            75.0,
+            90.0,
+            95.0,
+            99.98
+          ],
+          "DistributionValues": [
+            12.034585780759782,
+            57.31828204308793,
+            156.97371576960333,
+            659.2337590335987,
+            3004.0969081686826,
+            10452.453618737025,
+            42873.76439704392,
+            75390.59877323793,
+            1731490.9856799988
+          ]
+        }
+      }
+    },
+    {
+      "SceneId": 2,
+      "SceneFirstFrameIndex": 9,
+      "SceneFrameNumbers": 3,
+      "TargetedSystemDisplayMaximumLuminance": 400,
+      "LuminanceParameters": {
+        "Units": "cd/m2",
+        "AverageMaxRGB": 9.544180422829536,
+        "MaxSCL": [
+          1751.2725175301252,
+          1639.5245599943596,
+          1415.048899195907
+        ],
+        "LuminanceDistributions": {
+          "DistributionIndex": [
+            1.0,
+            5.0,
+            10.0,
+            25.0,
+            50.0,
+            75.0,
+            90.0,
+            95.0,
+            99.98
+          ],
+          "DistributionValues": [
+            0.004005042649846338,
+            0.017249295455719318,
+            0.037130551706740504,
+            0.16440114518047447,
+            0.4834825287368334,
+            2.8127785278166204,
+            8.866029954868807,
+            20.965592573489594,
+            1636.4800259384801
+          ]
+        }
+      }
+    }
+  ]
+}

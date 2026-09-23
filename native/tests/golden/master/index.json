@@ -1,0 +1,66 @@
+{
+  "oracle": "ui/server.py _render_master",
+  "checkpoint": "sdr2hdr_shadow_v1.pt",
+  "cases": [
+    {
+      "name": "default",
+      "image": "still_png8.png",
+      "params": {
+        "checkpoint": "sdr2hdr_shadow_v1.pt"
+      },
+      "exr": "case_default.exr",
+      "sidecar": "case_default.json",
+      "maxcll": 2022,
+      "maxfall": 230
+    },
+    {
+      "name": "graded_linear",
+      "image": "still_png16.png",
+      "params": {
+        "checkpoint": "sdr2hdr_shadow_v1.pt",
+        "regions": [
+          {
+            "label": "highlights",
+            "low_nits": 400.0,
+            "high_nits": 2000.0,
+            "ev": 0.6
+          },
+          {
+            "label": "speculars",
+            "low_nits": 2000.0,
+            "high_nits": 8000.0,
+            "ev": -0.4
+          },
+          {
+            "label": "shadows",
+            "low_nits": 0.05,
+            "high_nits": 12.0,
+            "ev": 0.8
+          }
+        ],
+        "region_softness_stops": 0.5,
+        "container": "linear"
+      },
+      "exr": "case_graded_linear.exr",
+      "sidecar": "case_graded_linear.json",
+      "maxcll": 2387,
+      "maxfall": 250
+    },
+    {
+      "name": "plain_highlights",
+      "image": "still_q95.jpg",
+      "params": {
+        "checkpoint": "sdr2hdr_shadow_v1.pt",
+        "anchor": false,
+        "carry_chroma": false,
+        "recovery_mode": "highlights",
+        "strength": 1.4,
+        "preserve_outside": false
+      },
+      "exr": "case_plain_highlights.exr",
+      "sidecar": "case_plain_highlights.json",
+      "maxcll": 3236,
+      "maxfall": 329
+    }
+  ]
+}

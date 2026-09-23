@@ -31,10 +31,37 @@ if(RUDRA_BUILD_TESTS)
   endif()
 endif()
 
+set(RUDRA_TORCH_ROOT "" CACHE PATH
+    "LibTorch or pip torch folder (include/, lib/), imported without TorchConfig")
 if(RUDRA_WITH_LIBTORCH)
-  # LibTorch: the official archive, or the pip torch package
-  # (python -c "import torch; print(torch.utils.cmake_prefix_path)").
-  find_package(Torch REQUIRED CONFIG)
+  if(RUDRA_TORCH_ROOT)
+    # TorchConfig of a CUDA build calls enable_language(CUDA): it needs the
+    # CUDA toolkit, at torch's exact version, integrated with this compiler,
+    # to build a program that never compiles a line of CUDA. The runtime does
+    # not need any of it, so the libraries are imported directly here and the
+    # CUDA library is loaded on demand (infer/src/libtorch_backend.cpp).
+    find_path(RUDRA_TORCH_INCLUDE torch/script.h
+              PATHS "${RUDRA_TORCH_ROOT}/include" NO_DEFAULT_PATH REQUIRED)
+    set(_torch_libs "")
+    foreach(_lib torch torch_cpu c10)
+      find_library(RUDRA_TORCH_LIB_${_lib} NAMES ${_lib} PATHS "${RUDRA_TORCH_ROOT}/lib" NO_DEFAULT_PATH REQUIRED)
+      list(APPEND _torch_libs "${RUDRA_TORCH_LIB_${_lib}}")
+    endforeach()
+    add_library(rudra_torch INTERFACE)
+    target_include_directories(rudra_torch SYSTEM INTERFACE
+      "${RUDRA_TORCH_INCLUDE}" "${RUDRA_TORCH_INCLUDE}/torch/csrc/api/include")
+    target_link_libraries(rudra_torch INTERFACE ${_torch_libs})
+    if(NOT MSVC)
+      set(RUDRA_TORCH_CXX11_ABI 1 CACHE STRING "torch.compiled_with_cxx11_abi() of that torch")
+      target_compile_definitions(rudra_torch INTERFACE _GLIBCXX_USE_CXX11_ABI=${RUDRA_TORCH_CXX11_ABI})
+    endif()
+    set(TORCH_LIBRARIES rudra_torch)
+    message(STATUS "LibTorch imported from ${RUDRA_TORCH_ROOT} (no TorchConfig, no CUDA toolkit)")
+  else()
+    # LibTorch: the official archive, or the pip torch package
+    # (python -c "import torch; print(torch.utils.cmake_prefix_path)").
+    find_package(Torch REQUIRED CONFIG)
+  endif()
 endif()
 
 if(RUDRA_WITH_ONNXRUNTIME)

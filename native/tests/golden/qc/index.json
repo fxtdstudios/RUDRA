@@ -1,0 +1,492 @@
+{
+  "oracle": "rudra/qc.py",
+  "thresholds": "qc_reconstruction.json",
+  "cases": [
+    {
+      "name": "anchored",
+      "sdr": "anchored_sdr.npy",
+      "hdr": "anchored_hdr.npy",
+      "report_text": "anchored_report.txt",
+      "report": {
+        "verdict": "FAIL",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "PASS",
+            "value": 1.000000000166875,
+            "threshold": 1.05,
+            "detail": "1.000x on unclipped picture"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "PASS",
+            "value": 1.0,
+            "threshold": 0.75,
+            "detail": "100.0% within 1%"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "PASS",
+            "value": 7.797457056376576e-09,
+            "threshold": 0.008,
+            "detail": "median duv 0.0000"
+          },
+          {
+            "name": "clip_gain",
+            "status": "PASS",
+            "value": 2.998997483703725,
+            "threshold": 1.5,
+            "detail": "3.00x on 5.14% of px"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "PASS",
+            "value": 14.169958239619538,
+            "threshold": 5.0,
+            "detail": "14.2% relative variation"
+          },
+          {
+            "name": "hf_excess",
+            "status": "FAIL",
+            "value": 20.70871772506985,
+            "threshold": 2.5,
+            "detail": "16.0% actual vs 0.8% predicted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "lifted_nan",
+      "sdr": "lifted_nan_sdr.npy",
+      "hdr": "lifted_nan_hdr.npy",
+      "report_text": "lifted_nan_report.txt",
+      "report": {
+        "verdict": "FAIL",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "FAIL",
+            "value": 1.0,
+            "threshold": 0,
+            "detail": "1 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "FAIL",
+            "value": 2.0,
+            "threshold": 0,
+            "detail": "2 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "FAIL",
+            "value": "nan",
+            "threshold": 1.05,
+            "detail": "nanx on unclipped picture"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "FAIL",
+            "value": 0.0,
+            "threshold": 0.75,
+            "detail": "0.0% within 1%"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "FAIL",
+            "value": "nan",
+            "threshold": 0.008,
+            "detail": "median duv nan"
+          },
+          {
+            "name": "clip_gain",
+            "status": "PASS",
+            "value": 5.999572933179244,
+            "threshold": 1.5,
+            "detail": "6.00x on 5.14% of px"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "PASS",
+            "value": 14.095499447913518,
+            "threshold": 5.0,
+            "detail": "14.1% relative variation"
+          },
+          {
+            "name": "hf_excess",
+            "status": "FAIL",
+            "value": "nan",
+            "threshold": 2.5,
+            "detail": "nan% actual vs nan% predicted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "noisy_unclipped",
+      "sdr": "noisy_unclipped_sdr.npy",
+      "hdr": "noisy_unclipped_hdr.npy",
+      "report_text": "noisy_unclipped_report.txt",
+      "report": {
+        "verdict": "FAIL",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "PASS",
+            "value": 1.0001253204178266,
+            "threshold": 1.05,
+            "detail": "1.000x on unclipped picture"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "FAIL",
+            "value": 0.22158479741842954,
+            "threshold": 0.75,
+            "detail": "22.2% within 1%"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "FAIL",
+            "value": 0.014136483405989757,
+            "threshold": 0.008,
+            "detail": "median duv 0.0141"
+          },
+          {
+            "name": "clip_gain",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 1.5,
+            "detail": "only 0 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 5.0,
+            "detail": "only 0 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "hf_excess",
+            "status": "FAIL",
+            "value": 4.114167648390447,
+            "threshold": 2.5,
+            "detail": "3.7% actual vs 0.9% predicted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tiny",
+      "sdr": "tiny_sdr.npy",
+      "hdr": "tiny_hdr.npy",
+      "report_text": "tiny_report.txt",
+      "report": {
+        "verdict": "FAIL",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 1.05,
+            "detail": "only 2095 unclipped px -- nothing to compare"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 0.75,
+            "detail": "no unclipped sample"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 0.008,
+            "detail": "no unclipped sample"
+          },
+          {
+            "name": "clip_gain",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 1.5,
+            "detail": "only 109 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 5.0,
+            "detail": "only 109 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "hf_excess",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 2.5,
+            "detail": "only 428 flat px -- noise cannot be measured"
+          }
+        ]
+      }
+    },
+    {
+      "name": "identity_unclipped",
+      "sdr": "identity_unclipped_sdr.npy",
+      "hdr": "identity_unclipped_hdr.npy",
+      "report_text": "identity_unclipped_report.txt",
+      "report": {
+        "verdict": "FAIL",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "PASS",
+            "value": 0.9999999996721537,
+            "threshold": 1.05,
+            "detail": "1.000x on unclipped picture"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "PASS",
+            "value": 1.0,
+            "threshold": 0.75,
+            "detail": "100.0% within 1%"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "PASS",
+            "value": 7.909671725907967e-09,
+            "threshold": 0.008,
+            "detail": "median duv 0.0000"
+          },
+          {
+            "name": "clip_gain",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 1.5,
+            "detail": "only 0 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "UNMEASURED",
+            "value": null,
+            "threshold": 5.0,
+            "detail": "only 0 clipped px -- recovery cannot be judged"
+          },
+          {
+            "name": "hf_excess",
+            "status": "PASS",
+            "value": 1.0431474962210119,
+            "threshold": 2.5,
+            "detail": "0.9% actual vs 0.9% predicted"
+          }
+        ]
+      }
+    },
+    {
+      "name": "clean_pass",
+      "sdr": "clean_pass_sdr.npy",
+      "hdr": "clean_pass_hdr.npy",
+      "report_text": "clean_pass_report.txt",
+      "report": {
+        "verdict": "PASS",
+        "checks": [
+          {
+            "name": "nan",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 NaN sample(s)"
+          },
+          {
+            "name": "inf",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 Inf sample(s)"
+          },
+          {
+            "name": "negative",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0,
+            "detail": "0 negative sample(s)"
+          },
+          {
+            "name": "at_ceiling_pct",
+            "status": "PASS",
+            "value": 0.0,
+            "threshold": 0.01,
+            "detail": "0.0000% pinned at 40000 nits"
+          },
+          {
+            "name": "do_no_harm_median",
+            "status": "PASS",
+            "value": 0.9999999999639926,
+            "threshold": 1.05,
+            "detail": "1.000x on unclipped picture"
+          },
+          {
+            "name": "do_no_harm_within_1pct",
+            "status": "PASS",
+            "value": 1.0,
+            "threshold": 0.75,
+            "detail": "100.0% within 1%"
+          },
+          {
+            "name": "chroma_shift_uv",
+            "status": "PASS",
+            "value": 7.723587687979773e-09,
+            "threshold": 0.008,
+            "detail": "median duv 0.0000"
+          },
+          {
+            "name": "clip_gain",
+            "status": "PASS",
+            "value": 1.6665367578392265,
+            "threshold": 1.5,
+            "detail": "1.67x on 5.13% of px"
+          },
+          {
+            "name": "clip_structure_pct",
+            "status": "PASS",
+            "value": 36.4550916948199,
+            "threshold": 5.0,
+            "detail": "36.5% relative variation"
+          },
+          {
+            "name": "hf_excess",
+            "status": "PASS",
+            "value": 1.2331242097927808,
+            "threshold": 2.5,
+            "detail": "0.9% actual vs 0.7% predicted"
+          }
+        ]
+      }
+    }
+  ]
+}

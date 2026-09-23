@@ -14,7 +14,7 @@ to the same goldens:
 |---|---|---|---|
 | `SDR2HDRNet.forward` tail + `rudra/delivery`, `rudra/anchor.py`, `rudra/chroma.py` | fp32 / fp64 | Python | the oracle (P4) |
 | `native/core` `composite.cpp`, `master.cpp`, `measure.cpp` | fp32 / fp64 | C++ | CPU path, reference for the shader |
-| `ui/compositor.js` (GLSL ES), the native viewer shader (GLSL 440, day 8) | fp16/fp32 | GPU | the live viewer |
+| `ui/compositor.js` (GLSL ES), `native/render/shaders/composite.frag` (GLSL 440, through QRhi) | fp16/fp32 | GPU | the live viewer |
 
 Goldens: `tools/emit_composite_golden.py` writes
 `native/tests/golden/composite/` from the Python functions themselves;
@@ -133,7 +133,8 @@ over all channel values, share of values above 203 x (1 + 1e-6) and above
 | Matrices | 1e-13 absolute | inverse by cofactors vs LAPACK |
 | analyze_frame | exact (histogram, MaxSCL, max), 1e-12 (percentiles) | |
 | Studio measure | half the page's rounding step | the oracle is the rounded dict |
-| GPU shader vs C++ (day 8) | 2 half-float ulp | the viewer renders in fp16 |
+| GPU shader vs C++, RGBA32F target (day 8) | atol 1e-6, rtol 2e-4 (network units) | GPU `exp`, `log`, `pow` are not correctly rounded; measured 2.1e-6 worst on llvmpipe |
+| GPU shader vs C++, RGBA16F target (day 8) | 2 half-float ulp | the viewer renders in fp16; measured 1 ulp on llvmpipe |
 
 ## 7. Not in the composite
 

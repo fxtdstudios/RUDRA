@@ -410,16 +410,26 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | [Phase 0] |
-| composite + view, 4K, GPU | ≤ 12 ms | [Phase 0] |
-| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | [Phase 0] |
-| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | [Phase 0] |
+| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; the view pass is Phase 2 |
+| composite + view, 4K, GPU | ≤ 12 ms | composite pass 0.505 ms (D3D12), 0.508 (Vulkan), 0.507 (D3D11), 0.366 (OpenGL) |
+| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
+| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
 | first frame after open (warm) | ≤ 2 s | [Phase 0] |
 | scrub to cached frame | ≤ 1 display frame | [Phase 0] |
 
 Instrumentation: Tracy zones on every actor message and GPU timer queries on
 every render pass (QRhi GPU timestamps), from the first commit.
+
+Read of the numbers (23 Sep 2026): the composite is 35 times inside its 1080p
+budget and 24 times inside its 4K budget, so every control runs at display
+rate with room for the view pass and scopes. Inference is the only cost that
+matters and it is paid once per frame, not per slider move: 150 to 170 ms at
+1080p untiled on the RTX 4080 SUPER in true fp32. Tiling costs 1.7x on CUDA and
+3.3x on DirectML (per-call overhead on twelve 512 tiles), so tiles are for
+memory, not for speed, as the Studio already treats them. A reduced-precision
+path (fp16/bf16, own tolerance, never the default) is the first speed item in
+Phase 1.
 
 ---
 
@@ -520,13 +530,13 @@ later phase builds on.
 | 1 | `tools/export_model.py`: `frame_pass` + `tile_pass` as TorchScript **and** ONNX, `manifest.json`, 16 golden frames | both reloaded graphs match eager on the 16 frames, max abs ≤ 1e-6 | **done** 23 Sep: TorchScript max \|d\| 0.0, ONNX 5.9e-5 on the shipped model; an all-heads model also passes |
 | 2 | `native/` CMake + vcpkg skeleton (Qt with Shader Tools, ONNX Runtime, LibTorch), empty targets, dependency-rule check, CI on Windows/macOS/Linux | three green builds | **done** 23 Sep: 18 GoogleTests green; Qt shell builds and starts; CI in `.github/workflows/native.yml` |
 | 3 | `rudra_infer`: `InferenceBackend`, LibTorch CPU + ORT CPU, tiling + overlap blend | `rudra-native diff` runs on 1 frame on both | **done early** 23 Sep: LibTorch and ORT CPU backends; the tiler is bit-exact with `predict_fields` |
-| 4 | Model parity on the 429 bench frames: CPU fp32 on both runtimes, then CUDA, DirectML, MPS, Core ML | **Gate A:** ≤ 1e-5 log-space on CPU for both; every GPU backend's delta recorded | **CPU half done** 23 Sep: golden frames pass in C++ on both runtimes; 429-frame bench and GPU backends open |
-| 5 | QRhi HDR spike: a bare `QRhi` window on Windows (D3D12, `HDRExtendedSrgbLinear`) and macOS (Metal, `HDRExtendedDisplayP3Linear`), 1 000-nit patch; Linux Vulkan probed | **Gate B:** patch measured above SDR white on Windows and on an XDR display | **probe done** 23 Sep: `rudra-hdr-probe` (Qt 6.8, QRhi) reads the swapchain back and reports; verified to report its SDR fallback as FAIL; `scripts/NATIVE_GATE_B.ps1` and `native_gate_b.sh` run it; the HDR displays are open |
+| 4 | Model parity on the 429 bench frames: CPU fp32 on both runtimes, then CUDA, DirectML, MPS, Core ML | **Gate A:** ≤ 1e-5 log-space on CPU for both; every GPU backend's delta recorded | **Windows done** 23 Sep, RTX 4080 SUPER: LibTorch CPU 1.2e-7, LibTorch CUDA 1.4e-5 (true fp32, TF32 off; `gpu_fp32` bound 5e-5 + 1e-5 \|ref\|), ONNX Runtime CPU 5.8e-5, DirectML 3.3e-6; the 429-frame bench, MPS and Core ML open |
+| 5 | QRhi HDR spike: a bare `QRhi` window on Windows (D3D12, `HDRExtendedSrgbLinear`) and macOS (Metal, `HDRExtendedDisplayP3Linear`), 1 000-nit patch; Linux Vulkan probed | **Gate B:** patch measured above SDR white on Windows and on an XDR display | **Windows passes** 23 Sep: `rudra-hdr-probe` (Qt 6.8, QRhi) on an RTX 4080 SUPER and an ASUS PA279CRV (418-nit peak, SDR white 240): D3D12 scRGB 203 / 1 000 / 2 000 nits exact, D3D12 HDR10 202.9 / 998.9 / 1 991.8 (10-bit PQ), D3D11 scRGB exact; the SDR fallback reports FAIL. XDR Mac open |
 | 6 | `core/color` types, `ColorEncoding`, `Image<Space>`, units; baseline port + golden | golden passes on 3 OSes |  |
 | 7 | `composite.spec.md` written from `compositor.js`, `composite.cpp`, golden vs browser Studio readback | exact on 5 test frames | **done** 23 Sep: [`composite.spec.md`](composite.spec.md); `composite.cpp` matches `predict_image` on 5 mode/strength/preserve cases on 2 frames (rtol 2e-4), Region EV and the whole master chain to AP0 match `_render_master` stage by stage; browser readback moves to day 8 with the shader |
-| 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend |  |
-| 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled | **port done** 23 Sep: `analyze_frame`, MaxCLL/MaxFALL and the Studio `measure()` match the Python; Tracy and GPU timestamps open |
-| 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` |  |
+| 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend | **Windows done** 23 Sep: `render/shaders/composite.frag`, `GpuCompositor`, `rudra-gpu-parity`; on an RTX 4080 SUPER D3D12 (fp32 3.0e-6), D3D11, Vulkan and OpenGL (1.7e-6) all pass with fp16 at 1 half ulp, 12 cases each; llvmpipe passes too. Metal open |
+| 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled | **port done** 23 Sep: `analyze_frame`, MaxCLL/MaxFALL and the Studio `measure()` match the Python; timing in place: `rudra-native bench` (inference) and `rudra-gpu-parity --bench` (composite pass, QRhi GPU timestamps), run by both gate scripts; §6.6 numbers from the Windows run; Tracy open |
+| 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` | **done** 23 Sep: GO for Phase 1 on Windows; macOS conditional on its three gates (`STATUS.md`, line F) |
 
 If Gate A fails, the fix is in the export (usually a traced branch or a
 dtype, or for ONNX an op that needs rewriting in the wrapper); nothing else
@@ -535,7 +545,24 @@ and HDR-out follows; the renderer does not change.
 
 ---
 
-## 13. Decisions to record as ADRs before day 3
+## 13. Decisions, recorded as ADRs
+
+Status after the Phase 0 review, 23 Sep 2026. Accepted means the Phase 0
+evidence supports it; accepted, not yet exercised means nothing in Phase 0
+could test it and it stands until Phase 1 does.
+
+| ADR | Status | Evidence |
+|---|---|---|
+| 001 | accepted | both graphs exported and verified; TorchScript bit-exact, ONNX 5.8e-5 |
+| 002 | accepted | Qt 6.8.3 builds the probe and the GPU composite on MSVC (VS 2026 Build Tools), GCC and, for the Windows headers, MinGW |
+| 003 | accepted | the composite passes readback parity on D3D12, D3D11, Vulkan and OpenGL; Metal open |
+| 004 | accepted | four Windows backends pass Gate A; TF32 off by default on CUDA |
+| 005 | accepted | scRGB and HDR10 carry 1 000 and 2 000 nits to the swapchain; the SDR fallback reports FAIL |
+| 006 | accepted, not yet exercised | decode is Phase 1 |
+| 007 | accepted | contract 1.0 read and verified by `rudra-native`; `gpu_fp32` added without a major bump |
+| 008 | accepted | `queue.json` state written byte-identical by both sides and resumed across them (Phase 1 step 9) |
+| 009 | accepted | Windows DX12 on an RTX 4080 SUPER measured; the Apple Silicon row waits on the Mac run |
+
 
 1. **ADR-001** Model package carries TorchScript and ONNX; AOTInductor and
    TensorRT are later speed backends, never the only format.
@@ -554,3 +581,42 @@ and HDR-out follows; the renderer does not change.
 8. **ADR-008** `queue.json` and sidecar stay byte-compatible with Python.
 9. **ADR-009** Supported hardware: Apple Silicon only on macOS; DX12 GPUs on
    Windows; the Linux GPU and compositor matrix for HDR.
+
+---
+
+## 14. Phase 1: librudra, the next fifteen working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): every Python module the product
+depends on exists in C++ and passes its golden test on three OSes, ending in a
+master EXR rendered with no Python on the machine. Same rules as Phase 0: the
+Python is the oracle, each module lands with its goldens and tests, the README
+is ticked in the same commit.
+
+Already ported in Phase 0: baseline, tiling, composite, Region EV, anchor,
+chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
+`measure`.
+
+| # | Deliverable | Oracle | Done when | Days | Status |
+|---|---|---|---|---|---|
+| 1 | One golden harness: `tools/emit_golden.py` runs every emitter; CI re-emits on all three OSes and runs the native tests against fresh arrays | the emitters | a Python change that moves a number fails CI | 0.5 | **done** 23 Sep: `tools/emit_golden.py` (core, composite, decode, delivery, master, qc, queue, sequence); CI re-emits on Linux and fails on any drift in the exact goldens; macOS and Windows re-emit in step 11 |
+| 2 | Still decode in `media/`: PNG 8/16-bit (grey, alpha, palette), JPEG, TIFF 8/16/float, BMP, WebP; bit depth, padded-16-bit detection and distinct codes reported; scene-linear float refused | `rudra/decode.py` `decode_sdr` | same float pixels, bits and refusals on a fixture set of every format and depth | 2 | **done** 23 Sep: `media/still.cpp` on OpenCV imgcodecs, the decoder the Python uses; 17 fixtures bit-exact, JPEG included, across OpenCV 4.6 (C++) and 4.13 (Python). EXR dropped: the Python refuses it too |
+| 3 | Grade controls: exposure, highlight desaturation, shoulder to peak, `apply_grade`, `itm_strength_map` | `rudra/delivery/controls.py` | golden arrays, rtol 1e-12 | 1 | **done** 24 Sep: `core/grade.cpp`; four grades within 2e-7 of the float32 output (numpy's SIMD `exp` is the only difference), the strength map exact |
+| 4 | HDR10 and profiles: PQ OETF/EOTF, `master_to_peak`, `master_to_pq`, delivery profiles | `rudra/hdr10.py`, `delivery/profiles.py` | golden arrays; PQ codes exact at 10 and 12 bit | 1 | **done** 24 Sep: `core/hdr10.cpp`, every profile incl. HLG; 12-bit PQ codes exact on 407 levels; float PQ within 2e-5 of code (numpy's float32 `power` is 1 ulp off where glibc is correctly rounded, and PQ's 78.84 exponent amplifies it: a fiftieth of a 10-bit step) |
+| 5 | Metadata writers: `detect_shots`, `l1_per_shot`, Dolby Vision generate JSON, HDR10+ JSON, the RUDRA sidecar | `delivery/metadata.py` | byte-identical JSON on a multi-shot fixture | 1.5 | **done** 24 Sep: `core/metadata.cpp`, `deliver/sidecars.cpp`, `platform/pyjson` (Python's `json.dumps` and `repr`) and numpy's pairwise sum; all three sidecars byte-identical on a 12-frame, 3-shot sequence |
+| 6 | EXR and ACES writers on OpenEXR: half pixels, chromaticities, provenance attributes, AP0 container | `delivery/exr.py`, `delivery/aces.py` | pixels exact after the half cast; every header attribute equal when read back by Python | 2 | **done** 24 Sep: `deliver/exr.cpp` writes the EXR directly, like the Python (no OpenEXR library needed); half, float, RGBA, ACES AP0 and ACEScg files and the OCIO config byte-identical; float16 rounding exact on 1 012 values incl. subnormals and overflow |
+| 7 | **`rudra-native master <package> <image> --out x.exr`**: decode, infer, composite, master chain, measure, EXR, sidecar | `ui/server.py` `_render_master` | the same EXR within 1 half-float ulp and the same sidecar numbers as the Studio master, on three stills, no Python installed | 2 | **done** 24 Sep: `cli/master.cpp`, checked by `rudra-native master-check` (a ctest): three stills (8-bit PNG, 16-bit PNG, JPEG; default, graded linear, highlights-only unanchored) within 1 half ulp on LibTorch and ONNX Runtime (at most 0.8% of values one ulp off), every EXR header attribute equal, sidecars equal and byte-identical in two of three (the third's peak rounds 3235.5 vs 3235.6) |
+| 8 | QC: `check_frame`, thresholds file, report text | `rudra/qc.py` | same pass/fail and identical report text on the fixtures | 1.5 | **done** 24 Sep: `deliver/qc.cpp`; six fixtures walk every status (PASS, FAIL, UNMEASURED) of all ten checks and both verdicts; statuses equal, values within 1e-9 (1e-3 for the two blur-based ones, OpenCV's SIMD blur), report text byte-identical |
+| 9 | Queue: `queue.json` read, write, lock, atomic save, resume, artifact digests | `rudra/batch.py` | a queue started by Python resumes in C++ and the other way round | 1.5 | **done** 24 Sep: `deliver/queue.cpp`; a fresh run with a failing job and its `--retry-failed` resume write the Python's state files byte for byte, a Python-started state resumes here to the Python's final state, nine malformed queues refused with the same messages, one runner per queue (`busy`) |
+| 10 | Sequence open by path: frame folders and numbering rules (video frames wait for libav in Phase 4) | `ui/sequence.py` | same frame list and order on the fixture folders | 1 | **done** 24 Sep: `media/sequence.cpp`; same names, order and messages as `Sequence.open` on 14 cases (natural order across powers of ten, case, leading zeros, dot files, quoted and messy paths, empty and frameless folders); video recognised and refused until Phase 4 |
+| 11 | Review: CI green on Windows, macOS, Linux; Mac runs from Phase 0 folded in; Phase 1 exit written into `STATUS.md` | | every module passes its golden on three OSes | 1 | |
+
+New third-party code, none in the public headers (principle P6): OpenCV
+core and imgcodecs in `media/src` (`RUDRA_WITH_OPENCV`), chosen over separate
+PNG, JPEG and TIFF libraries because it is the decoder `rudra/decode.py` calls,
+so the two decode the same bytes to the same floats, quirks included (palette
+expansion, grey-alpha, 16-bit TIFF). No OpenEXR: the Python writes EXR itself and
+the port does the same, byte for byte. OCIO
+waits until a module needs it; nothing in this list does.
+
+Order: 1 first, then 2 to 6 in any order, 7 as soon as 2 and 6 land (it is the
+milestone that proves the port end to end), then 8 to 11.

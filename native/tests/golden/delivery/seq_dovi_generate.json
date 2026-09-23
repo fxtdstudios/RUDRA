@@ -1,0 +1,49 @@
+{
+  "cm_version": "V40",
+  "profile": "8.1",
+  "length": 12,
+  "level6": {
+    "max_display_mastering_luminance": 1000,
+    "min_display_mastering_luminance": 1,
+    "max_content_light_level": 1792467,
+    "max_frame_average_light_level": 23180
+  },
+  "shots": [
+    {
+      "start": 0,
+      "duration": 5,
+      "metadata_blocks": [
+        {
+          "Level": 1,
+          "min_pq": 212,
+          "max_pq": 4095,
+          "avg_pq": 2995
+        }
+      ]
+    },
+    {
+      "start": 5,
+      "duration": 4,
+      "metadata_blocks": [
+        {
+          "Level": 1,
+          "min_pq": 524,
+          "max_pq": 4095,
+          "avg_pq": 4095
+        }
+      ]
+    },
+    {
+      "start": 9,
+      "duration": 3,
+      "metadata_blocks": [
+        {
+          "Level": 1,
+          "min_pq": 29,
+          "max_pq": 3329,
+          "avg_pq": 1212
+        }
+      ]
+    }
+  ]
+}
