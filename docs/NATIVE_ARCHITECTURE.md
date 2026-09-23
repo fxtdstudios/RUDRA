@@ -1,0 +1,556 @@
+# RUDRA Native: architecture and design patterns
+
+> 23 Sep 2026. Companion to `docs/DESKTOP_APP_PLAN.md` (stack, phases, cost).
+> This document fixes **how** the native app is built: the layers, the types,
+> the threading model, the patterns, the numerics, and the first ten days.
+> Stack (revision 2 of this document): Qt 6 (Widgets), **QRhi** over Metal /
+> Direct3D 12 / Vulkan with an OpenGL fallback, C++20, **LibTorch + ONNX
+> Runtime**, OpenEXR, OpenColorIO, FFmpeg with hardware decode. Target UI: the
+> "Pro direction" boards on the design canvas. No platform is second-class: every
+> OS gets native GPU rendering, compute, HDR output and accelerated inference.
+
+---
+
+## 0. The one idea the whole design rests on
+
+The browser Studio already made the decision that matters, in `ui/server.py`
+`run_frame()`:
+
+> The fields the head produces (log residual and the two masks) do not depend
+> on recovery_mode, residual_strength or the grade.
+
+So the product is two pure functions and a cache between them:
+
+```
+fields    = infer(model, sdr_frame)                 # expensive, once per frame, GPU
+picture   = composite(sdr_frame, fields, params)    # cheap, every slider move
+```
+
+`infer` runs once per (frame, model). `composite` is a pure function of its
+inputs and runs every time a control moves, at display rate. Every design
+decision below serves one of three goals:
+
+1. keep `infer` off the UI's critical path,
+2. make `composite` exist **once as a specification** and **twice as code**
+   (GLSL for the viewer, compiled to every GPU API; C++ for masters and
+   measurement) with a parity test
+   that fails CI when they drift,
+3. make the native result provably equal to the Python result.
+
+---
+
+## 1. Principles
+
+| # | Principle | Consequence in code |
+|---|---|---|
+| P1 | **Units and colour encodings are types, not comments.** | `Image<Space>` tags; `Nits`, `Stops`, `SceneLinear` strong types; the 203-nit diffuse white defined once. A PQ buffer cannot be passed where scene-linear is expected; it does not compile. |
+| P2 | **Pure stages, immutable data.** | Frames, fields and params are immutable values shared by `shared_ptr<const T>`. Threads exchange values, never mutate shared state. |
+| P3 | **One composite, two backends, one parity test.** | `composite.spec.md` + `composite.cpp` + `composite.glsl`, tested pixel for pixel against each other and against Python goldens. |
+| P4 | **Python is the oracle until retired.** | Every core module ships with golden files emitted by the Python code. No module merges without passing its golden test on all three OSes. |
+| P5 | **Refuse, and say why.** | No silent fallbacks. Unknown colour tags, VFR, interlace, a model whose manifest does not match: typed error, shown to the user, same rules as `rudra.video`. |
+| P6 | **The core knows nothing about Qt, the GPU API or the GPU vendor.** | `librudra` builds and tests headless on a CI box with no display. |
+| P7 | **Every output is reproducible.** | Sidecar records model sha, params hash, app version, backend, precision. Same inputs, same bytes on CPU. |
+| P8 | **Measure before optimising.** | Performance budgets are set from the Phase 0 spike on the RTX 4080, not guessed; Tracy zones on every stage from day one. |
+| P9 | **Native on every OS, one source.** | One renderer on QRhi (Metal, D3D12, Vulkan, GL), one shader source compiled per API, one inference interface over several runtimes. Platform code lives only inside `render/` and `infer/` backends. |
+
+---
+
+## 2. Layers and the dependency rule
+
+```
+ ┌──────────────────────────────────────────────────────────────────┐
+ │ app/         Qt Widgets: windows, view models, design tokens     │  depends on ↓
+ ├──────────────────────────────────────────────────────────────────┤
+ │ engine/      Session, Scheduler, caches, jobs, undo              │
+ ├───────────────┬───────────────┬───────────────┬──────────────────┤
+ │ render/       │ infer/        │ media/        │ deliver/         │
+ │ QRhi viewer:  │ LibTorch +    │ readers (hw   │ encoders, QC,    │
+ │ Metal, D3D12, │ ONNX Runtime  │ decode),      │ queue            │
+ │ Vulkan, GL    │ backends      │ writers (EXR) │                  │
+ ├───────────────┴───────────────┴───────────────┴──────────────────┤
+ │ core/  (librudra) types, colour, baseline, composite (CPU),      │
+ │        measure, metadata, grade, sidecar, errors                 │
+ ├──────────────────────────────────────────────────────────────────┤
+ │ platform/    files, paths, hashing, threads, logging, clocks     │
+ └──────────────────────────────────────────────────────────────────┘
+ cli/  headless `rudra-native`: core + infer + media + deliver, no Qt
+```
+
+**Rule:** a layer may depend only on layers below it. Enforced three ways:
+CMake `target_link_libraries(... PRIVATE ...)` so headers do not leak upward;
+a CI script that fails if any file under `core/` includes `<Q`, `<rhi/` or a GPU API header,
+and if any file outside `render/` includes `<rhi/`;
+`cli/` must link without Qt.
+
+**Why this shape (the Apple habit):** AppKit apps that age well keep the model
+layer free of the UI framework. It is what lets the CLI, the tests, every GPU
+backend and a future ComfyUI/OFX plugin reuse the same core unchanged.
+
+---
+
+## 3. Domain model
+
+All value types. Cheap to copy or shared immutably. Hashable where they feed
+a cache key.
+
+### 3.1 Colour and units (`core/color`)
+
+```cpp
+enum class Transfer  { Srgb, Bt1886, Gamma24, Linear, Pq, Hlg };
+enum class Primaries { Rec709, Rec2020, P3D65, Ap0, Ap1 };
+enum class Range     { Full, Limited };
+
+struct ColorEncoding {            // what the numbers in a buffer mean
+    Transfer  transfer;
+    Primaries primaries;
+    Range     range;
+    float     nits_per_unit;      // 203 for scene-linear, 10000 for PQ-normalised
+    bool operator==(const ColorEncoding&) const = default;
+};
+
+namespace space {                  // compile-time tags for the common ones
+    struct SdrDisplay;             // sRGB/Rec.709 display-referred, [0,1]
+    struct SceneLinear709;         // linear, Rec.709 primaries, 1.0 = 203 nits
+    struct SceneLinear2020;
+    struct DisplayPq2020;
+}
+
+template <class Space> class Image;   // RGB float32 planar or interleaved, owns pixels
+struct Nits  { float v; };  struct Stops { float v; };
+inline constexpr Nits kDiffuseWhite{203.f};
+```
+
+`Image<Space>` conversions exist only as named functions
+(`to_scene_linear(const Image<SdrDisplay>&, Baseline)`), so every colour
+transform in the program is greppable and tested.
+
+### 3.2 Pipeline values
+
+| Type | Holds | Produced by | Notes |
+|---|---|---|---|
+| `SourceFrame` | SDR pixels as `Image<SdrDisplay>`, `ColorEncoding` of origin, timecode, frame index, content hash | `media::Reader` | hash = xxh3 of decoded pixels, the cache key root |
+| `FrameScalars` | `residual_scale`, `shadow_weight` (and future heads) | `infer` frame pass | computed **once per frame** from the whole frame, never per tile |
+| `Fields` | log residual RGB + highlight mask (fp16 RGBA), shadow mask (fp16 R), `FrameScalars`, model id | `infer` tile pass | invariant to every user control, exactly as today |
+| `GradeParams` | mode, residual strength, preserve outside masks, region EV qualifiers, display peak, container | UI edits | immutable, versioned, `hash()`; serialised identically into project, sidecar and queue |
+| `Composite` | `Image<SceneLinear2020>` fp32 | `composite()` | what masters and measurements read |
+| `Measurements` | MaxCLL, MaxFALL, peak, P99, share above 1 000 nits, share clipped, headroom stops | `core::measure` | CTA-861.3 maths ported from `rudra/delivery/metadata.py` |
+
+### 3.3 Documents and jobs
+
+| Type | Role |
+|---|---|
+| `Shot` | a clip or an image sequence opened by path; frame count, rate (rational), encoding, per-frame clip statistics for the timeline lane |
+| `Project` (`.rudraproj`, JSON, schema-versioned, relative paths) | shots, per-shot `GradeParams`, collections, render destinations |
+| `MasterJob` / `DeliveryJob` | frozen copy of `GradeParams` + model sha + preset + output path |
+| `Queue` | `queue.json` **byte-compatible with `rudra batch`**, same state file, same lock semantics |
+
+---
+
+## 4. Data flow
+
+```
+             media thread            infer thread (owns device session)   render thread (QRhi)
+ path ──► Reader.decode(i) ──► SourceFrame ──► FramePass ──► TilePass ──► Fields ─┐
+                 │                 │  (whole frame,      (512 px tiles,         │
+                 │                 │   ≤512 px view +     overlap, blend)        │
+                 │                 │   native stats)                             ▼
+                 │                 └──────────────► upload SDR texture   upload fields
+                 │                                                             │
+                 │                           GradeParams (UI, every edit) ────►│
+                 │                                                             ▼
+                 │                         composite shader → view transform → HDR/SDR swapchain
+                 │                                                             │
+                 │                                           scopes (compute) ◄┘
+                 ▼
+          deliver thread:  SourceFrame + Fields + frozen GradeParams
+                           → composite.cpp (fp32) → measure → EXR / ffmpeg pipe → QC → sidecar
+```
+
+- The viewer never waits for inference to redraw: a slider move re-runs only
+  the composite shader over resident textures.
+- The master never uses the GPU render path. It runs `composite.cpp` in fp32 so the
+  file on disk is independent of driver, GPU and display.
+- Measurements shown in the inspector come from `composite.cpp` on a
+  downsampled copy for interactivity and from the full frame on demand
+  ("Re-measure"), matching what the browser Studio does with `measure()`.
+
+---
+
+## 5. Design patterns, and why each one
+
+### 5.1 Pure pipeline + content-addressed cache (render graph, lite)
+
+Each stage is a pure function with a version number. Its result is cached
+under `hash(inputs..., stage_version, model_sha)`.
+
+```cpp
+struct FieldsKey { Hash frame; Hash model; uint32_t infer_version; Precision p; };
+LruCache<FieldsKey, shared_ptr<const Fields>> fields_cache{bytes_budget};
+```
+
+Why: seeking back is free, switching model is correct by construction (the key
+changes), and a stale result can never be displayed for the wrong frame. This
+is the Nuke/Resolve pattern scaled down to three stages; a general node graph
+is **not** built, because RUDRA's pipeline is fixed.
+
+Budget example, 4K frame: fields fp16 × 5 channels = 3840·2160·5·2 B ≈ 83 MB.
+A 16-frame read-ahead is ~1.3 GB of host RAM; VRAM holds the current frame and
+the next 2. Budgets are settings, sized at start-up from available memory.
+
+### 5.2 Actors with bounded queues (threads own resources)
+
+| Actor | Owns | Why it must be single-threaded |
+|---|---|---|
+| `MediaActor` | libav contexts, EXR readers | codec contexts are not thread-safe |
+| `InferActor` | the backend session (LibTorch module or ONNX Runtime session) and its device stream | one session per device, deterministic ordering |
+| `RenderThread` | the `QRhi` instance, swapchain, textures, pipelines | QRhi and every native API behind it are used from one thread |
+| `DeliverActor` | ffmpeg child process, EXR writers | one output at a time per job, like `rudra batch` |
+| UI thread | widgets, view models | Qt rule |
+
+Messages are immutable values (`shared_ptr<const SourceFrame>` etc.) over
+bounded single-producer/single-consumer queues. The bound **is** the read-ahead
+window, so backpressure is free. No mutex guards pixel data anywhere.
+
+This is Swift's actor model expressed in C++20: isolation by ownership, not by
+locks.
+
+### 5.3 Priority scheduler with generations and cancellation
+
+Three priorities: **interactive** (the frame under the playhead) >
+**read-ahead** > **background** (masters, deliveries, thumbnails, the timeline
+clip lane). Every request carries a `generation` number; a seek increments it,
+and results from an older generation are dropped on arrival instead of
+displayed. Long jobs take a `std::stop_token`.
+
+Why: the classic failure of scrubbing tools is showing frame 120's result on
+frame 180 after a fast seek. Generations make that impossible without locking.
+
+### 5.4 Strategy interfaces at every external boundary
+
+```cpp
+struct InferenceBackend {           // LibTorch{Cuda,Mps,Cpu}, Ort{DirectML,CoreML,Rocm,OpenVino,Cpu}
+    virtual Result<FrameScalars> frame_pass(const Image<SdrDisplay>&) = 0;
+    virtual Result<Fields>       tile_pass (const Image<SdrDisplay>&, const FrameScalars&, TilePlan) = 0;
+    virtual BackendInfo          info() const = 0;    // device, precision, versions
+};
+struct Reader  { virtual Result<SourceFrame> decode(FrameIndex) = 0; /* ... */ };
+struct Writer  { virtual Result<void> write(const Composite&, const FrameMeta&) = 0; };
+struct ViewerBackend { /* upload, composite, display, scopes, readback */ };  // QRhi (all APIs)
+```
+
+Why: each has several implementations **in v1**, not someday. Inference runs
+on LibTorch where it is fastest (CUDA, MPS) and on ONNX Runtime everywhere else
+(DirectML covers any DX12 GPU on Windows, Core ML the Apple GPU and Neural
+Engine, ROCm and OpenVINO AMD and Intel on Linux). `BackendSelector` ranks what
+the machine offers, runs the golden self-test on the winner, and falls back
+down the list on failure. Swapping or adding one (AOTInductor, TensorRT) must
+not touch the engine.
+
+| Machine | Chosen by default | Fallbacks |
+|---|---|---|
+| Windows + NVIDIA | LibTorch CUDA | ORT DirectML, CPU |
+| Windows + AMD / Intel | ORT DirectML | CPU |
+| Mac, Apple Silicon | LibTorch MPS | ORT Core ML, CPU |
+| Linux + NVIDIA | LibTorch CUDA | CPU |
+| Linux + AMD | ORT ROCm | CPU |
+| Linux + Intel | ORT OpenVINO | CPU |
+
+### 5.5 Presets as data (registry)
+
+HDR10, HLG, ProRes 422/422 HQ/4444 and EXR containers are JSON profiles
+(`deliver/profiles/*.json`) ported from `rudra/delivery/profiles.py`: codec,
+pixel format, colour tags, filter graph, QC rules. A `PresetRegistry` loads
+them. Adding a preset is a data change reviewed against the Python profile,
+not new C++.
+
+### 5.6 Command pattern for edits, undo for free
+
+Every user edit is a `GradeCommand { before: GradeParams, after: GradeParams }`
+pushed on a `QUndoStack` per shot. Because `GradeParams` is an immutable value,
+undo is a pointer swap and the composite simply re-runs. Slider drags coalesce
+into one command (`mergeWith`).
+
+### 5.7 MVVM at the Qt boundary
+
+Widgets never call the engine. Each panel has a view model (`QObject`) that
+exposes engine state as properties and signals, and turns user intent into
+commands.
+
+```
+Widget  ⇄  ViewModel (QObject, UI thread)  →  Engine (actors, any thread)
+                 ▲                                   │
+                 └──── queued signal with value ◄────┘
+```
+
+Why: the Pro design and the dense "Full" workspace become two sets of widgets
+over the **same** view models. Screenshot tests drive view models directly.
+
+### 5.8 `Result<T>` and typed errors
+
+`std::expected<T, Error>` throughout `core`, `infer`, `media`, `deliver`.
+`Error` carries a code, a user-facing sentence and a technical detail. No
+exceptions cross a module boundary (LibTorch's exceptions are caught at the
+`infer` edge and converted). The UI renders `Error` the same way everywhere,
+which is how "refuse, and say why" stays consistent.
+
+### 5.9 Model package with capability negotiation
+
+A model is a folder, not a file:
+
+```
+sdr2hdr_shadow_v1/
+  model.ts              TorchScript module: frame_pass(), tile_pass()
+  model.frame.onnx      ONNX graph of frame_pass (opset pinned)
+  model.tile.onnx       ONNX graph of tile_pass
+  manifest.json         contract version, corpus_ev, log_scale, max_hdr,
+                        heads present {gate, shadow_gate, ...}, tile/overlap, opset,
+                        source .pt sha256, torch version, export date
+  golden/               16 frames: inputs and expected outputs
+  LICENSE               the non-commercial weights licence
+```
+
+The engine reads `manifest.json` and enables only what the model declares
+(for example, no shadow-weight UI if the model has no shadow gate). A
+`contract` major version mismatch is a refusal. This matters now: an
+uncommitted change on `main` adds a new model head
+(`tests/test_curve_head_2026_09_23.py`); the native app must accept v1 and v2
+models without code forks.
+
+---
+
+## 6. Computer-vision and numerics
+
+### 6.1 Export: move every tensor op that affects numbers into the model
+
+`predict_residual_scale` and `predict_shadow_weight` downscale with
+`F.interpolate(mode="area")` to ≤512 px for pooled features but read
+statistics from the **native** frame (the chroma high-frequency evidence is
+destroyed by an area resize: 1.13 sd vs 0.60 sd with the sign inverted, per
+the 29 Aug measurement in `rudra/sdr2hdr.py`). Re-implementing that resize or
+those statistics in C++ is a parity risk with no upside. So the export wraps
+them:
+
+```python
+class Exported(torch.nn.Module):
+    def frame_pass(self, sdr_native):        # (1,3,H,W) full frame
+        return residual_scale, shadow_weight # scalars, same code as today
+    def tile_pass(self, sdr_tile, residual_scale, shadow_weight):
+        return log_residual_rgb, highlight, shadow
+```
+
+The same wrapper is exported twice, `torch.jit` for LibTorch and
+`torch.onnx.export` (dynamic H and W) for ONNX Runtime, and both are checked
+against eager PyTorch on the goldens before the package is written. If an op
+exports badly to ONNX (the area resize is the one to watch), it is rewritten in
+the wrapper as an equivalent average pool, and that rewrite is itself checked
+against eager.
+
+C++ does only what has no numerical content: tiling geometry, overlap
+blending with the **same window** `training/infer_sdr2hdr.py::predict_fields`
+uses, and memory layout. The analytic baseline (`sdr_to_baseline_hdr`) is
+computed inside the model too, for the tile pass; C++ ports it separately in
+`core` only for the composite and for "Baseline" view, with a golden test.
+
+### 6.2 Precision policy
+
+| Stage | Precision | Reason |
+|---|---|---|
+| network | fp32 default; fp16 opt-in, labelled in UI and sidecar. Core ML and DirectML may run fp16 internally: their tolerance is recorded per backend | parity first, speed second |
+| fields storage | fp16, clamped to `MAX_FIELD_MAGNITUDE` exactly as `run_frame` | same as the browser path, halves memory |
+| composite (CPU and shader) | fp32 | log-domain add then exp: fp16 loses highlights |
+| masters | computed fp32, written EXR half (float optional) | as today |
+| measurements | fp32 over the full composite | MaxCLL is a max: one wrong pixel changes it |
+
+### 6.3 Colour pipeline
+
+- **Input decode** mirrors `rudra.video` exactly: tags decide transfer,
+  primaries, matrix, range; missing tags require explicit overrides; the same
+  rejections. Phase 1 uses libavfilter with the same `zscale` arguments the
+  Python path passes, so parity is by construction. A hand-written float
+  YUV→RGB path can replace it later, behind a golden test.
+- **Working space:** scene-linear, 1.0 = 203 nits, Rec.2020 for the composite
+  (Rec.709 input primaries converted with the exact matrix from
+  `rudra/delivery/colorspace.py`).
+- **View transforms:**
+  - SDR out: today's PQ simulation (display-peak exposure + clip), identical
+    maths to `compositor.js` `DISPLAY`.
+  - HDR out, one shader with a per-swapchain output stage:
+
+    | Swapchain (QRhi) | OS / API | Encoding | Value written |
+    |---|---|---|---|
+    | `HDRExtendedSrgbLinear` | Windows D3D12; Linux Vulkan where offered | scRGB: linear Rec.709, 1.0 = 80 nits, negatives allowed | `M709←2020 · nits / 80` |
+    | `HDR10` | Windows D3D12 (option) | PQ, Rec.2020, 10-bit | `PQ(nits)` |
+    | `HDRExtendedDisplayP3Linear` | macOS Metal (EDR) | linear Display P3, 1.0 = the display's SDR white | `MP3←2020 · nits / sdr_white_nits` |
+
+    Peak is clamped to what the display reports: max luminance on Windows,
+    the live EDR headroom on macOS (it changes with the brightness slider, so
+    it is re-read every frame). The pipe bar shows the path and the headroom.
+  - Masters: ACES 2065-1 (AP0) or linear Rec.2020 via OpenColorIO, with the OCIO
+    config the Python writes (`rudra aces --ocio`) so Resolve and Nuke read the
+    same thing.
+
+### 6.4 Scopes and analysis
+
+- Waveform, RGB histogram, vectorscope: QRhi compute shaders with atomic bins
+  over a decimated grid (230 columns × 76 bins, as `server.py scopes()`),
+  log-nits axis, on every backend. Only the OpenGL fallback below 4.3 uses the
+  CPU path from a downsampled readback.
+- **Timeline clip lane** (Pro design): per-frame SDR clipped share and crushed
+  share, computed by the media actor at decode time (cheap, no network), stored
+  per shot, so the lane fills as the shot is read.
+
+### 6.5 Temporal
+
+Frames are independent; the v02 temporal line is closed. The only temporal
+state is the optional scalar shadow-gate smoothing with cut reset, ported from
+`rudra.video`, and it lives in `DeliverActor` and the viewer's playback path
+only when enabled.
+
+### 6.6 Performance budgets (set in Phase 0, recorded here)
+
+| Path | Budget | Measured |
+|---|---|---|
+| composite + view, 1080p, GPU | ≤ 4 ms | [Phase 0] |
+| composite + view, 4K, GPU | ≤ 12 ms | [Phase 0] |
+| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | [Phase 0] |
+| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | [Phase 0] |
+| inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
+| first frame after open (warm) | ≤ 2 s | [Phase 0] |
+| scrub to cached frame | ≤ 1 display frame | [Phase 0] |
+
+Instrumentation: Tracy zones on every actor message and GPU timer queries on
+every render pass (QRhi GPU timestamps), from the first commit.
+
+---
+
+## 7. Threading model, summarised
+
+| Thread | Runs | May block on |
+|---|---|---|
+| UI | widgets, view models, undo | nothing, ever |
+| Render | QRhi upload, composite, display, scopes | vsync |
+| Media | decode, clip statistics, thumbnails | disk, codec |
+| Infer | frame pass, tile pass | GPU |
+| Deliver | composite.cpp, measure, write, ffmpeg pipe, QC | disk, child process |
+| Pool (N cores) | CPU composite tiles for masters, EXR compression | nothing shared |
+
+Cross-thread communication: bounded queues and queued Qt signals carrying
+values. Shared mutable state: none except the caches, which are internally
+synchronised and store immutable values.
+
+---
+
+## 8. Persistence and interchange
+
+| File | Format | Compatible with |
+|---|---|---|
+| `.rudraproj` | JSON, `schema` field, relative paths | native only; migration functions per schema bump |
+| sidecar `.json` | same keys as the Python sidecar, plus `backend`, `precision`, `app_version` | Python readers ignore unknown keys |
+| `queue.json` + `.state.json` | identical to `rudra batch` | run or resume by either tool |
+| settings | `QSettings` | per user |
+| caches | `<appData>/RUDRA/cache/` (thumbnails, clip lanes), keyed by content hash | safe to delete |
+
+---
+
+## 9. Errors, logging, diagnostics
+
+- `spdlog` structured JSON logs to `<appData>/RUDRA/logs`, one file per session.
+- A **Diagnostics** window: backend info, model manifest, GPU/driver, display
+  HDR state, ffmpeg capability probe, last 200 log lines, "Copy report".
+- Crash reports stay local (minidump on Windows, `.ips` on macOS); nothing is
+  uploaded.
+- Every refusal (`Error`) is logged with its code; the code list is documented
+  so support can map a screenshot to a cause.
+
+---
+
+## 10. Testing
+
+| Level | Tool | What it proves | Tolerance |
+|---|---|---|---|
+| Unit | GoogleTest | each function's contract | exact / 1 ulp |
+| Golden parity | GoogleTest reading `tests/golden/` emitted by `pytest --emit-golden` | C++ core == Python | per module, table in `tests/golden/TOLERANCES.md` |
+| Model parity | `rudra-native diff` on 429 bench frames | LibTorch == eager PyTorch | log-space max abs ≤ 1e-5 (CPU fp32) |
+| Composite parity | readback on **each** QRhi backend vs `composite.cpp` | viewer == master on every API | ≤ 2 half ulp |
+| Backend parity | each `InferenceBackend` on the 429 bench frames | every runtime == eager PyTorch | per backend, in `TOLERANCES.md` |
+| Integration | CLI end to end: clip in, HDR10 out, QC | whole path | QC pass + sidecar keys |
+| Queue interop | Python writes queue, C++ resumes it, and back | compatibility | state identical |
+| UI | Qt Test + screenshot diff of Pro boards | layout, states | perceptual diff threshold |
+| Performance | Google Benchmark in CI on fixed frames | no regressions | ±10% gate |
+
+The golden emitter is the linchpin: it turns the existing Python test suite
+into the native specification.
+
+---
+
+## 11. Repository layout and targets
+
+```
+native/
+  CMakeLists.txt  CMakePresets.json  vcpkg.json
+  platform/   rudra_platform   (files, hash, log, threads)
+  core/       rudra_core       (types, colour, baseline, composite.cpp, measure, metadata, sidecar)
+  media/      rudra_media      (libav reader, EXR/PNG/TIFF sequences, EXR writer)
+  infer/      rudra_infer      (InferenceBackend, LibTorch + ONNX Runtime impls, BackendSelector, tiling)
+  render/     rudra_render     (ViewerBackend on QRhi, shaders/*.glsl → .qsb, scopes, HDR swapchains)
+  deliver/    rudra_deliver    (presets, ffmpeg pipe, QC, queue)
+  engine/     rudra_engine     (Session, Scheduler, caches, actors, undo)
+  app/        RUDRA            (Qt Widgets, view models, tokens → QSS)
+  cli/        rudra-native
+  tests/      unit, golden, parity, ui, bench
+  design/     tokens.json (from the Pro boards), icons
+tools/
+  export_model.py        writes the model package (§5.9)
+  emit_golden.py         pytest plugin: writes tests/golden/
+```
+
+Design tokens (colours, radii, type scale, spacing from the Pro direction)
+live in `design/tokens.json` and generate both QSS and a C++ header, so the
+look has one source.
+
+---
+
+## 12. What is next: the first ten working days
+
+Goal: answer the two go/no-go questions of Phase 0 and leave a skeleton every
+later phase builds on.
+
+| Day | Deliverable | Done when | Status |
+|---|---|---|---|
+| 1 | `tools/export_model.py`: `frame_pass` + `tile_pass` as TorchScript **and** ONNX, `manifest.json`, 16 golden frames | both reloaded graphs match eager on the 16 frames, max abs ≤ 1e-6 | **done** 23 Sep: TorchScript max \|d\| 0.0, ONNX 5.9e-5 on the shipped model; an all-heads model also passes |
+| 2 | `native/` CMake + vcpkg skeleton (Qt with Shader Tools, ONNX Runtime, LibTorch), empty targets, dependency-rule check, CI on Windows/macOS/Linux | three green builds | **done** 23 Sep: 18 GoogleTests green; Qt shell builds and starts; CI in `.github/workflows/native.yml` |
+| 3 | `rudra_infer`: `InferenceBackend`, LibTorch CPU + ORT CPU, tiling + overlap blend | `rudra-native diff` runs on 1 frame on both | **done early** 23 Sep: LibTorch and ORT CPU backends; the tiler is bit-exact with `predict_fields` |
+| 4 | Model parity on the 429 bench frames: CPU fp32 on both runtimes, then CUDA, DirectML, MPS, Core ML | **Gate A:** ≤ 1e-5 log-space on CPU for both; every GPU backend's delta recorded | **CPU half done** 23 Sep: golden frames pass in C++ on both runtimes; 429-frame bench and GPU backends open |
+| 5 | QRhi HDR spike: a bare `QRhi` window on Windows (D3D12, `HDRExtendedSrgbLinear`) and macOS (Metal, `HDRExtendedDisplayP3Linear`), 1 000-nit patch; Linux Vulkan probed | **Gate B:** patch measured above SDR white on Windows and on an XDR display |  |
+| 6 | `core/color` types, `ColorEncoding`, `Image<Space>`, units; baseline port + golden | golden passes on 3 OSes |  |
+| 7 | `composite.spec.md` written from `compositor.js`, `composite.cpp`, golden vs browser Studio readback | exact on 5 test frames |  |
+| 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend |  |
+| 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled |  |
+| 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` |  |
+
+If Gate A fails, the fix is in the export (usually a traced branch or a
+dtype, or for ONNX an op that needs rewriting in the wrapper); nothing else
+starts until it passes. If Gate B fails on one OS, that OS ships SDR-out in v1
+and HDR-out follows; the renderer does not change.
+
+---
+
+## 13. Decisions to record as ADRs before day 3
+
+1. **ADR-001** Model package carries TorchScript and ONNX; AOTInductor and
+   TensorRT are later speed backends, never the only format.
+2. **ADR-002** Qt 6 LTS (6.8 or later) with Qt Shader Tools; LGPL dynamic
+   linking.
+3. **ADR-003** Renderer on QRhi: D3D12 on Windows, Metal on macOS, Vulkan on
+   Linux, OpenGL fallback; all QRhi use confined to `render/`.
+4. **ADR-004** Two inference runtimes behind `InferenceBackend`: LibTorch
+   (CUDA, MPS, CPU) as reference, ONNX Runtime (DirectML, Core ML, ROCm,
+   OpenVINO) for universal GPU coverage; `BackendSelector` order in §5.4.
+5. **ADR-005** HDR output encodings per swapchain (§6.3), peak from the display,
+   never tone-mapped silently.
+6. **ADR-006** Decode through libavfilter + `zscale` for parity in v1; hardware
+   decode enabled only after it matches software decode on the test clips.
+7. **ADR-007** Model package format and contract versioning (§5.9).
+8. **ADR-008** `queue.json` and sidecar stay byte-compatible with Python.
+9. **ADR-009** Supported hardware: Apple Silicon only on macOS; DX12 GPUs on
+   Windows; the Linux GPU and compositor matrix for HDR.

@@ -1,0 +1,48 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "core",
+      "displayName": "Core + CLI + tests (no runtimes, no Qt)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "RUDRA_BUILD_TESTS": "ON" }
+    },
+    {
+      "name": "vcpkg",
+      "hidden": true,
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
+      "name": "full",
+      "displayName": "Core + LibTorch + ONNX Runtime + Qt app",
+      "inherits": ["core", "vcpkg"],
+      "cacheVariables": {
+        "RUDRA_BUILD_APP": "ON",
+        "RUDRA_WITH_LIBTORCH": "ON",
+        "RUDRA_WITH_ONNXRUNTIME": "ON",
+        "VCPKG_MANIFEST_FEATURES": "tests;app",
+        "ONNXRUNTIME_ROOT": "$env{ONNXRUNTIME_ROOT}",
+        "CMAKE_PREFIX_PATH": "$env{LIBTORCH_ROOT}"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows, MSVC, full",
+      "inherits": "full",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "core", "configurePreset": "core" },
+    { "name": "full", "configurePreset": "full" },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "core", "configurePreset": "core", "output": { "outputOnFailure": true } },
+    { "name": "full", "configurePreset": "full", "output": { "outputOnFailure": true } }
+  ]
+}

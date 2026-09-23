@@ -29,7 +29,7 @@
 [Batch queues](#batch-queues) ·
 [Stills and sequences](#stills-and-sequences) ·
 [Validation diagnostics](#validation-diagnostics) ·
-[Desktop app](#desktop-app-planned) ·
+[Desktop app](#desktop-app-in-progress) ·
 [Documentation](#documentation) ·
 [Licence](#licence)
 
@@ -371,14 +371,30 @@ promoting a different recovery policy.
 
 ---
 
-## Desktop app (planned)
+## Desktop app (in progress)
 
-A native Studio for Windows, Linux and macOS is planned: Qt 6 and OpenGL for the
-interface and viewer, a C++20 core, and LibTorch running a TorchScript export of
-the model, with no Python at runtime. It is built on the `native` branch. The
-browser Studio and the Python CLI stay as they are and remain the reference every
-native module is tested against. The state before that work is tagged
-`webui-v1`. Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md).
+A native RUDRA for Windows, Linux and macOS, with no Python at runtime: Qt 6
+for the interface, a QRhi viewer on each OS's native GPU API (Direct3D 12,
+Metal, Vulkan, OpenGL fallback) with HDR output, a C++20 core, and inference
+through LibTorch (CUDA, MPS) and ONNX Runtime (DirectML, Core ML, ROCm,
+OpenVINO). It lives in [`native/`](native/README.md) on the `native` branch.
+The browser Studio and the Python CLI stay as they are and remain the
+reference every native module is tested against; the state before that work
+is tagged `webui-v1`.
+
+Progress: Phase 0, days 1 and 2 of 10.
+- [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
+  with eager; ONNX within tolerance)
+- [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
+  LibTorch and ONNX Runtime backends, `rudra-native diff`, Qt shell, CI
+- [x] Gate A on CPU: LibTorch bit-exact through the native tiler, ONNX Runtime
+  within tolerance, on the package's golden frames
+- [ ] Gate A on the 429 bench frames and on CUDA / DirectML / MPS / Core ML
+- [ ] Gate B: HDR patch on a Windows HDR display and an XDR display
+
+Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
+[`native/README.md`](native/README.md).
 
 ---
 
@@ -395,6 +411,8 @@ native module is tested against. The state before that work is tagged
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what a training set has to contain |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
 | [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) | the native desktop Studio: architecture, phases, acceptance |
+| [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) | the native app design: layers, types, threading, patterns, numerics, first ten days |
+| [`native/README.md`](native/README.md) | building the native app, the model package, what is done and what is not |
 | [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |
 
 ---
