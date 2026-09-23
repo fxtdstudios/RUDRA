@@ -44,6 +44,9 @@ output.
 ## Install
 
 ```bash
+git clone https://github.com/fxtdstudios/RUDRA.git
+cd RUDRA
+pip install -e .
 (cd checkpoints && sha256sum -c SHA256SUMS)
 ```
 
@@ -53,14 +56,13 @@ Then open the Studio — it loads the shipped checkpoint and opens a browser tab
 python ui/server.py
 ```
 
-| backbone | VAE latent | recommended | PSNR_log |
-|---|---|---|---:|
-| Flux.1 | 16ch / 8x | full | 29.77 |
-| Wan | 16ch / 8x | full | 32.45 |
-| LTX | 128ch / 8x | full | 25.47 |
-| SDXL | 4ch / 8x | turbo | 33.86 |
-| Qwen-Image | 16ch / 8x | turbo | 26.67 |
-| Flux.2 Klein | 128ch / 16x | turbo | 28.57 |
+**Scope.** RUDRA is one thing: SDR to HDR for any image or video, whatever made
+it — a camera, a phone, an archive, or any generative model. It works on
+pixels, not on a model's latent space. The per-backbone VAE decoders (Flux,
+Wan, LTX, SDXL, Qwen, Klein) and the latent-conditioning research pipeline are
+**paused** as of 23 Sep 2026; their code stays in `rudra/` and `training/`
+and their results in [`STATUS.md`](STATUS.md), but they are not part of the
+product and are not maintained.
 
 ---
 
@@ -149,8 +151,6 @@ python training/infer_sdr2hdr.py input/ --output-dir out/ \
 Inference also writes float EXR delivery masters at 203 nits per stored unit.
 TIFF outputs retain the network's separate 10,000-nit convention. For a nested
 input sequence, pass the corresponding output shot directory to delivery.
-Master and deliver. No GPU required:
-
 CUDA is optional — it runs on CPU, slower. `ffmpeg` is needed for video, not
 for stills.
 

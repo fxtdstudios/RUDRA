@@ -7,8 +7,8 @@
 >
 > | line | what it is | state |
 > |---|---|---|
-> | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **complete** — measured, deployed |
-> | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **incomplete** — Stage 3 never trained |
+> | **A. Production decoders** | distilled log-space VAE decoders, 7 backbones, ComfyUI node | **paused (23 Sep 2026)** — complete and measured; out of product scope, not maintained |
+> | **B. Research pipeline (Stages 1-3)** | descriptor + FiLM + DR-gated LoRA + DRE cross-attention, the *original paper's core thesis* | **paused (23 Sep 2026)** — Stage 3 never trained; latent-specific, out of scope |
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
@@ -68,6 +68,18 @@
 > `pipeline/check_holdout_overlap.py`: if any of the paper's bench scenes are in
 > this run's train split it is retrained on the rebuilt manifest (4 h), and
 > `scripts/next_steps_2026-09-22.ps1` does that decision by data.
+>
+> **23 Sep 2026 — scope.** RUDRA is SDR→HDR for any image or video from any
+> source, pixel-domain. Lines A and B are paused (they only work inside
+> specific latent models). Plan, competitive read and what is against us:
+> `reports/SDR2HDR_PLAN_2026-09-23.md`.
+>
+> **Out-of-generator bench scored (23 Sep).** 429 frames, Hable curve + real
+> H.264 CRF 28, shipped `sdr2hdr_shadow_v1.pt`: RUDRA **26.77 dB PU21 / 8.114
+> JOD vs baseline 27.18 / 8.139**, paired Δ −0.41 dB (95% CI −0.49…−0.34),
+> −0.024 JOD (−0.048…−0.003); worse on 270 of 429 frames. On SDR made by a
+> curve and codec it never trained on, the shipped model is worse than
+> doing nothing learned. This is now the top item.
 >
 > **23 Sep, 16:00 — hold-out check answered.** 97 of 97 paper-bench scenes are in
 > v4b; 96 were already in test, **one (`fireplace`, 348 records) was in train**.

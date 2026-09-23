@@ -37,6 +37,7 @@ from pipeline.hdr_io import (  # noqa: E402
 )
 
 # Readers, EOTFs and the tone-map curve come from the existing (fixed) module.
+from pipeline import sdr_render  # noqa: E402
 import training.prepare_training_data as ptd  # noqa: E402
 from training.prepare_training_data import (  # noqa: E402
     TARGET_H, TARGET_W, clipped_fraction as sdr_clipped_fraction, make_sdr,
@@ -52,7 +53,14 @@ def sentinel_payload(storage: HDRStorage, args: argparse.Namespace) -> dict:
         "target_size": [TARGET_W, TARGET_H],
         "crops_per_source": args.crops,
         "crop_size": args.crop_size,
-        "tonemap": "aces_approx_narkowicz2015",
+        # "mix:v1" when --sdr-render mix: the curve is drawn per pair and
+        # recorded in each record (pipeline/sdr_render.py). A directory never
+        # mixes the two, because check_sentinel compares this key.
+        "tonemap": ("aces_approx_narkowicz2015" if args.sdr_render == "aces"
+                    else sdr_render.RENDER_VERSION),
+        "ev_jitter": float(args.ev_jitter) if args.sdr_render == "mix" else 0.0,
+        "codec_probability": (float(args.codec_probability)
+                              if args.sdr_render == "mix" else 0.0),
         # The exposure applied before the curve. It decides whether the SDR
         # side ever clips, so a directory cannot mix two values of it, and it
         # rides on every pair so the model built from this corpus inverts the
@@ -160,6 +168,16 @@ def main() -> int:
                              f"{ptd.TONEMAP_EV_OFFSET:+.1f}). {ptd.LEGACY_TONEMAP_EV:+.1f} "
                              f"reproduces every corpus up to v3, whose SDR side almost "
                              f"never clipped; 0 clips the way delivered SDR clips.")
+    parser.add_argument("--sdr-render", choices=("aces", "mix"), default="aces",
+                        help="aces: every pair through the one Narkowicz curve (every corpus "
+                             "up to v4b). mix: the curve, exposure, contrast, saturation, "
+                             "OETF and a real codec round trip are drawn per pair (per shot "
+                             "for sequences) from pipeline/sdr_render.py and recorded. v4c "
+                             "onward: a model trained on one curve learns that curve.")
+    parser.add_argument("--ev-jitter", type=float, default=1.5,
+                        help="mix only: +/- stops drawn around --tonemap-ev per pair")
+    parser.add_argument("--codec-probability", type=float, default=0.5,
+                        help="mix only: share of pairs put through JPEG/H.264/HEVC/AV1")
     args = parser.parse_args()
     # make_sdr reads the module constant; this is the one place it is set.
     ptd.TONEMAP_EV_OFFSET = float(args.tonemap_ev)
@@ -237,7 +255,20 @@ def main() -> int:
 
             for crop_idx, (crop, origin) in enumerate(crop_iter):
                 frame = resize_frame(crop)
-                sdr = make_sdr(frame)
+                recipe = None
+                if args.sdr_render == "mix":
+                    # One grade per shot: every frame (and crop) of a sequence
+                    # shares a recipe, as a real clip would. Stills draw per crop.
+                    key = (source["scene_id"] if source.get("is_sequence_member")
+                           else f"{position}:{crop_idx}")
+                    rrng = np.random.default_rng(
+                        [args.seed, int(hashlib.sha256(str(key).encode()).hexdigest()[:8], 16)])
+                    recipe = sdr_render.draw_render(
+                        rrng, ev_jitter=args.ev_jitter,
+                        codec_probability=args.codec_probability)
+                    sdr = sdr_render.apply_render(frame, recipe, float(args.tonemap_ev))
+                else:
+                    sdr = make_sdr(frame)
                 hdr, stats = encode_hdr_u16(frame, storage)
                 # Two different clip statistics live in this record and they
                 # must not be confused. stats["clipped_fraction"] is the HDR
@@ -258,6 +289,7 @@ def main() -> int:
                 meta = {
                     "stem": stem,
                     "source_path": str(path),
+                    "sdr_render": recipe,
                     "source_encoding": source["encoding_guess"],
                     "encoding_reason": source.get("encoding_reason"),
                     "crop_origin": list(origin),
@@ -286,6 +318,9 @@ def main() -> int:
                     "clipped_fraction": stats["clipped_fraction"],
                     "sdr_clipped_fraction": stats["sdr_clipped_fraction"],
                     "tonemap_ev": float(args.tonemap_ev),
+                    "sdr_curve": recipe["curve"] if recipe else "aces",
+                    "render_ev": recipe["render_ev"] if recipe else 0.0,
+                    "sdr_codec": recipe["codec"] if recipe else "none",
                 }) + "\n")
                 written += 1
 
