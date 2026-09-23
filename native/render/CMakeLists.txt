@@ -6,7 +6,7 @@ target_link_libraries(rudra_render INTERFACE rudra::rudra_core)
 
 if(RUDRA_BUILD_RENDER)
   find_package(Qt6 6.6 REQUIRED COMPONENTS Gui ShaderTools)
-  rudra_library(rudra_render_gpu SOURCES src/gpu_composite.cpp)
+  rudra_library(rudra_render_gpu SOURCES src/gpu_composite.cpp src/viewer_window.cpp)
   target_link_libraries(rudra_render_gpu PUBLIC rudra::rudra_core PRIVATE Qt6::Gui Qt6::GuiPrivate)
   set_target_properties(rudra_render_gpu PROPERTIES AUTOMOC OFF)
   if(WIN32)
@@ -16,7 +16,8 @@ if(RUDRA_BUILD_RENDER)
     PREFIX "/rudra/shaders"
     BASE shaders
     GLSL "300es,330"   # texelFetch and float render targets: no GLSL ES 1.0
-    FILES shaders/fullscreen.vert shaders/composite.frag shaders/display.frag shaders/reduce.frag)
+    FILES shaders/fullscreen.vert shaders/composite.frag shaders/display.frag shaders/reduce.frag
+          shaders/blit.vert shaders/blit.frag)
 endif()
 
 if(RUDRA_BUILD_HDR_PROBE)

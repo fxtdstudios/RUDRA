@@ -697,6 +697,7 @@
                    preserve: state.preserve, regions: state.regions});
     $("empty").hidden = true;
     $("plate").hidden = false;
+    applyViewport();   // the fit depends on the frame's size
     present();
     computeStats();
     evictCache();
@@ -1062,22 +1063,46 @@
      never costs a recomposite. It also keeps every client-to-image mapping
      honest for free -- getBoundingClientRect() already reports the transformed
      box, so the wipe and the probe need no scale maths of their own. */
+  /* The scale fit mode actually displays. The plate never upscales past 1:1
+     (max-width/max-height on a natural-size canvas), so the fit of a frame
+     smaller than the viewer is 1, not the uncapped ratio: before 24 Sep 2026
+     the zoom readout said e.g. 350% for a frame shown at 100%, and the first
+     wheel tick jumped from there to 392%. */
   function fitScale() {
     var v = $("viewer"), f = ctx && ctx.size();
     if (!f || !v.clientWidth) { return 1; }
     var pad = 28;
-    return Math.min((v.clientWidth - pad) / f.width, (v.clientHeight - pad) / f.height);
+    return Math.min(1, (v.clientWidth - pad) / f.width, (v.clientHeight - pad) / f.height);
   }
 
   function applyViewport() {
     var plate = $("plate");
     if (!plate) { return; }
+    var cv = $("gl"), f = ctx && ctx.size();
     if (state.scale === null) {
       state.panX = state.panY = 0;
       plate.style.transform = "";
       plate.style.maxWidth = "100%";
       plate.style.maxHeight = "100%";
+      /* Fit is sized here, not left to max-width/max-height: the canvas's
+         max-height:100% refers to the plate's auto height and never applies,
+         so a frame taller than the viewer was shown 1:1 and cropped while the
+         readout said fit (1080x1920 in a 1200x900 viewer: 100% shown, 45%
+         claimed). The width cap happened to work, which hid it on landscape
+         plates. */
+      if (cv && f) {
+        var s = fitScale();
+        cv.style.width = (f.width * s) + "px";
+        cv.style.height = (f.height * s) + "px";
+        cv.style.maxWidth = cv.style.maxHeight = "";
+      }
     } else {
+      /* Zoomed: the canvas at its natural size, scaled by the transform. The
+         stylesheet's max-width:100% used to stay in force here, so a frame
+         wider than the viewer was scaled from its FIT size: "100%" (1:1)
+         showed a 1920 plate at 932 px and every zoom readout was off by the
+         fit factor. */
+      if (cv) { cv.style.width = cv.style.height = ""; cv.style.maxWidth = cv.style.maxHeight = "none"; }
       plate.style.maxWidth = "none";
       plate.style.maxHeight = "none";
       plate.style.transform = "translate(" + state.panX.toFixed(1) + "px," +

@@ -49,6 +49,20 @@ struct ViewParams {
     Primaries source = Primaries::Rec709;   // of the composite: the network keeps the input's primaries
 };
 
+// A view with the SDR target, for tools and tests: the positional form of
+// ViewParams without its target and source.
+inline ViewParams view_params(ViewMode mode, double display_nits, ViewSource show = ViewSource::Model,
+                              double wipe = -1.0, double wipe_half_width = 0.0012, double diff_gain = 2000.0) {
+    ViewParams v;
+    v.mode = mode;
+    v.display_nits = display_nits;
+    v.show = show;
+    v.wipe = wipe;
+    v.wipe_half_width = wipe_half_width;
+    v.diff_gain = diff_gain;
+    return v;
+}
+
 // 8-bit RGB, interleaved, image order (row 0 the top).
 struct Rgb8Image {
     int width = 0, height = 0;

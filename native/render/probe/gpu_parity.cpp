@@ -170,13 +170,13 @@ int main(int argc, char** argv) {
     };
     std::vector<ViewRow> vrows;
     const std::vector<std::pair<std::string, ViewParams>> views = {
-        {"image 203", {ViewMode::Image, 203.0}},
-        {"image 1000", {ViewMode::Image, 1000.0}},
-        {"baseline", {ViewMode::Image, 203.0, ViewSource::Baseline}},
-        {"false colour", {ViewMode::FalseColour, 203.0}},
-        {"difference", {ViewMode::Difference, 203.0, ViewSource::Model, -1.0, 0.0012, 2000.0}},
-        {"wipe 0.37", {ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02}},
-        {"wipe false colour", {ViewMode::FalseColour, 203.0, ViewSource::Model, 0.61, 0.02}},
+        {"image 203", view_params(ViewMode::Image, 203.0)},
+        {"image 1000", view_params(ViewMode::Image, 1000.0)},
+        {"baseline", view_params(ViewMode::Image, 203.0, ViewSource::Baseline)},
+        {"false colour", view_params(ViewMode::FalseColour, 203.0)},
+        {"difference", view_params(ViewMode::Difference, 203.0, ViewSource::Model, -1.0, 0.0012, 2000.0)},
+        {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)},
+        {"wipe false colour", view_params(ViewMode::FalseColour, 203.0, ViewSource::Model, 0.61, 0.02)},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));
@@ -220,11 +220,11 @@ int main(int argc, char** argv) {
         {"EDR 709 1600", DisplayTarget::edr(1600.0, Primaries::Rec709)},
     };
     const std::vector<std::pair<std::string, ViewParams>> hdr_views = {
-        {"image", {ViewMode::Image, 10000.0}},
-        {"image view peak 600", {ViewMode::Image, 600.0}},
-        {"false colour", {ViewMode::FalseColour, 203.0}},
-        {"difference", {ViewMode::Difference, 203.0}},
-        {"wipe", {ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02}},
+        {"image", view_params(ViewMode::Image, 10000.0)},
+        {"image view peak 600", view_params(ViewMode::Image, 600.0)},
+        {"false colour", view_params(ViewMode::FalseColour, 203.0)},
+        {"difference", view_params(ViewMode::Difference, 203.0)},
+        {"wipe", view_params(ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02)},
     };
     for (const auto& [name, f] : idx.at("frames").items()) {
         const SdrImage sdr(load(dir, f.at("sdr")));

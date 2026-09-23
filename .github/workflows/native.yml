@@ -13,14 +13,14 @@ name: native
 
 on:
   push:
-    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_master_golden.py", "tools/emit_qc_golden.py", "tools/emit_queue_golden.py", "tools/emit_sequence_golden.py", "tools/emit_viewer_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_master_golden.py", "tools/emit_qc_golden.py", "tools/emit_queue_golden.py", "tools/emit_sequence_golden.py", "tools/emit_viewer_golden.py", "tools/emit_viewport_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
             "tools/check_layers.py", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
             "rudra/delivery/**", "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
-            "ui/compositor.js", "ui/app.js", ".github/workflows/native.yml"]
+            "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   pull_request:
     paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "rudra/decode.py", "rudra/anchor.py", "rudra/chroma.py", "rudra/delivery/**",
             "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
-            "ui/compositor.js", "ui/app.js", ".github/workflows/native.yml"]
+            "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   workflow_dispatch:
 
 jobs:
@@ -81,7 +81,7 @@ jobs:
         # the Linux runner has; macOS and Windows test against the committed one.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport; fi
           git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
       - name: Configure
         shell: bash
@@ -171,7 +171,7 @@ jobs:
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |
@@ -185,3 +185,6 @@ jobs:
       - name: GPU composite parity on llvmpipe (Linux, OpenGL)
         if: runner.os == 'Linux'
         run: xvfb-run -a build/render/probe/rudra-gpu-parity --api gl
+      - name: The viewer window through its swapchain (Linux, OpenGL)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api gl

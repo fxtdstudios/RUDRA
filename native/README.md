@@ -19,8 +19,9 @@ core       colour types, Image<Space>, baseline, tiling, manifest,
 infer      InferenceBackend: LibTorch, ONNX Runtime, the tiler    (core)
 media      still decode (OpenCV imgcodecs), sequence open by path;
            video in Phase 4                                       (core)
-render     the QRhi composite (rudra_render_gpu); probe/ holds
-           rudra-hdr-probe and rudra-gpu-parity                   (core, Qt)
+render     the QRhi viewer: GpuCompositor and ViewerWindow (rudra_render_gpu);
+           probe/ holds rudra-hdr-probe, rudra-gpu-parity and
+           rudra-viewer-check                                     (core, Qt)
 deliver    EXR/ACES/OCIO writers, metadata sidecars, QC, queue;
            encode later                                           (core)
 engine     jobs, generations, priorities                          (below)
@@ -95,6 +96,7 @@ its sidecar. `--params` takes the Studio's master parameters as JSON
 | `tools/emit_queue_golden.py` | `tests/golden/queue/`: a queue project, its state after a run and a resume, nine refusals | `test_queue.cpp` (state compared byte for byte) |
 | `tools/emit_sequence_golden.py` | `tests/golden/sequence/`: folder layouts and what `Sequence.open` made of them | `test_sequence.cpp` |
 | `tools/emit_viewer_golden.py` | `tests/golden/viewer/`: the browser Studio's composites, views, probes, reductions, metrics and scopes on two frames (headless Chromium, Playwright) | `test_viewer.cpp` |
+| `tools/emit_viewport_golden.py` | `tests/golden/viewport/`: where the Studio's own CSS layout puts the frame through fit, zoom and pan scripts | `test_viewport.cpp` |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
 `python tools/emit_golden.py` runs every emitter; re-run it and commit when the
@@ -130,6 +132,14 @@ PASS means the swapchain carried the 1 000-nit patch at least a stop above SDR
 white; the glass is then checked by eye or meter. On an SDR swapchain it
 reports SDR and FAIL rather than passing a clipped card.
 
+**The viewer window (Phase 2 step 9).** `rudra-viewer-check --api <api>`
+opens the real viewer window, puts a golden frame in as fields and reads its
+swapchain back at fit and at 2x: every picture pixel within 1 code of
+`core/view.cpp` on `core/composite.cpp`, the surround exact. `--card` is Gate
+B through the real display pass: a card of 10 to 2 000 nits on the HDR
+swapchain, each patch at its own luminance up to the display's peak and
+clipped above it. Both gate B scripts run both on every API.
+
 **Day 8, GPU composite parity.** `rudra-gpu-parity --api <api>` renders the
 composite shader offscreen on this GPU for every case in the composite
 goldens and reads it back: into RGBA32F against `composite.cpp` (atol 1e-6,
@@ -161,5 +171,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
-| Phase 2 (QRhi viewer) | steps 1 to 8 of 13 done (4 to 6 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR on the CPU and in `display.frag`, the reduction ladder, the probe, the measurements and the scopes equal to the browser's (section 15) |
+| Phase 2 (QRhi viewer) | steps 1 to 9 of 13 done (4 to 6 and 9 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR, the reduction ladder, probe, measurements and scopes equal to the browser's, and the viewer window in the app (section 15) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

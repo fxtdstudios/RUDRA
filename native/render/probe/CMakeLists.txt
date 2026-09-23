@@ -22,3 +22,16 @@ if(WIN32)
   target_compile_definitions(rudra-gpu-parity PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 rudra_warnings(rudra-gpu-parity)
+
+# Phase 2 step 9: the viewer window end to end through its swapchain, and
+# Gate B through the real display pass (--card).
+qt_add_executable(rudra-viewer-check viewer_check.cpp)
+target_link_libraries(rudra-viewer-check PRIVATE Qt6::Gui rudra::rudra_render_gpu rudra::rudra_core
+                      nlohmann_json::nlohmann_json)
+target_compile_definitions(rudra-viewer-check PRIVATE
+  RUDRA_VIEWER_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden/viewer")
+set_target_properties(rudra-viewer-check PROPERTIES AUTOMOC OFF)
+if(WIN32)
+  target_compile_definitions(rudra-viewer-check PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+rudra_warnings(rudra-viewer-check)

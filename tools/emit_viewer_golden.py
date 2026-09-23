@@ -166,6 +166,7 @@ HARNESS = r"""
   function updatePipe() {}
   function drawFrames() {}
   function evictCache() {}
+  function applyViewport() {}
 
   /*APP*/
 

@@ -79,13 +79,14 @@ if (-not $SkipBuild) {
         -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF `
         -DRUDRA_BUILD_HDR_PROBE=ON "-DCMAKE_PREFIX_PATH=$QtRoot"
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
-    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity
+    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check
     if ($LASTEXITCODE -ne 0) { Fail "build" }
 }
 $Exe = Join-Path $Build "render\probe\Release\rudra-hdr-probe.exe"
 if (-not (Test-Path $Exe)) { Fail "probe not built: $Exe" }
 $Parity = Join-Path (Split-Path $Exe) "rudra-gpu-parity.exe"
-foreach ($e in @($Exe, $Parity)) {
+$Viewer = Join-Path (Split-Path $Exe) "rudra-viewer-check.exe"
+foreach ($e in @($Exe, $Parity, $Viewer)) {
     if (Test-Path $e) { & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $e | Out-Null }
 }
 
@@ -157,4 +158,39 @@ if (Test-Path $Parity) {
 }
 $parityOk = [bool]($parityRows | Where-Object { $_.API -eq "d3d12" -and $_.Result -eq "PASS" }) -and
             -not ($parityRows | Where-Object { $_.Result -in @("FAIL", "ERROR") })
-if ($gateB -and $parityOk) { exit 0 } else { exit 1 }
+
+# ---------------------------------------------------------------------------
+# Phase 2 step 9: the viewer window itself. Its SDR swapchain read back against
+# core/view.cpp (fit and 2x, image, false colour, wipe), then Gate B through
+# the real display pass: a card of 10 to 2 000 nits on the HDR swapchain, every
+# patch at its luminance up to the display's peak and clipped above it.
+Say "Viewer window (Phase 2 step 9)"
+$viewerRows = @()
+if (Test-Path $Viewer) {
+    foreach ($api in @("d3d12", "d3d11", "vulkan", "gl")) {
+        foreach ($mode in @("parity", "card")) {
+            $json = Join-Path $Reports "native_viewer_${mode}_${api}_$Stamp.json"
+            $vargs = @("--api", $api, "--report", $json)
+            if ($mode -eq "card") { $vargs += "--card" }
+            $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+            $text = & $Viewer @vargs 2>&1 | ForEach-Object { "$_" }
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>" } | Write-Host
+            if (Test-Path $json) {
+                $d = Get-Content $json -Raw | ConvertFrom-Json
+                $worst = if ($d.cases) { ($d.cases | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
+                $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
+                $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Backend = $d.backend; Swapchain = $d.swapchain;
+                                                  Peak = [math]::Round([double]$d.peak_nits); "max code" = $worst;
+                                                  "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"]; Verdict = $d.verdict }
+            } else {
+                $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Verdict = $(if ($code -eq 2) { "n/a" } else { "ERROR" }) }
+            }
+        }
+    }
+    $viewerRows | Format-Table -AutoSize | Out-String | Write-Host
+}
+$viewerOk = [bool]($viewerRows | Where-Object { $_.API -eq "d3d12" -and $_.Check -eq "parity" -and $_.Verdict -eq "PASS" }) -and
+            [bool]($viewerRows | Where-Object { $_.API -eq "d3d12" -and $_.Check -eq "card" -and $_.Verdict -eq "PASS" })
+if ($gateB -and $parityOk -and $viewerOk) { exit 0 } else { exit 1 }
