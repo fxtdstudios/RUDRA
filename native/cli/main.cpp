@@ -120,7 +120,11 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
         auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
         if (!backend) return fail(backend.error());
         const auto info = (*backend)->info();
-        const Tolerance tol = m->tolerance.at(rt == Runtime::LibTorch ? "torchscript" : "onnx");
+        // CPU LibTorch runs eager's own kernels: held to bit-exact-grade 1e-5.
+        // LibTorch on a GPU is true fp32 with the vendor's summation order;
+        // ONNX Runtime is a different graph compiler on any device.
+        const char* tol_key = rt == Runtime::OnnxRuntime ? "onnx" : device == Device::Cpu ? "torchscript" : "gpu_fp32";
+        const Tolerance tol = m->tolerance.at(tol_key);
         std::map<std::string, Stat> stats;
         int frames = 0;
 
@@ -160,8 +164,8 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
         }
 
         bool pass = true;
-        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e\n", to_string(info.runtime),
-                    info.version.c_str(), to_string(info.device), info.detail.c_str(), frames, tol.atol, tol.rtol);
+        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n", to_string(info.runtime),
+                    info.version.c_str(), to_string(info.device), info.detail.c_str(), frames, tol.atol, tol.rtol, tol_key);
         for (const auto& [key, st] : stats) {
             const bool ok = st.excess <= 0.0;
             pass = pass && ok;

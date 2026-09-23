@@ -56,6 +56,12 @@ Result<ModelManifest> read_manifest(const std::filesystem::path& package_root) {
             const auto& t = j.at("tolerance").at(key);
             m.tolerance[key] = Tolerance{t.at("atol").get<double>(), t.at("rtol").get<double>()};
         }
+        // A GPU run of model.ts. Optional: packages exported before 23 Sep
+        // 2026 do not carry it, and get the value tools/export_model.py writes.
+        m.tolerance["gpu_fp32"] = Tolerance{5e-5, 1e-5};
+        if (const auto& tol = j.at("tolerance"); tol.contains("gpu_fp32"))
+            m.tolerance["gpu_fp32"] = Tolerance{tol.at("gpu_fp32").at("atol").get<double>(),
+                                                tol.at("gpu_fp32").at("rtol").get<double>()};
     } catch (const std::exception& e) {
         return make_error(ErrorCode::ParseError, "The model manifest is missing a required field.", e.what());
     }

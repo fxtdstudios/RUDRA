@@ -94,8 +94,16 @@ QUANTILE_CEILING = 1_000_000  # frame_conditioning_stats subsampling threshold
 # that worst case. In the log domain 3e-4 is a 0.03% luminance difference,
 # roughly thirty times below a 1% just-noticeable difference, while a real
 # export mistake (a wrong op, a dropped branch) shows up at 1e-2 to 1.
+#
+# "gpu_fp32" is not checked here (the export runs on CPU); it is what
+# rudra-native diff holds a GPU run of model.ts to. cuDNN picks its own
+# convolution algorithms and summation order, so a GPU is never bit-exact with
+# CPU even in true fp32 (TF32 off). Measured 23 Sep 2026 on an RTX 4080 SUPER:
+# 1.4e-5 worst, in the residual. atol is set at a little over three times that,
+# still six times tighter than ONNX.
 TOLERANCE = {"torchscript": {"atol": 1e-5, "rtol": 0.0},
-             "onnx": {"atol": 3e-4, "rtol": 1e-4}}
+             "onnx": {"atol": 3e-4, "rtol": 1e-4},
+             "gpu_fp32": {"atol": 5e-5, "rtol": 1e-5}}
 
 
 # --------------------------------------------------------------------------
