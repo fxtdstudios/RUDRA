@@ -16,6 +16,10 @@ set(RUDRA_TEST_PACKAGE "" CACHE PATH "Model package for the golden parity test")
 if(RUDRA_TEST_PACKAGE AND RUDRA_BUILD_CLI)
   add_test(NAME model_package_parity COMMAND rudra-native diff "${RUDRA_TEST_PACKAGE}" --runtime all)
   if(RUDRA_WITH_OPENCV)
+    # Phase 2 step 10: the frame path with the real model over real images.
+    target_sources(rudra_tests PRIVATE test_frame_engine_real.cpp)
+    target_link_libraries(rudra_tests PRIVATE rudra::rudra_infer)
+    target_compile_definitions(rudra_tests PRIVATE RUDRA_TEST_PACKAGE_DIR="${RUDRA_TEST_PACKAGE}")
     # Phase 1 step 7: a Studio-identical master with no Python.
     add_test(NAME master_parity COMMAND rudra-native master-check "${RUDRA_TEST_PACKAGE}"
              "${CMAKE_CURRENT_SOURCE_DIR}/golden/master")

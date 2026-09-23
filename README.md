@@ -434,7 +434,9 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 - [x] Sample, measurements and scopes (waveform, histogram, vectorscope) equal to the browser's, bit for bit
 - [x] The viewer in the Qt shell: its own HDR swapchain, fit, 1:1, zoom about the
   cursor, pan, wipe and hold-to-flip, placed exactly as the Studio places it
-- [ ] The frame path (engine jobs, cancellation, sequences) and the guides
+- [x] The frame path: decode and inference on the engine's own thread, generations and
+  cancellation, read-ahead and a frame cache; a fast scrub never shows a stale frame
+- [ ] The guides
 - [ ] Every backend, budgets recorded
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
