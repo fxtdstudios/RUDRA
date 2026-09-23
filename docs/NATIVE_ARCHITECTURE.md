@@ -420,7 +420,7 @@ only when enabled.
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
-| viewer measurements and scopes, CPU, after a slider settles (off the render thread) | ≤ 16 ms | 29 ms at 1080p and 32 ms at 4K (768 x 432 sample) plus 7 ms vectorscope on a 2.1 GHz cloud core, one thread (`rudra-native bench-scopes`); the desktop number comes from `NATIVE_GATE_A.ps1` |
+| viewer measurements and scopes, CPU, after a slider settles (off the render thread) | ≤ 16 ms | 21 ms at 1080p and 23 ms at 4K (768 x 432 sample) plus 5 ms vectorscope on two 2.1 GHz cloud cores (29 and 7 ms on one): the per-pixel work runs in up to eight chunks whose integer counts merge exactly, the order-dependent sums stay sequential, and the result is bit-identical to the browser's still (`rudra-native bench-scopes`); the desktop number comes from `NATIVE_GATE_A.ps1` |
 | first frame after open (warm) | ≤ 2 s | decode plus one inference: 150 to 172 ms of inference at 1080p on the RTX 4080 SUPER (above); end to end from the app on Windows open |
 | scrub to cached frame | ≤ 1 display frame | synchronous: a cached frame is delivered inside `FrameEngine::show()` (0.01 ms in the engine test); the upload and passes are the composite + view row |
 
