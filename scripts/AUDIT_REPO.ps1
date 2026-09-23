@@ -6,7 +6,7 @@
 #
 #   1. Are there credentials in here -- ours or anyone's?
 #   2. What is tracked that should not be?
-#   3. Where does the repo still say "Claude" or "Anthropic"?
+#   3. Where does the repo still carry AI-assistant attribution?
 #
 # Read-only. It changes nothing, stages nothing and commits nothing. Every git
 # call uses --no-optional-locks so it cannot leave a .git\index.lock behind.
@@ -82,12 +82,13 @@ if ($helpers.Count -gt 0) {
     Write-Host "  untrack without deleting:  git rm --cached <file>" -ForegroundColor DarkGray
 } else { Write-Host "  none -- all local-only" -ForegroundColor Green }
 
-Write-Head "3a. 'Claude' / 'Anthropic' -- WORKING TREE (tracked files)"
-$claude = @(git --no-optional-locks grep -n -i -I -E 'claude|anthropic|co-authored-by|generated with' -- . 2>$null)
-if ($claude.Count -gt 0) { $claude | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow } } else { Write-Clean }
+Write-Head "3a. Assistant attribution -- WORKING TREE (tracked files)"
+# The bracketed first letters keep this script from matching its own patterns.
+$attr = @(git --no-optional-locks grep -n -i -I -E '[c]laude|[a]nthropic|co-authored-by|generated with' -- . 2>$null)
+if ($attr.Count -gt 0) { $attr | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow } } else { Write-Clean }
 
-Write-Head "3b. 'Claude' / 'Anthropic' -- COMMIT MESSAGES"
-$msgs = @(git --no-optional-locks log --all --oneline -i --grep='claude' --grep='anthropic' --grep='co-authored-by' 2>$null)
+Write-Head "3b. Assistant attribution -- COMMIT MESSAGES"
+$msgs = @(git --no-optional-locks log --all --oneline -i --grep='[c]laude' --grep='[a]nthropic' --grep='co-authored-by' 2>$null)
 if ($msgs.Count -gt 0) {
     Write-Host ("  {0} commit(s) mention it. First 15:" -f $msgs.Count) -ForegroundColor Yellow
     $msgs | Select-Object -First 15 | ForEach-Object { Write-Host "    $_" }
