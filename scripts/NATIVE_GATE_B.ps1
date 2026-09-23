@@ -103,10 +103,11 @@ foreach ($r in $runs) {
         $peak = if ($d.hdr_info.limits -eq "nits") { [math]::Round([double]$d.hdr_info.max_luminance) } else { "" }
         if ($d.hint) { $hint = $d.hint }
         $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = $d.output_path; Screen = $d.screen_model;
+                                    WinHDR = $(if ($null -ne $d.windows_output.windows_hdr_on) { if ($d.windows_output.windows_hdr_on) { "on" } else { "off" } } else { "" });
                                     "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"];
                                     PeakNits = $peak; SdrWhite = $d.hdr_info.sdr_white_level; Verdict = $d.verdict }
     } else {
-        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = ""; Screen = ""; "203" = ""; "1000" = "";
+        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = ""; Screen = ""; WinHDR = ""; "203" = ""; "1000" = "";
                                     "2000" = ""; PeakNits = ""; SdrWhite = ""; Verdict = "ERROR" }
     }
 }

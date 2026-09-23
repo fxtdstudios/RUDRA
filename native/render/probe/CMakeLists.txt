@@ -7,4 +7,7 @@ qt_add_shaders(rudra-hdr-probe "rudra_probe_shaders"
   FILES probe.vert probe.frag)
 target_link_libraries(rudra-hdr-probe PRIVATE Qt6::Gui Qt6::GuiPrivate rudra::rudra_render)
 set_target_properties(rudra-hdr-probe PROPERTIES AUTOMOC OFF)
+if(WIN32)
+  target_link_libraries(rudra-hdr-probe PRIVATE dxgi)   # the Windows HDR state, read independently of Qt
+endif()
 rudra_warnings(rudra-hdr-probe)
