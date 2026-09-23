@@ -82,7 +82,9 @@ Re-run the script and commit when the Python it reads changes.
 exports the package, builds with LibTorch and ONNX Runtime (DirectML), and
 runs the golden frames on every backend the box has: LibTorch CPU and CUDA,
 ONNX Runtime CPU and DirectML. `-BenchDir` adds the bench frames. Report in
-`reports/`.
+`reports/`. Both Windows gate scripts need Visual Studio 2022 or 2026 (or the
+Build Tools) with the C++ tools; `-InstallBuildTools` installs the Build Tools
+with winget when none is found.
 
 **Gate B, HDR out.** `rudra-hdr-probe` opens a QRhi window with a test card
 (patches at 100, 203, 400, 600, 1 000 and 2 000 nits and a log ramp to
