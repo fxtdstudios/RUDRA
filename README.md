@@ -186,6 +186,15 @@ Playback runs at the footage's frame rate, with a read-ahead in front of the
 playhead, and the transport reads timecode. Master to OpenEXR in ACES 2065-1
 or linear Rec.2020.
 
+### Desktop app (planned)
+
+A native Studio for Windows, Linux and macOS is planned: Qt 6 and OpenGL for the
+interface and viewer, a C++20 core, and LibTorch running a TorchScript export of
+the model, with no Python at runtime. It is built on the `native` branch; this
+browser Studio and the Python CLI stay as they are and remain the reference every
+native module is tested against. The state before that work is tagged
+`webui-v1`. Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md).
+
 ---
 
 ## Results
@@ -230,6 +239,7 @@ Full tables, the failure analysis, and how to recompute every number:
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what a training set has to contain |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
 | [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |
+| [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) | the native desktop Studio: Qt 6, OpenGL, C++20, LibTorch; architecture, phases, acceptance |
 
 ---
 
