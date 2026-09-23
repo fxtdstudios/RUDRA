@@ -397,7 +397,9 @@ Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
   (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
 - [ ] Gate A on the 429 bench frames and on CUDA / DirectML / MPS / Core ML
   (`scripts/NATIVE_GATE_A.ps1`)
-- [ ] Gate B on the glass: a Windows HDR display and an XDR display
+- [x] Gate B on Windows: D3D12 scRGB and HDR10 carry 1 000 and 2 000 nits to
+  the swapchain on an HDR display
+- [ ] Gate B on an XDR Mac (Metal EDR)
 - [ ] Composite shader in GLSL 440 with readback parity (day 8)
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:

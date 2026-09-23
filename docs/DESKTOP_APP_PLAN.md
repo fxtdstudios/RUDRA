@@ -1,6 +1,6 @@
 # RUDRA Studio Desktop: native cross-platform plan
 
-> 23 Sep 2026, revision 3. Phase 0 in progress: days 1 to 4 (day 4 on CPU), 7 and 9 done, the Gate B probe built; Gate A on GPU and Gate B on the glass run on the Windows and Mac machines (`native/README.md`).
+> 23 Sep 2026, revision 3. Phase 0 in progress: days 1 to 4 (day 4 on CPU), 7 and 9 done; Gate B passes on Windows (D3D12 scRGB and HDR10); Gate A on GPU and Gate B on an XDR Mac open (`native/README.md`).
 > Stack: **Qt 6, QRhi (Metal / Direct3D 12 / Vulkan, OpenGL fallback), C++20,
 > LibTorch + ONNX Runtime**.
 > No Python at runtime. Design: `docs/NATIVE_ARCHITECTURE.md`. Mockup: the

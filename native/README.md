@@ -117,6 +117,6 @@ reports SDR and FAIL rather than passing a clipped card.
 | GPU execution providers (CUDA, DirectML, Core ML, ROCm, OpenVINO) | written; Gate A on GPU runs on the Windows box |
 | Composite, Region EV, master chain, AP0 | done: against `predict_image` and the `_render_master` stages |
 | Measurements (MaxRGB stats, MaxCLL/MaxFALL, Studio QC) | done |
-| Gate B probe | built and verified on the SDR fallback; waiting on a Windows HDR display and an XDR Mac |
+| Gate B | Windows passes: D3D12 scRGB and HDR10, D3D11 scRGB on a 418-nit HDR display; XDR Mac open |
 | Composite shader in GLSL 440, readback parity | next (day 8) |
 | Decode, encode, engine, viewer, app | Phase 1 onward |
