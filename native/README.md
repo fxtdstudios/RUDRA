@@ -67,6 +67,7 @@ the golden frames at the manifest's tolerances.
 ```
 rudra-native info dist/models/sdr2hdr_shadow_v1
 rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all --device cpu
+rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cuda --size 1920x1080
 ```
 
 ## Goldens
@@ -113,7 +114,9 @@ reports SDR and FAIL rather than passing a clipped card.
 composite shader offscreen on this GPU for every case in the composite
 goldens and reads it back: into RGBA32F against `composite.cpp` (atol 1e-6,
 rtol 2e-4) and into RGBA16F, the viewer's format, within 2 half-float ulp.
-Both gate B scripts run it on every API the machine has.
+Both gate B scripts run it on every API the machine has, with `--bench`: one
+composite pass timed at 1080p and 4K into RGBA16F (QRhi GPU timestamps). Gate A
+times inference at 1080p on every backend that passed (`rudra-native bench`).
 
 ## Status
 
@@ -127,5 +130,6 @@ Both gate B scripts run it on every API the machine has.
 | Measurements (MaxRGB stats, MaxCLL/MaxFALL, Studio QC) | done |
 | Gate A | Windows passes on all four: LibTorch CPU and CUDA, ONNX Runtime CPU and DirectML |
 | Gate B | Windows passes: D3D12 scRGB and HDR10, D3D11 scRGB on a 418-nit HDR display; XDR Mac open |
-| Composite shader in GLSL 440, readback parity | done on OpenGL (fp32 2.1e-6, fp16 1 ulp); D3D12, D3D11, Vulkan, Metal run in the gate B scripts |
+| Composite shader in GLSL 440, readback parity | done on Windows: D3D12, D3D11, Vulkan, OpenGL (fp16 1 half ulp); Metal open |
+| Budgets (NATIVE_ARCHITECTURE.md 6.6) | timing tools in both gate scripts; numbers recorded from the next Windows run |
 | Decode, encode, engine, viewer, app | Phase 1 onward |

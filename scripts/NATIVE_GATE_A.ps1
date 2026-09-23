@@ -35,6 +35,7 @@ param(
     [string]$OrtVersion = "1.22.0",
     [switch]$SkipExport,
     [switch]$SkipBuild,
+    [switch]$NoBench,
     [switch]$InstallBuildTools
 )
 
@@ -176,6 +177,27 @@ foreach ($r in $rows) {
     $summary += [pscustomobject]@{ Backend = $r.Name; Result = $result; "Worst |d|" = $worst }
 }
 $log += ($summary | Format-Table -AutoSize | Out-String)
+
+# ---------------------------------------------------------------------------
+# Inference time at 1080p on every backend that passed, for the budget table
+# (NATIVE_ARCHITECTURE.md 6.6). Wall time to fields in host memory.
+$bench = @()
+if (-not $NoBench) {
+    Say "Inference time, 1920x1080, fp32 (median of 5)"
+    foreach ($r in $rows) {
+        $row = $summary | Where-Object { $_.Backend -eq $r.Name }
+        if ($row.Result -ne "PASS") { continue }
+        $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        $out = & $Exe bench $Package --runtime $r.Runtime --device $r.Device --size 1920x1080 --iters 5 2>&1 | ForEach-Object { "$_" }
+        $ErrorActionPreference = $prev
+        $log += "---- bench $($r.Name)"; $log += $out; $log += ""
+        $ms = @{}
+        foreach ($l in ($out | Where-Object { $_ -match "^BENCH " })) { $f = $l -split " "; $ms[$f[4]] = [double]$f[5] }
+        $bench += [pscustomobject]@{ Backend = $r.Name; "untiled ms" = $ms["untiled"]; "tiled 512/64 ms" = $ms["tiled"] }
+    }
+    $bench | Format-Table -AutoSize | Out-String | Write-Host
+    $log += ($bench | Format-Table -AutoSize | Out-String)
+}
 $log | Set-Content -Encoding utf8 $Report
 
 Say "Result"

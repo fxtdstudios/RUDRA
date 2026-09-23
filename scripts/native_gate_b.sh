@@ -66,8 +66,8 @@ echo; echo "Reports in reports/. PASS is the swapchain half of the gate; confirm
 echo; echo "== GPU composite parity (day 8)"
 for api in $PARITY_APIS; do
   code=0
-  outp=$("$PARITY" --api "$api" --report "reports/native_gpu_parity_${api}_${STAMP}.json" 2>&1) || code=$?
-  printf '%s\n' "$outp" | grep -E "^GPU composite|=>" || true
+  outp=$("$PARITY" --api "$api" --report "reports/native_gpu_parity_${api}_${STAMP}.json" --bench 2>&1) || code=$?
+  printf '%s\n' "$outp" | grep -E "^GPU composite|=>|^  [0-9]+x[0-9]+ " || true
   case $code in
     0) ;;
     2) echo "  $api: not available here" ;;

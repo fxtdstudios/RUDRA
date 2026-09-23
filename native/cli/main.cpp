@@ -3,15 +3,24 @@
 //   rudra-native version
 //   rudra-native info <package>
 //   rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|directml|coreml|rocm|openvino]
+//   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080] [--iters 5]
 //
 // `diff` is the native half of Gate A (NATIVE_ARCHITECTURE.md 12): it runs the
 // package's golden frames through each compiled runtime, untiled and tiled, and
 // compares against what eager PyTorch produced when the package was exported.
 // Exit code 0 only if every runtime asked for passes.
+//
+// `bench` times inference for the budget table (NATIVE_ARCHITECTURE.md 6.6):
+// one warm-up, then the median of --iters runs, untiled and tiled 512/64, on
+// a synthetic frame. Wall time, fields back in host memory, so a GPU run is
+// timed to completion. Each result is also printed as a BENCH line for scripts.
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <string>
@@ -177,12 +186,68 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     return all_pass ? 0 : 1;
 }
 
+int cmd_bench(const fs::path& pkg, const std::string& which, Device device, int w, int h, int iters) {
+    auto m = read_manifest(pkg);
+    if (!m) return fail(m.error());
+    // Deterministic synthetic frame: a lit gradient with a clipped patch and
+    // fine texture, so every head has something to do.
+    PlanarBuffer b(3, h, w);
+    std::uint32_t seed = 20260923u;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            seed = seed * 1664525u + 1013904223u;
+            const float n = float(seed >> 8) / float(1u << 24) * 0.02f;
+            const float g = float(x) / float(w) * 0.8f + float(y) / float(h) * 0.2f;
+            const bool clip = std::abs(x - w * 3 / 4) < w / 10 && std::abs(y - h / 3) < h / 8;
+            for (int c = 0; c < 3; ++c) b.at(c, y, x) = clip ? 1.0f : std::clamp(g * (1.0f - 0.15f * float(c)) + n, 0.0f, 1.0f);
+        }
+    const SdrImage frame(std::move(b));
+
+    std::vector<Runtime> runtimes;
+    for (auto r : compiled_runtimes())
+        if (which == "all" || which == to_string(r)) runtimes.push_back(r);
+    if (runtimes.empty())
+        return fail(make_error(ErrorCode::Unsupported, "No requested runtime is compiled into this build.", which));
+
+    using clock = std::chrono::steady_clock;
+    for (auto rt : runtimes) {
+        auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
+        if (!backend) return fail(backend.error());
+        const auto info = (*backend)->info();
+        std::printf("%s %s on %s (%s), %dx%d, fp32, median of %d after one warm-up\n", to_string(info.runtime),
+                    info.version.c_str(), to_string(info.device), info.detail.c_str(), w, h, iters);
+        const std::pair<const char*, TileConfig> modes[] = {{"untiled", TileConfig{0, 0}},
+                                                            {"tiled", TileConfig{m->tile_size, m->overlap}}};
+        for (const auto& [name, cfg] : modes) {
+            std::vector<double> ms;
+            for (int i = 0; i <= iters; ++i) {
+                const auto t0 = clock::now();
+                auto r = infer_frame(**backend, frame, cfg);
+                const auto t1 = clock::now();
+                if (!r) {
+                    std::printf("  %-8s %s\n", name, r.error().message.c_str());
+                    ms.clear();
+                    break;
+                }
+                if (i > 0) ms.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+            }
+            if (ms.empty()) continue;
+            std::sort(ms.begin(), ms.end());
+            const double med = ms[ms.size() / 2];
+            std::printf("  %-8s median %8.1f ms  min %8.1f ms\n", name, med, ms.front());
+            std::printf("BENCH %s %s %dx%d %s %.2f\n", to_string(info.runtime), to_string(info.device), w, h, name, med);
+        }
+    }
+    return 0;
+}
+
 void usage() {
     std::fprintf(stderr,
                  "usage: rudra-native version\n"
                  "       rudra-native info <package>\n"
                  "       rudra-native diff <package> [--runtime libtorch|onnxruntime|all] [--device cpu|cuda|mps|"
-                 "directml|coreml|rocm|openvino]\n");
+                 "directml|coreml|rocm|openvino]\n"
+                 "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH] [--iters N]\n");
 }
 
 }  // namespace
@@ -207,6 +272,21 @@ int main(int argc, char** argv) {
         auto d = parse_device(device);
         if (!d) return fail(d.error());
         return cmd_diff(pkg, runtime, *d);
+    }
+    if (args[0] == "bench") {
+        std::string runtime = "all", device = "cpu";
+        int w = 1920, h = 1080, iters = 5;
+        for (std::size_t i = 2; i + 1 < args.size(); i += 2) {
+            if (args[i] == "--runtime") runtime = args[i + 1];
+            else if (args[i] == "--device") device = args[i + 1];
+            else if (args[i] == "--size") {
+                if (std::sscanf(args[i + 1].c_str(), "%dx%d", &w, &h) != 2 || w <= 0 || h <= 0) { usage(); return 64; }
+            } else if (args[i] == "--iters") iters = std::max(1, std::atoi(args[i + 1].c_str()));
+            else { usage(); return 64; }
+        }
+        auto d = parse_device(device);
+        if (!d) return fail(d.error());
+        return cmd_bench(pkg, runtime, *d, w, h, iters);
     }
     usage();
     return 64;

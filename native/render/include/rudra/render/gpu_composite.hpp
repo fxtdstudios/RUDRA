@@ -28,6 +28,14 @@ struct GpuCompositorInfo {
     std::string device;    // driver's device name
 };
 
+// One composite pass, timed: fields resident on the GPU, one pass into the
+// viewer's RGBA16F target, median over the iterations.
+struct GpuTiming {
+    double gpu_ms = 0.0;         // QRhi GPU timestamps; 0 when the backend has none
+    double wall_ms = 0.0;        // submit to completion, CPU clock
+    bool has_gpu_timestamps = false;
+};
+
 class GpuCompositor {
 public:
     // Auto: D3D12 on Windows, Metal on macOS, Vulkan (then OpenGL) elsewhere.
@@ -39,6 +47,7 @@ public:
     virtual Result<PlanarBuffer> composite(const SdrImage& sdr, const Fields& fields, const FrameScalars& scalars,
                                            const ModelConstants& model, const CompositeParams& params,
                                            GpuPrecision precision) = 0;
+    virtual Result<GpuTiming> benchmark(int width, int height, int iterations) = 0;
 };
 
 }  // namespace rudra

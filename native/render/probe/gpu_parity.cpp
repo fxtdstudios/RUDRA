@@ -2,7 +2,12 @@
 // shader on this machine's GPU against the C++ reference (composite.cpp), on
 // the composite goldens tools/emit_composite_golden.py writes.
 //
-//   rudra-gpu-parity [--api d3d12|d3d11|metal|vulkan|gl] [--golden DIR] [--report FILE]
+//   rudra-gpu-parity [--api d3d12|d3d11|metal|vulkan|gl] [--golden DIR] [--report FILE] [--bench]
+//
+// --bench also times one composite pass at 1080p and 4K into the viewer's
+// RGBA16F target (GPU timestamps where the backend has them), for the budget
+// table in NATIVE_ARCHITECTURE.md 6.6. Budgets: 4 ms at 1080p, 12 ms at 4K,
+// composite and view together; this times the composite.
 //
 // Every case runs twice: into an RGBA32F target, held to the C++ fp32 result
 // (atol 1e-6, rtol 2e-4, network units), and into RGBA16F, the viewer's
@@ -71,7 +76,8 @@ int main(int argc, char** argv) {
     QCommandLineOption api_opt("api", "d3d12, d3d11, metal, vulkan, gl or auto", "api", "auto");
     QCommandLineOption golden_opt("golden", "composite golden folder", "dir", RUDRA_COMPOSITE_GOLDEN_DIR);
     QCommandLineOption report_opt("report", "write a JSON report here", "file");
-    cli.addOptions({api_opt, golden_opt, report_opt});
+    QCommandLineOption bench_opt("bench", "also time the composite at 1080p and 4K");
+    cli.addOptions({api_opt, golden_opt, report_opt, bench_opt});
     cli.process(app);
 
     const QString a = cli.value(api_opt).toLower();
@@ -166,12 +172,32 @@ int main(int argc, char** argv) {
     }
     out << "  bound: fp32 atol " << kAtol << " rtol " << kRtol << "; fp16 " << kMaxHalfUlp << " half ulp\n";
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
+
+    QJsonArray jbench;
+    if (cli.isSet(bench_opt)) {
+        out << "Composite pass, RGBA16F target, median of 50 after one warm-up\n";
+        for (auto [w, h] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
+            auto t = (*gpu)->benchmark(w, h, 50);
+            if (!t) {
+                out << "  " << w << "x" << h << "  " << QString::fromStdString(t.error().message) << "\n";
+                continue;
+            }
+            out << QString("  %1x%2  gpu %3  wall %4 ms\n").arg(w).arg(h)
+                       .arg(t->has_gpu_timestamps ? QString::number(t->gpu_ms, 'f', 3) + " ms" : QString("n/a"))
+                       .arg(t->wall_ms, 0, 'f', 3);
+            out << "BENCH composite " << a << " " << w << "x" << h << " " << (t->has_gpu_timestamps ? t->gpu_ms : -1.0)
+                << " " << t->wall_ms << "\n";
+            jbench.append(QJsonObject{{"size", QString("%1x%2").arg(w).arg(h)},
+                                      {"gpu_ms", t->has_gpu_timestamps ? QJsonValue(t->gpu_ms) : QJsonValue()},
+                                      {"wall_ms", t->wall_ms}});
+        }
+    }
     if (cli.isSet(report_opt)) {
         QFile f(cli.value(report_opt));
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(QJsonObject{{"backend", QString::fromStdString(info.backend)},
                                               {"device", QString::fromStdString(info.device)},
-                                              {"api", a}, {"pass", all}, {"cases", jrows}})
+                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"bench", jbench}})
                         .toJson());
     }
     return all ? 0 : 1;

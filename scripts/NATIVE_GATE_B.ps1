@@ -126,14 +126,15 @@ $gateB = [bool]($rows | Where-Object { $_.API -eq "d3d12" -and $_.Verdict -eq "P
 # ---------------------------------------------------------------------------
 # Day 8: the composite shader on this GPU against the C++ reference, on every
 # API the viewer can run on here. fp32 target within 1e-6 + 2e-4 |ref|, fp16
-# target within 2 half-float ulp.
+# target within 2 half-float ulp. Then one composite pass timed at 1080p and
+# 4K (GPU timestamps; budgets 4 ms and 12 ms for composite and view).
 Say "GPU composite parity (day 8)"
 $parityRows = @()
 if (Test-Path $Parity) {
     foreach ($api in @("d3d12", "d3d11", "vulkan", "gl")) {
         $json = Join-Path $Reports "native_gpu_parity_${api}_$Stamp.json"
         $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        $text = & $Parity --api $api --report $json 2>&1 | ForEach-Object { "$_" }
+        $text = & $Parity --api $api --report $json --bench 2>&1 | ForEach-Object { "$_" }
         $code = $LASTEXITCODE
         $ErrorActionPreference = $prev
         $text | Where-Object { $_ -match "^GPU composite parity" } | Write-Host
@@ -141,8 +142,10 @@ if (Test-Path $Parity) {
             $d = Get-Content $json -Raw | ConvertFrom-Json
             $w32 = ($d.cases | Measure-Object -Property fp32_max_abs -Maximum).Maximum
             $w16 = ($d.cases | Measure-Object -Property fp16_max_ulp -Maximum).Maximum
+            $t = @{}; foreach ($b in $d.bench) { $t[$b.size] = if ($null -ne $b.gpu_ms) { "{0:f3}" -f $b.gpu_ms } else { "wall {0:f2}" -f $b.wall_ms } }
             $parityRows += [pscustomobject]@{ API = $api; Device = $d.device; "fp32 max|d|" = "{0:e2}" -f $w32;
-                                              "fp16 ulp" = $w16; Result = $(if ($d.pass) { "PASS" } else { "FAIL" }) }
+                                              "fp16 ulp" = $w16; "1080p ms" = $t["1920x1080"]; "4K ms" = $t["3840x2160"];
+                                              Result = $(if ($d.pass) { "PASS" } else { "FAIL" }) }
         } else {
             $why = ($text | Select-Object -Last 1)
             $parityRows += [pscustomobject]@{ API = $api; Device = ""; "fp32 max|d|" = ""; "fp16 ulp" = "";

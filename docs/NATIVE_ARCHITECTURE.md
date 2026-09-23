@@ -410,10 +410,10 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | [Phase 0] |
-| composite + view, 4K, GPU | ≤ 12 ms | [Phase 0] |
-| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | [Phase 0] |
-| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | [Phase 0] |
+| composite + view, 1080p, GPU | ≤ 4 ms | composite pass: `rudra-gpu-parity --bench` [Windows run pending] |
+| composite + view, 4K, GPU | ≤ 12 ms | composite pass: `rudra-gpu-parity --bench` [Windows run pending] |
+| inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32: `rudra-native bench` [Windows run pending]; fp16 not built yet |
+| inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | `rudra-native bench` [Windows run pending] |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
 | first frame after open (warm) | ≤ 2 s | [Phase 0] |
 | scrub to cached frame | ≤ 1 display frame | [Phase 0] |
@@ -524,8 +524,8 @@ later phase builds on.
 | 5 | QRhi HDR spike: a bare `QRhi` window on Windows (D3D12, `HDRExtendedSrgbLinear`) and macOS (Metal, `HDRExtendedDisplayP3Linear`), 1 000-nit patch; Linux Vulkan probed | **Gate B:** patch measured above SDR white on Windows and on an XDR display | **Windows passes** 23 Sep: `rudra-hdr-probe` (Qt 6.8, QRhi) on an RTX 4080 SUPER and an ASUS PA279CRV (418-nit peak, SDR white 240): D3D12 scRGB 203 / 1 000 / 2 000 nits exact, D3D12 HDR10 202.9 / 998.9 / 1 991.8 (10-bit PQ), D3D11 scRGB exact; the SDR fallback reports FAIL. XDR Mac open |
 | 6 | `core/color` types, `ColorEncoding`, `Image<Space>`, units; baseline port + golden | golden passes on 3 OSes |  |
 | 7 | `composite.spec.md` written from `compositor.js`, `composite.cpp`, golden vs browser Studio readback | exact on 5 test frames | **done** 23 Sep: [`composite.spec.md`](composite.spec.md); `composite.cpp` matches `predict_image` on 5 mode/strength/preserve cases on 2 frames (rtol 2e-4), Region EV and the whole master chain to AP0 match `_render_master` stage by stage; browser readback moves to day 8 with the shader |
-| 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend | **shader done** 23 Sep: `render/shaders/composite.frag`, `GpuCompositor` and `rudra-gpu-parity`; OpenGL on llvmpipe passes (fp32 2.1e-6, fp16 1 ulp, 12 cases); D3D12, D3D11, Vulkan run in `NATIVE_GATE_B.ps1`, Metal in `native_gate_b.sh` |
-| 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled | **port done** 23 Sep: `analyze_frame`, MaxCLL/MaxFALL and the Studio `measure()` match the Python; Tracy and GPU timestamps open |
+| 8 | composite shader in GLSL 440 compiled by `qsb`, running in the spike window on D3D12, Metal, Vulkan and GL; readback parity with `composite.cpp` | ≤ 2 half ulp on every backend | **Windows done** 23 Sep: `render/shaders/composite.frag`, `GpuCompositor`, `rudra-gpu-parity`; on an RTX 4080 SUPER D3D12 (fp32 3.0e-6), D3D11, Vulkan and OpenGL (1.7e-6) all pass with fp16 at 1 half ulp, 12 cases each; llvmpipe passes too. Metal open |
+| 9 | `measure()` port + MaxCLL/MaxFALL golden; Tracy + QRhi GPU timestamps; first budget numbers in §6.6 | table filled | **port done** 23 Sep: `analyze_frame`, MaxCLL/MaxFALL and the Studio `measure()` match the Python; timing in place: `rudra-native bench` (inference) and `rudra-gpu-parity --bench` (composite pass, QRhi GPU timestamps), run by both gate scripts; §6.6 numbers from the Windows run; Tracy open |
 | 10 | Review: ADRs signed, budgets and backend matrix recorded, go/no-go | decision written into `STATUS.md` |  |
 
 If Gate A fails, the fix is in the export (usually a traced branch or a

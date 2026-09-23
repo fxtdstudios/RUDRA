@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -166,6 +167,88 @@ public:
         return o;
     }
 
+    Result<GpuTiming> benchmark(int w, int h, int iterations) override {
+        if (!supports(GpuPrecision::Fp16))
+            return make_error(ErrorCode::Unsupported, "This GPU cannot render to RGBA16F.");
+        std::vector<float> a(std::size_t(w) * h * 4), b(std::size_t(w) * h * 4);
+        for (std::size_t i = 0; i < std::size_t(w) * h; ++i) {
+            const float v = float(i % 1021) / 1020.0f;
+            a[i * 4 + 0] = v; a[i * 4 + 1] = 1.0f - v; a[i * 4 + 2] = v * v; a[i * 4 + 3] = 0.3f;
+            b[i * 4 + 0] = 0.2f; b[i * 4 + 1] = -0.1f; b[i * 4 + 2] = 0.05f; b[i * 4 + 3] = 0.6f;
+        }
+        std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
+        std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
+        std::unique_ptr<QRhiTexture> out(rhi_->newTexture(QRhiTexture::RGBA16F, QSize(w, h), 1, QRhiTexture::RenderTarget));
+        if (!ta->create() || !tb->create() || !out->create())
+            return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
+        std::unique_ptr<QRhiTextureRenderTarget> rt(rhi_->newTextureRenderTarget({QRhiColorAttachment(out.get())}));
+        std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
+        rt->setRenderPassDescriptor(rp.get());
+        if (!rt->create()) return make_error(ErrorCode::BackendError, "GPU render target creation failed.");
+        std::unique_ptr<QRhiShaderResourceBindings> srb(rhi_->newShaderResourceBindings());
+        srb->setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, ubuf_.get()),
+            QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, ta.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tb.get(), sampler_.get()),
+        });
+        if (!srb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
+        std::unique_ptr<QRhiGraphicsPipeline> pipe(rhi_->newGraphicsPipeline());
+        pipe->setShaderStages({{QRhiShaderStage::Vertex, vert_}, {QRhiShaderStage::Fragment, frag_}});
+        pipe->setVertexInputLayout({});
+        pipe->setShaderResourceBindings(srb.get());
+        pipe->setRenderPassDescriptor(rp.get());
+        if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
+
+        // A typical grade: all modes on, preserve, three graded bands.
+        Ubo u{};
+        u.model[0] = 16.0f; u.model[1] = 4.0f; u.model[2] = 0.0406f; u.model[3] = 1.0f;
+        u.control[1] = 1.0f; u.control[2] = 1.0f; u.control[3] = 1.0f;
+        u.counts[0] = 8.0f; u.counts[1] = 3.0f;
+        const float bands[3][3] = {{8.64f, 10.97f, 0.5f}, {10.97f, 12.97f, -0.3f}, {-4.32f, 3.58f, 0.4f}};
+        for (int i = 0; i < 3; ++i)
+            for (int k = 0; k < 3; ++k) u.bands[i * 4 + k] = bands[i][k];
+
+        using clock = std::chrono::steady_clock;
+        std::vector<double> gpu, wall;
+        for (int i = 0; i <= iterations; ++i) {
+            QRhiCommandBuffer* cb = nullptr;
+            const auto t0 = clock::now();
+            if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
+                return make_error(ErrorCode::BackendError, "GPU frame could not start.");
+            QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
+            u.control[0] = float(i % 2);   // a slider move each frame: the UBO changes, nothing else
+            up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(Ubo), &u);
+            if (i == 0) {   // fields arrive once per inference, not per slider move
+                up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                    0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
+                up->uploadTexture(tb.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                    0, 0, QRhiTextureSubresourceUploadDescription(b.data(), quint32(b.size() * sizeof(float))))));
+            }
+            cb->beginPass(rt.get(), Qt::black, {1.0f, 0}, up);
+            cb->setGraphicsPipeline(pipe.get());
+            cb->setViewport({0, 0, float(w), float(h)});
+            cb->setShaderResources(srb.get());
+            cb->draw(3);
+            cb->endPass();
+            rhi_->endOffscreenFrame();
+            const auto t1 = clock::now();
+            if (i == 0) continue;   // warm-up, and the upload
+            wall.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+            const double g = cb->lastCompletedGpuTime();
+            if (g > 0.0) gpu.push_back(g * 1000.0);
+        }
+        auto median = [](std::vector<double> v) {
+            if (v.empty()) return 0.0;
+            std::sort(v.begin(), v.end());
+            return v[v.size() / 2];
+        };
+        GpuTiming t;
+        t.wall_ms = median(wall);
+        t.gpu_ms = median(gpu);
+        t.has_gpu_timestamps = !gpu.empty();
+        return t;
+    }
+
 private:
     Result<void> init(GpuApi api) {
         if (!QGuiApplication::instance())
@@ -183,21 +266,21 @@ private:
             case GpuApi::D3D12: {
 #ifdef Q_OS_WIN
                 QRhiD3D12InitParams p;
-                rhi_.reset(QRhi::create(QRhi::D3D12, &p));
+                rhi_.reset(QRhi::create(QRhi::D3D12, &p, QRhi::EnableTimestamps));
 #endif
                 break;
             }
             case GpuApi::D3D11: {
 #ifdef Q_OS_WIN
                 QRhiD3D11InitParams p;
-                rhi_.reset(QRhi::create(QRhi::D3D11, &p));
+                rhi_.reset(QRhi::create(QRhi::D3D11, &p, QRhi::EnableTimestamps));
 #endif
                 break;
             }
             case GpuApi::Metal: {
 #if QT_CONFIG(metal)
                 QRhiMetalInitParams p;
-                rhi_.reset(QRhi::create(QRhi::Metal, &p));
+                rhi_.reset(QRhi::create(QRhi::Metal, &p, QRhi::EnableTimestamps));
 #endif
                 break;
             }
@@ -208,7 +291,7 @@ private:
                 if (vk_->create()) {
                     QRhiVulkanInitParams p;
                     p.inst = vk_.get();
-                    rhi_.reset(QRhi::create(QRhi::Vulkan, &p));
+                    rhi_.reset(QRhi::create(QRhi::Vulkan, &p, QRhi::EnableTimestamps));
                 }
 #endif
                 break;
@@ -217,7 +300,7 @@ private:
                 fallback_.reset(QRhiGles2InitParams::newFallbackSurface());
                 QRhiGles2InitParams p;
                 p.fallbackSurface = fallback_.get();
-                rhi_.reset(QRhi::create(QRhi::OpenGLES2, &p));
+                rhi_.reset(QRhi::create(QRhi::OpenGLES2, &p, QRhi::EnableTimestamps));
                 break;
             }
             case GpuApi::Auto: break;
