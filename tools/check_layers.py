@@ -24,6 +24,7 @@ TORCH = re.compile(r"^(torch/|ATen/|c10/)")
 ORT = re.compile(r"^onnxruntime")
 GPU = re.compile(r"^(vulkan/|d3d1[12]|dxgi|Metal/|QuartzCore/|GL/|OpenGL/|GLES)")
 LIBAV = re.compile(r"^lib(av|sw)\w*/")
+OPENCV = re.compile(r"^opencv2?/")
 
 
 def layer_of(path: Path) -> str:
@@ -59,6 +60,8 @@ def violations() -> list[str]:
                 out.append(f"{rel}: GPU API header <{inc}> outside render/")
             if LIBAV.match(inc) and layer not in {"media", "deliver"}:
                 out.append(f"{rel}: FFmpeg header <{inc}> outside media/ and deliver/")
+            if OPENCV.match(inc) and not (layer in {"media", "deliver"} and f.parent.name == "src"):
+                out.append(f"{rel}: OpenCV header <{inc}> outside media/src and deliver/src")
     return out
 
 

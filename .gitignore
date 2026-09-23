@@ -140,3 +140,6 @@ SCRUB_TRAILERS.txt
 /scripts/RUN_CRITICAL_PATH.bat
 /scripts/RUN_NEXT_STEPS.bat
 /reports/
+
+# Decoder fixtures: small image files the native tests read (tools/emit_decode_golden.py).
+!/native/tests/golden/decode/*

@@ -17,7 +17,7 @@ platform   Result<T>, hashes, .npy reader                         (no deps)
 core       colour types, Image<Space>, baseline, tiling, manifest,
            composite, gamut, master chain, measurements           (platform)
 infer      InferenceBackend: LibTorch, ONNX Runtime, the tiler    (core)
-media      decode (interfaces)                                    (core)
+media      still decode (OpenCV imgcodecs); video in Phase 4       (core)
 render     the QRhi composite (rudra_render_gpu); probe/ holds
            rudra-hdr-probe and rudra-gpu-parity                   (core, Qt)
 deliver    encode and write (interfaces)                          (core)
@@ -50,6 +50,7 @@ Options:
 | `RUDRA_BUILD_CLI` | ON | `rudra-native` |
 | `RUDRA_WITH_LIBTORCH` | OFF | LibTorch backend (`CMAKE_PREFIX_PATH` to LibTorch or `torch.utils.cmake_prefix_path`) |
 | `RUDRA_TORCH_ROOT` | empty | import LibTorch or a pip torch folder directly, without TorchConfig: a CUDA torch then needs no CUDA toolkit to build |
+| `RUDRA_WITH_OPENCV` | OFF | still decode in `media/` (OpenCV core + imgcodecs, the decoder `rudra/decode.py` uses) |
 | `RUDRA_WITH_ONNXRUNTIME` | OFF | ONNX Runtime backend (`ONNXRUNTIME_ROOT` with `include/`, `lib/`) |
 | `RUDRA_BUILD_APP` | OFF | the Qt shell (Qt 6.4+) |
 | `RUDRA_BUILD_RENDER` | OFF | `rudra_render_gpu`: the QRhi composite (Qt 6.6+ with Qt Shader Tools) |
@@ -76,9 +77,11 @@ rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cud
 |---|---|---|
 | `tools/emit_core_golden.py` | `tests/golden/core/`: baseline, curve, tile weights | `test_core.cpp` |
 | `tools/emit_composite_golden.py` | `tests/golden/composite/`: composite, Region EV, anchor, chroma, AP0, master chain, measurements | `test_composite.cpp` |
+| `tools/emit_decode_golden.py` | `tests/golden/decode/`: 17 image fixtures and their decoded floats | `test_decode.cpp` |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
-Re-run the script and commit when the Python it reads changes.
+`python tools/emit_golden.py` runs every emitter; re-run it and commit when the
+Python it reads changes. CI does the same and fails on drift.
 
 ## Gates
 
@@ -133,4 +136,6 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | Composite shader in GLSL 440, readback parity | done on Windows: D3D12, D3D11, Vulkan, OpenGL (fp16 1 half ulp); Metal open |
 | Budgets (NATIVE_ARCHITECTURE.md 6.6) | recorded: composite 0.11 ms 1080p, 0.51 ms 4K; inference 150 ms (DirectML) and 172 ms (CUDA) at 1080p fp32 |
 | Phase 0 | closed 23 Sep 2026: GO on Windows, macOS conditional on MPS/Core ML, Metal EDR and Metal parity runs |
-| Decode, encode, engine, viewer, app | Phase 1 onward |
+| Still decode | done: bit-exact with `rudra/decode.py` on 17 fixtures |
+| Phase 1 (librudra) | steps 1 and 2 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
+| Video decode, encode, engine, viewer, app | Phase 1 onward |

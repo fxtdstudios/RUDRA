@@ -20,6 +20,7 @@ if(RUDRA_BUILD_HDR_PROBE)
 endif()
 option(RUDRA_WITH_LIBTORCH     "Build the LibTorch inference backend"             OFF)
 option(RUDRA_WITH_ONNXRUNTIME  "Build the ONNX Runtime inference backend"         OFF)
+option(RUDRA_WITH_OPENCV       "Still decode in media/ (OpenCV core + imgcodecs)"  OFF)
 set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime package root (include/, lib/)")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -46,4 +47,4 @@ if(RUDRA_BUILD_TESTS)
 endif()
 
 message(STATUS "RUDRA native: tests=${RUDRA_BUILD_TESTS} cli=${RUDRA_BUILD_CLI} app=${RUDRA_BUILD_APP} hdr_probe=${RUDRA_BUILD_HDR_PROBE} render=${RUDRA_BUILD_RENDER} "
-               "libtorch=${RUDRA_WITH_LIBTORCH} onnxruntime=${RUDRA_WITH_ONNXRUNTIME}")
+               "libtorch=${RUDRA_WITH_LIBTORCH} onnxruntime=${RUDRA_WITH_ONNXRUNTIME} opencv=${RUDRA_WITH_OPENCV}")

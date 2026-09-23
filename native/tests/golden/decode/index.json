@@ -1,0 +1,121 @@
+{
+  "oracle": "rudra/decode.py decode_sdr",
+  "cases": [
+    {
+      "file": "png8_rgb.png",
+      "expected": "png8_rgb.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "png16_rgb.png",
+      "expected": "png16_rgb.npy",
+      "bits": 16,
+      "distinct_codes": 787,
+      "source": "opencv"
+    },
+    {
+      "file": "png16_padded_scaled.png",
+      "expected": "png16_padded_scaled.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "png16_padded_shifted.png",
+      "expected": "png16_padded_shifted.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "png8_grey.png",
+      "expected": "png8_grey.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "png16_grey.png",
+      "expected": "png16_grey.npy",
+      "bits": 16,
+      "distinct_codes": 835,
+      "source": "opencv"
+    },
+    {
+      "file": "png8_rgba.png",
+      "expected": "png8_rgba.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "png8_palette.png",
+      "expected": "png8_palette.npy",
+      "bits": 8,
+      "distinct_codes": 55,
+      "source": "opencv"
+    },
+    {
+      "file": "jpeg_q92_420.jpg",
+      "expected": "jpeg_q92_420.npy",
+      "bits": 8,
+      "distinct_codes": 209,
+      "source": "opencv"
+    },
+    {
+      "file": "jpeg_q100_444.jpg",
+      "expected": "jpeg_q100_444.npy",
+      "bits": 8,
+      "distinct_codes": 234,
+      "source": "opencv"
+    },
+    {
+      "file": "jpeg_grey.jpg",
+      "expected": "jpeg_grey.npy",
+      "bits": 8,
+      "distinct_codes": 229,
+      "source": "opencv"
+    },
+    {
+      "file": "tiff8_rgb.tif",
+      "expected": "tiff8_rgb.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "tiff16_rgb.tif",
+      "expected": "tiff16_rgb.npy",
+      "bits": 16,
+      "distinct_codes": 787,
+      "source": "opencv"
+    },
+    {
+      "file": "tiff32f_rgb.tif",
+      "expected": "tiff32f_rgb.npy",
+      "bits": 32,
+      "distinct_codes": 798,
+      "source": "opencv"
+    },
+    {
+      "file": "tiff32f_hdr.tif",
+      "refused": "float input peaks at 4.000: this is scene-linear HDR, not an SDR frame. RUDRA reconstructs display-encoded SDR; an HDR file does not need reconstructing."
+    },
+    {
+      "file": "bmp24.bmp",
+      "expected": "bmp24.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    },
+    {
+      "file": "webp_lossless.webp",
+      "expected": "webp_lossless.npy",
+      "bits": 8,
+      "distinct_codes": 233,
+      "source": "opencv"
+    }
+  ]
+}

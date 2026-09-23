@@ -411,8 +411,8 @@ Progress: Phase 0 closed 23 Sep 2026, GO for Phase 1 on Windows; the Mac runs ar
 
 Next, Phase 1 (librudra, 15 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 14):
-- [ ] One golden harness across every emitter, re-run in CI
-- [ ] Still decode (PNG, JPEG, TIFF, EXR) matching `rudra/decode.py`
+- [x] One golden harness across every emitter (`tools/emit_golden.py`), re-run in CI
+- [x] Still decode (PNG, JPEG, TIFF, BMP, WebP) bit-exact with `rudra/decode.py`
 - [ ] Grade controls, HDR10/PQ, metadata writers, EXR/ACES writers
 - [ ] `rudra-native master`: a Studio-identical master EXR with no Python
 - [ ] QC, queue, sequence open; CI green on three OSes
