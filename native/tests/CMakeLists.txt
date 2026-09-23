@@ -16,4 +16,9 @@ gtest_discover_tests(rudra_tests)
 set(RUDRA_TEST_PACKAGE "" CACHE PATH "Model package for the golden parity test")
 if(RUDRA_TEST_PACKAGE AND RUDRA_BUILD_CLI)
   add_test(NAME model_package_parity COMMAND rudra-native diff "${RUDRA_TEST_PACKAGE}" --runtime all)
+  if(RUDRA_WITH_OPENCV)
+    # Phase 1 step 7: a Studio-identical master with no Python.
+    add_test(NAME master_parity COMMAND rudra-native master-check "${RUDRA_TEST_PACKAGE}"
+             "${CMAKE_CURRENT_SOURCE_DIR}/golden/master")
+  endif()
 endif()

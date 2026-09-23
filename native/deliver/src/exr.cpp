@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <limits>
 
 #include "rudra/core/gamut.hpp"
@@ -209,6 +210,114 @@ Result<void> write_aces_exr(const std::filesystem::path& path, const PlanarBuffe
 Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuffer& rgb, Primaries source,
                               double exposure, const ExrAttributes& provenance) {
     return write_aces_like(path, rgb, source, Primaries::Ap1, exposure, provenance, false);
+}
+
+namespace {
+float half_to_float(std::uint16_t h) noexcept {
+    const std::uint32_t sign = std::uint32_t(h & 0x8000u) << 16;
+    std::uint32_t exp = (h >> 10) & 0x1fu, mant = h & 0x3ffu;
+    std::uint32_t bits;
+    if (exp == 0) {
+        if (mant == 0) bits = sign;
+        else {
+            int e = -1;
+            do { ++e; mant <<= 1; } while (!(mant & 0x400u));
+            bits = sign | std::uint32_t(127 - 15 - e) << 23 | (mant & 0x3ffu) << 13;
+        }
+    } else if (exp == 31) {
+        bits = sign | 0x7f800000u | mant << 13;
+    } else {
+        bits = sign | (exp + 112) << 23 | mant << 13;
+    }
+    return std::bit_cast<float>(bits);
+}
+}  // namespace
+
+Result<ExrImage> read_exr(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return make_error(ErrorCode::NotFound, "The EXR file could not be opened.", path.string());
+    const std::vector<std::uint8_t> raw((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    auto bad = [&](const char* why) { return make_error(ErrorCode::ParseError, "The EXR file is not readable.", path.string() + ": " + why); };
+    std::size_t pos = 0;
+    auto i32 = [&](std::size_t at) {
+        std::int32_t v;
+        std::memcpy(&v, raw.data() + at, 4);
+        return v;
+    };
+    if (raw.size() < 8 || i32(0) != kMagic) return bad("not an EXR file");
+    if (i32(4) & 0x1a00) return bad("tiled, deep or multi-part");
+    pos = 8;
+    auto cstr = [&](std::size_t& at) {
+        const std::size_t start = at;
+        while (at < raw.size() && raw[at] != 0) ++at;
+        std::string s(raw.begin() + std::ptrdiff_t(start), raw.begin() + std::ptrdiff_t(at));
+        ++at;
+        return s;
+    };
+    ExrImage img;
+    std::vector<std::string> channels;
+    int x0 = 0, y0 = 0, x1 = -1, y1 = -1, compression = 0;
+    while (pos < raw.size() && raw[pos] != 0) {
+        const std::string name = cstr(pos), type = cstr(pos);
+        const auto size = static_cast<std::size_t>(i32(pos));
+        pos += 4;
+        if (pos + size > raw.size()) return bad("truncated header");
+        std::vector<std::uint8_t> payload(raw.begin() + std::ptrdiff_t(pos), raw.begin() + std::ptrdiff_t(pos + size));
+        if (type == "chlist") {
+            std::size_t c = pos;
+            while (raw[c] != 0) {
+                channels.push_back(cstr(c));
+                img.pixel_types.push_back(i32(c));
+                c += 16;
+            }
+        } else if (type == "compression") {
+            compression = payload[0];
+        } else if (name == "dataWindow") {
+            x0 = i32(pos); y0 = i32(pos + 4); x1 = i32(pos + 8); y1 = i32(pos + 12);
+        }
+        img.attribute_types.emplace_back(name, type);
+        img.attributes.emplace_back(name, std::move(payload));
+        pos += size;
+    }
+    ++pos;
+    if (compression != 0) return bad("compressed");
+    const int w = x1 - x0 + 1, h = y1 - y0 + 1;
+    if (w <= 0 || h <= 0 || channels.empty()) return bad("empty data window");
+    pos += 8 * std::size_t(h);
+    static const char* order[] = {"R", "G", "B", "A"};
+    const int nout = int(std::count(channels.begin(), channels.end(), std::string("A"))) ? 4 : 3;
+    img.pixels = PlanarBuffer(nout, h, w);
+    const bool all_half = std::all_of(img.pixel_types.begin(), img.pixel_types.end(), [](int t) { return t == 1; });
+    if (all_half) img.half_bits.assign(std::size_t(nout) * std::size_t(w) * std::size_t(h), 0);
+    for (int r = 0; r < h; ++r) {
+        if (pos + 8 > raw.size()) return bad("truncated data");
+        const int y = i32(pos) - y0;
+        pos += 8;
+        for (std::size_t c = 0; c < channels.size(); ++c) {
+            int plane = -1;
+            for (int k = 0; k < nout; ++k)
+                if (channels[c] == order[k]) plane = k;
+            const bool half = img.pixel_types[c] == 1;
+            const std::size_t bytes = std::size_t(w) * (half ? 2 : 4);
+            if (pos + bytes > raw.size()) return bad("truncated data");
+            if (plane >= 0) {
+                for (int x = 0; x < w; ++x) {
+                    float v;
+                    if (half) {
+                        std::uint16_t hv;
+                        std::memcpy(&hv, raw.data() + pos + std::size_t(x) * 2, 2);
+                        v = half_to_float(hv);
+                        if (all_half) img.half_bits[(std::size_t(plane) * std::size_t(h) + std::size_t(y)) * std::size_t(w) + std::size_t(x)] = hv;
+                    } else {
+                        std::memcpy(&v, raw.data() + pos + std::size_t(x) * 4, 4);
+                    }
+                    img.pixels.at(plane, y, x) = v;
+                }
+            }
+            pos += bytes;
+        }
+    }
+    return img;
 }
 
 std::string ocio_config_text() {

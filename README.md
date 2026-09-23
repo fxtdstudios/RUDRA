@@ -415,7 +415,8 @@ Next, Phase 1 (librudra, 15 days; plan in
 - [x] Still decode (PNG, JPEG, TIFF, BMP, WebP) bit-exact with `rudra/decode.py`
 - [x] Grade controls, HDR10/HLG, metadata sidecars, EXR/ACES/OCIO writers:
   sidecars, EXRs and the OCIO config byte-identical with the Python
-- [ ] `rudra-native master`: a Studio-identical master EXR with no Python
+- [x] `rudra-native master`: a Studio-identical master EXR with no Python
+  (within 1 half-float ulp, same header and sidecar, on both runtimes)
 - [ ] QC, queue, sequence open; CI green on three OSes
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:

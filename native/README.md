@@ -69,7 +69,15 @@ the golden frames at the manifest's tolerances.
 rudra-native info dist/models/sdr2hdr_shadow_v1
 rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all --device cpu
 rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cuda --size 1920x1080
+rudra-native master dist/models/sdr2hdr_shadow_v1 plate.png --out plate.exr [--params '{"container": "linear"}']
+rudra-native master-check dist/models/sdr2hdr_shadow_v1 native/tests/golden/master
 ```
+
+`master` is the Studio's Master button without the Studio: decode, fields,
+composite, Region EV, anchor, chroma carry, measure, ACES (or linear) EXR and
+its sidecar. `--params` takes the Studio's master parameters as JSON
+(`recovery_mode`, `strength`, `preserve_outside`, `regions`, `anchor`,
+`carry_chroma`, `source_space`, `container`, ...). Needs `RUDRA_WITH_OPENCV`.
 
 ## Goldens
 
@@ -79,6 +87,7 @@ rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cud
 | `tools/emit_composite_golden.py` | `tests/golden/composite/`: composite, Region EV, anchor, chroma, AP0, master chain, measurements | `test_composite.cpp` |
 | `tools/emit_decode_golden.py` | `tests/golden/decode/`: 17 image fixtures and their decoded floats | `test_decode.cpp` |
 | `tools/emit_delivery_golden.py` | `tests/golden/delivery/`: grades, PQ/HLG, a 3-shot sidecar set, EXR/ACES files, the OCIO config | `test_delivery.cpp` (files compared byte for byte) |
+| `tools/emit_master_golden.py` | `tests/golden/master/`: three stills and the Studio's masters of them | `rudra-native master-check` (a ctest) |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
 `python tools/emit_golden.py` runs every emitter; re-run it and commit when the
@@ -139,5 +148,6 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | Phase 0 | closed 23 Sep 2026: GO on Windows, macOS conditional on MPS/Core ML, Metal EDR and Metal parity runs |
 | Still decode | done: bit-exact with `rudra/decode.py` on 17 fixtures |
 | Grade, HDR10/HLG, metadata, EXR/ACES/OCIO | done: sidecars, EXRs and OCIO config byte-identical with the Python |
-| Phase 1 (librudra) | steps 1 to 6 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
+| `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
+| Phase 1 (librudra) | steps 1 to 7 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

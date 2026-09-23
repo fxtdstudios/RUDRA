@@ -1,0 +1,20 @@
+{
+  "maxcll_nits": 3236,
+  "maxfall_nits": 329,
+  "peak_nits": 3235.6,
+  "resolution": [
+    131,
+    97
+  ],
+  "source_bits": 8,
+  "container": "ACES 2065-1 (AP0)",
+  "transfer": "linear",
+  "diffuse_white_nits": 203.0,
+  "checkpoint": "sdr2hdr_shadow_v1.pt",
+  "recovery_mode": "highlights",
+  "residual_strength": 1.4,
+  "preserve_outside": false,
+  "region_ev": null,
+  "region_softness_stops": null,
+  "tiled": false
+}

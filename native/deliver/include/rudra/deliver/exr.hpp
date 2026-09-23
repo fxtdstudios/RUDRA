@@ -46,6 +46,17 @@ Result<void> write_acescg_exr(const std::filesystem::path& path, const PlanarBuf
                               Primaries source = Primaries::Rec2020, double exposure_scale = 1.0,
                               const ExrAttributes& provenance = {});
 
+// read_exr for uncompressed scanline files (exr.py's reader): the planes in
+// R, G, B(, A) order, and the header's attributes in file order as raw bytes.
+struct ExrImage {
+    PlanarBuffer pixels;
+    std::vector<std::pair<std::string, std::string>> attribute_types;   // name -> type
+    std::vector<std::pair<std::string, std::vector<std::uint8_t>>> attributes;   // name -> payload
+    std::vector<int> pixel_types;   // per channel, file order: 1 half, 2 float
+    std::vector<std::uint16_t> half_bits;   // raw halves, R, G, B(, A) planes, when every channel is half
+};
+Result<ExrImage> read_exr(const std::filesystem::path& path);
+
 // generate_ocio_config's text.
 std::string ocio_config_text();
 
