@@ -5,6 +5,22 @@
 
 #include <onnxruntime_cxx_api.h>
 
+// Provider factories that are not part of the generic C++ API. Each ships only
+// in the ORT package built with that provider (DirectML on Windows, Core ML on
+// Apple), so their presence decides what this build can offer.
+#if __has_include(<dml_provider_factory.h>)
+#include <dml_provider_factory.h>
+#define RUDRA_ORT_HAS_DML 1
+#else
+#define RUDRA_ORT_HAS_DML 0
+#endif
+#if __has_include(<coreml_provider_factory.h>)
+#include <coreml_provider_factory.h>
+#define RUDRA_ORT_HAS_COREML 1
+#else
+#define RUDRA_ORT_HAS_COREML 0
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -125,29 +141,46 @@ Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelMa
                 so.AppendExecutionProvider_CUDA(OrtCUDAProviderOptions{});
                 providers = "CUDAExecutionProvider,CPUExecutionProvider";
                 break;
-            case Device::DirectML:
-            case Device::CoreML:
-            case Device::Rocm:
-            case Device::OpenVino: {
-                const char* name = device == Device::DirectML ? "DmlExecutionProvider"
-                                   : device == Device::CoreML ? "CoreMLExecutionProvider"
-                                   : device == Device::Rocm   ? "ROCMExecutionProvider"
-                                                              : "OpenVINOExecutionProvider";
-                if (!offered(name))
-                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build does not offer that device.", name);
-                // Generic registration by provider name (ORT >= 1.14). DirectML
-                // additionally needs memory patterns off and sequential execution.
-                if (device == Device::DirectML) {
-                    so.DisableMemPattern();
-                    so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
-                }
-                so.AppendExecutionProvider(device == Device::DirectML ? "DML"
-                                           : device == Device::CoreML ? "CoreML"
-                                           : device == Device::Rocm   ? "ROCM"
-                                                                      : "OpenVINO");
-                providers = std::string(name) + ",CPUExecutionProvider";
+            case Device::DirectML: {
+                if (!offered("DmlExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no DirectML provider.",
+                                      "use the Microsoft.ML.OnnxRuntime.DirectML package");
+#if RUDRA_ORT_HAS_DML
+                // DirectML needs memory patterns off and sequential execution.
+                so.DisableMemPattern();
+                so.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(so, 0));
+                providers = "DmlExecutionProvider,CPUExecutionProvider";
                 break;
+#else
+                return make_error(ErrorCode::Unsupported, "This build was compiled without the DirectML header.",
+                                  "dml_provider_factory.h not found under ONNXRUNTIME_ROOT/include");
+#endif
             }
+            case Device::CoreML: {
+                if (!offered("CoreMLExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no Core ML provider.");
+#if RUDRA_ORT_HAS_COREML
+                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(so, 0));
+                providers = "CoreMLExecutionProvider,CPUExecutionProvider";
+                break;
+#else
+                return make_error(ErrorCode::Unsupported, "This build was compiled without the Core ML header.",
+                                  "coreml_provider_factory.h not found under ONNXRUNTIME_ROOT/include");
+#endif
+            }
+            case Device::Rocm:
+                if (!offered("ROCMExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no ROCm provider.");
+                so.AppendExecutionProvider_ROCM(OrtROCMProviderOptions{});
+                providers = "ROCMExecutionProvider,CPUExecutionProvider";
+                break;
+            case Device::OpenVino:
+                if (!offered("OpenVINOExecutionProvider"))
+                    return make_error(ErrorCode::Unsupported, "This ONNX Runtime build has no OpenVINO provider.");
+                so.AppendExecutionProvider_OpenVINO_V2({});
+                providers = "OpenVINOExecutionProvider,CPUExecutionProvider";
+                break;
             case Device::Mps:
                 return make_error(ErrorCode::Unsupported, "ONNX Runtime reaches the Apple GPU through Core ML, not MPS.");
         }
