@@ -9,6 +9,9 @@ if(RUDRA_BUILD_RENDER)
   rudra_library(rudra_render_gpu SOURCES src/gpu_composite.cpp)
   target_link_libraries(rudra_render_gpu PUBLIC rudra::rudra_core PRIVATE Qt6::Gui Qt6::GuiPrivate)
   set_target_properties(rudra_render_gpu PROPERTIES AUTOMOC OFF)
+  if(WIN32)
+    target_compile_definitions(rudra_render_gpu PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+  endif()
   qt_add_shaders(rudra_render_gpu "rudra_composite_shaders"
     PREFIX "/rudra/shaders"
     BASE shaders

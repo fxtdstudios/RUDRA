@@ -7,6 +7,7 @@ qt_add_shaders(rudra-hdr-probe "rudra_probe_shaders"
 target_link_libraries(rudra-hdr-probe PRIVATE Qt6::Gui Qt6::GuiPrivate rudra::rudra_render)
 set_target_properties(rudra-hdr-probe PROPERTIES AUTOMOC OFF)
 if(WIN32)
+  target_compile_definitions(rudra-hdr-probe PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
   target_link_libraries(rudra-hdr-probe PRIVATE dxgi)   # the Windows HDR state, read independently of Qt
 endif()
 rudra_warnings(rudra-hdr-probe)
@@ -17,4 +18,7 @@ target_link_libraries(rudra-gpu-parity PRIVATE Qt6::Gui rudra::rudra_render_gpu 
 target_compile_definitions(rudra-gpu-parity PRIVATE
   RUDRA_COMPOSITE_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden/composite")
 set_target_properties(rudra-gpu-parity PROPERTIES AUTOMOC OFF)
+if(WIN32)
+  target_compile_definitions(rudra-gpu-parity PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 rudra_warnings(rudra-gpu-parity)

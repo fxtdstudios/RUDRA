@@ -18,6 +18,9 @@
 #include "rudra/render/viewer_backend.hpp"
 
 #ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX   // windows.h (via dxgi) would otherwise turn std::max into a macro
+#endif
 #include <dxgi1_6.h>
 #pragma comment(lib, "dxgi.lib")
 #endif
