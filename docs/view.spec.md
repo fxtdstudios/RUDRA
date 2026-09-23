@@ -97,7 +97,11 @@ Over `m = max(R, G, B)` of a composite target, in fp32 on the GPU, by a ladder
 of 2x2 passes to one texel (the first pass takes the channel maximum):
 
 * `peak = max(m) * P`, exact: a maximum loses nothing.
-* `mean = sum(m) * P / (W H)`, the sum in the ladder's tree order.
+* `mean = sum(m) * P / (W H)`, the sum in the ladder's tree order: level by
+  level, each output texel `(x, y)` adds, in fp32, the source texels
+  `(2x, 2y)`, `(2x+1, 2y)`, `(2x, 2y+1)`, `(2x+1, 2y+1)` that exist, rows in
+  image order, until one texel is left. Evaluated in that order the sum is
+  the same number on every implementation.
 
 `MaxCLL = ceil(peak(M))`, `MaxFALL = ceil(mean(M))`. Never from the sample:
 a downsample would miss the one specular pixel MaxCLL is about.
@@ -175,7 +179,7 @@ each rounded half to even into 8 bits.
 | display pass, shader vs C++ (step 4) | 1 code in 8 bits; measured on llvmpipe: equal in every byte | the same |
 | probe, index, sample | exact | texel reads and integers |
 | peak (step 6) | exact against the same target | a maximum |
-| mean (step 6) | fp32 summation bound | tree order vs sequential |
+| sum (step 6) | exact when evaluated in the ladder's order; measured: equal to the browser's and the shader's | the order is specified, so no bound is needed |
 | waveform, histogram, vectorscope bins (step 8) | exact | integer counts on the same sample |
 | HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |

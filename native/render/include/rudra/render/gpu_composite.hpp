@@ -56,6 +56,9 @@ public:
                                    const ViewParams& params) = 0;
     // The display pass for any output path (params.target), into an RGBA32F
     // or RGBA16F target: the values the swapchain would be written with.
+    // The exact reduction ladder (docs/view.spec.md section 4) over a
+    // composite target: peak and fp32 sum of max(R, G, B), network units.
+    virtual Result<Reductions> reduce(const NetworkLinearImage& image) = 0;
     virtual Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                                              const ViewParams& params, GpuPrecision precision) = 0;
 };

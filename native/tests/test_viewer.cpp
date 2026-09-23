@@ -122,11 +122,12 @@ void expect_gpu_close(std::span<const float> got, std::span<const float> want, c
     ::testing::Test::RecordProperty(what, std::to_string(max_abs));
 }
 
-struct Reductions {
+// Sequential double reductions, independent of the ladder.
+struct DoubleSums {
     double peak = 0.0, mean = 0.0;
 };
-Reductions reduce(std::span<const float> planar, std::size_t n) {
-    Reductions r;
+DoubleSums double_sums(std::span<const float> planar, std::size_t n) {
+    DoubleSums r;
     double sum = 0.0;
     for (std::size_t i = 0; i < n; ++i) {
         const double m = std::max({double(planar[i]), double(planar[n + i]), double(planar[2 * n + i])});
@@ -162,7 +163,7 @@ TEST(Viewer, BrowserCompositeMatchesCompositeCpp) {
         const auto want_base = planar_of(npy(frame.at("base").get<std::string>()));
         expect_gpu_close(base.buffer().span(), want_base, name + " baseline");
 
-        const Reductions base_r = reduce(base.buffer().span(), n);
+        const DoubleSums base_r = double_sums(base.buffer().span(), n);
         for (const auto& c : frame.at("cases")) {
             const std::string cname = c.at("name").get<std::string>();
             const json& prm = c.at("params");
@@ -176,7 +177,7 @@ TEST(Viewer, BrowserCompositeMatchesCompositeCpp) {
                 expect_gpu_close(out.buffer().span(), planar_of(npy(c.at("model").get<std::string>())), name + " " + cname);
 
             // Exact reductions on both sides of fp32 composites that agree to the bound above.
-            const Reductions r = reduce(out.buffer().span(), n);
+            const DoubleSums r = double_sums(out.buffer().span(), n);
             EXPECT_NEAR(r.peak, c.at("peak_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * r.peak) << cname;
             EXPECT_NEAR(r.mean, c.at("mean_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * r.mean) << cname;
             EXPECT_NEAR(base_r.peak, c.at("base_peak_nits").get<double>(), 5e-5 * kPeakNits + 1e-5 * base_r.peak) << cname;
@@ -297,4 +298,49 @@ TEST(Viewer, HdrOverlaysAreGraphicsAtTheSdrWhite) {
     const auto vw = render_view(m, b, w);
     EXPECT_NEAR(vw.at(0, 0, 1), (1000.0f - 1000.0f) / 80.0f, 1e-5f);   // 5 000 nits clips to 1 000, inverted to 0
     EXPECT_NEAR(vw.at(0, 0, 0), 203.0f / 80.0f, 1e-5f);                // left of the wipe: the baseline
+}
+
+// ---- steps 6 and 7: the reduction ladder and the probe, against the browser --
+
+TEST(Viewer, ReductionLadderEqualsTheBrowsersExactly) {
+    for (const auto& frame : index_json().at("frames")) {
+        const std::string name = frame.at("name").get<std::string>();
+        const auto base = image_of(npy(frame.at("base").get<std::string>()));
+        const std::size_t n = std::size_t(base.width()) * std::size_t(base.height());
+        const Reductions rb = reduce_ladder(base.buffer());
+        for (const auto& c : frame.at("cases")) {
+            EXPECT_EQ(double(rb.peak) * kPeakNits, c.at("base_peak_nits").get<double>()) << name;
+            if (!c.at("model").is_string()) continue;   // the browser's composite is stored for these
+            const auto model = image_of(npy(c.at("model").get<std::string>()));
+            const Reductions r = reduce_ladder(model.buffer());
+            const std::string what = name + " " + c.at("name").get<std::string>();
+            EXPECT_EQ(double(r.peak) * kPeakNits, c.at("peak_nits").get<double>()) << what;
+            EXPECT_EQ(double(r.sum) * kPeakNits / double(n), c.at("mean_nits").get<double>()) << what;
+            const json& m = c.at("metrics");
+            EXPECT_EQ(std::ceil(double(r.peak) * kPeakNits), m.at("maxcll").get<double>()) << what;
+            EXPECT_EQ(std::ceil(double(r.sum) * kPeakNits / double(n)), m.at("maxfall").get<double>()) << what;
+        }
+    }
+}
+
+TEST(Viewer, ProbeEqualsTheBrowsersExactly) {
+    for (const auto& frame : index_json().at("frames")) {
+        const std::string name = frame.at("name").get<std::string>();
+        const auto model = image_of(npy(frame.at("cases").at(0).at("model").get<std::string>()));
+        const auto base = image_of(npy(frame.at("base").get<std::string>()));
+        for (const auto& pr : frame.at("probes")) {
+            const auto at = pr.at("at").get<std::vector<double>>();
+            const Probe got = probe(model, base, at[0], at[1]);
+            const std::string what = name + " probe " + pr.at("at").dump();
+            EXPECT_EQ(got.model.x, pr.at("x").get<int>()) << what;
+            EXPECT_EQ(got.model.y, pr.at("y").get<int>()) << what;
+            for (const auto& [sample, key] : {std::pair{&got.model, "model"}, std::pair{&got.baseline, "baseline"}}) {
+                const json& w = pr.at(key);
+                EXPECT_EQ(sample->rgb_nits[0], w.at("r").get<double>()) << what << key;
+                EXPECT_EQ(sample->rgb_nits[1], w.at("g").get<double>()) << what << key;
+                EXPECT_EQ(sample->rgb_nits[2], w.at("b").get<double>()) << what << key;
+                EXPECT_EQ(sample->nits, w.at("nits").get<double>()) << what << key;
+            }
+        }
+    }
 }

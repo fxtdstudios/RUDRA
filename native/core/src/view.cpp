@@ -153,4 +153,54 @@ Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearI
     return out;
 }
 
+Reductions reduce_ladder(const PlanarBuffer& rgb) {
+    int w = rgb.width(), h = rgb.height();
+    std::vector<float> mx(std::size_t(w) * h), sm;
+    for (std::size_t i = 0; i < mx.size(); ++i)
+        mx[i] = std::max(std::max(rgb.plane(0)[i], rgb.plane(1)[i]), rgb.plane(2)[i]);
+    sm = mx;
+    while (w > 1 || h > 1) {
+        const int dw = std::max(1, (w + 1) / 2), dh = std::max(1, (h + 1) / 2);
+        std::vector<float> nm(std::size_t(dw) * dh), ns(std::size_t(dw) * dh);
+        for (int y = 0; y < dh; ++y)
+            for (int x = 0; x < dw; ++x) {
+                float am = -1e30f, as = 0.0f;
+                for (int j = 0; j < 2; ++j)
+                    for (int i = 0; i < 2; ++i) {
+                        const int px = 2 * x + i, py = 2 * y + j;
+                        if (px >= w || py >= h) continue;
+                        const std::size_t k = std::size_t(py) * w + px;
+                        am = std::max(am, mx[k]);
+                        as = as + sm[k];
+                    }
+                nm[std::size_t(y) * dw + x] = am;
+                ns[std::size_t(y) * dw + x] = as;
+            }
+        mx.swap(nm);
+        sm.swap(ns);
+        w = dw;
+        h = dh;
+    }
+    return {mx[0], sm[0]};
+}
+
+Probe probe(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y) {
+    const int w = model.width(), h = model.height();
+    // Math.round: half up.
+    const int px = std::clamp(int(std::floor(x + 0.5)), 0, w - 1);
+    const int py = std::clamp(int(std::floor(y + 0.5)), 0, h - 1);
+    auto one = [&](const NetworkLinearImage& img) {
+        ProbeSample s;
+        s.x = px;
+        s.y = py;
+        const float r = img.buffer().at(0, py, px), g = img.buffer().at(1, py, px), b = img.buffer().at(2, py, px);
+        s.rgb_nits[0] = double(r) * 10000.0;
+        s.rgb_nits[1] = double(g) * 10000.0;
+        s.rgb_nits[2] = double(b) * 10000.0;
+        s.nits = (double(r) * 0.2627 + double(g) * 0.6780 + double(b) * 0.0593) * 10000.0;
+        return s;
+    };
+    return {one(model), one(baseline)};
+}
+
 }  // namespace rudra

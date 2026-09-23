@@ -71,6 +71,27 @@ float linear_to_srgb(float x) noexcept;
 PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                          const ViewParams& params);
 
+// The exact reductions over m = max(R, G, B) (docs/view.spec.md section 4),
+// in network units, evaluated as the GPU ladder evaluates them: 2x2 boxes in
+// fp32, j then i within a box, rows and columns paired in image order, so the
+// fp32 sum is the same number the shader produces, not just a close one.
+struct Reductions {
+    float peak = 0.0f;   // max(m)
+    float sum = 0.0f;    // the ladder's fp32 sum of m
+};
+Reductions reduce_ladder(const PlanarBuffer& rgb);
+
+// The probe (section 3): one pixel of each composite, round half up, clamped.
+struct ProbeSample {
+    int x = 0, y = 0;
+    double rgb_nits[3] = {0, 0, 0};   // texel * 10000 in double, as the page
+    double nits = 0.0;   // Rec.2020 luminance, in double as the page computes it
+};
+struct Probe {
+    ProbeSample model, baseline;
+};
+Probe probe(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y);
+
 // The SDR picture quantised as the 8-bit framebuffer does: round(255 c).
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                            const ViewParams& params);
