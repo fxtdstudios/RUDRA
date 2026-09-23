@@ -19,6 +19,7 @@ Emitters, in order:
     queue      tools/emit_queue_golden.py      queue state files and refusals
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
+    viewport   tools/emit_viewport_golden.py   the Studio's fit, zoom and pan layout (needs Playwright)
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ EMITTERS = {
     "queue": "emit_queue_golden.py",
     "sequence": "emit_sequence_golden.py",
     "viewer": "emit_viewer_golden.py",
+    "viewport": "emit_viewport_golden.py",
 }
 
 

@@ -216,6 +216,11 @@ input{font:inherit}
 /* ---------- viewer ---------- */
 .viewer{
   flex:1;position:relative;min-height:0;min-width:0;display:grid;place-items:center;
+  /* One track the size of the content box, whatever the plate's size. With
+     the implicit auto tracks a zoomed plate wider or taller than the viewer
+     grew its track and sat at the track's start, so the first wheel tick from
+     fit threw the picture off centre instead of zooming about the cursor. */
+  grid-template:minmax(0,1fr)/minmax(0,1fr);
   overflow:hidden;padding:14px;
   background:repeating-conic-gradient(#101215 0% 25%, #0c0e10 0% 50%) 50%/16px 16px;
 }

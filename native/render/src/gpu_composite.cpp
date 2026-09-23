@@ -1,6 +1,7 @@
 #include "rudra/render/gpu_composite.hpp"
 
 #include "rudra/core/gamut.hpp"
+#include "passes.hpp"
 
 #include <QFile>
 #include <QFloat16>
@@ -21,48 +22,11 @@
 namespace rudra {
 namespace {
 
-QShader load_shader(const QString& name) {
-    QFile f(name);
-    return f.open(QIODevice::ReadOnly) ? QShader::fromSerialized(f.readAll()) : QShader();
-}
-
-// std140 layout of the Composite block in shaders/composite.frag.
-struct Ubo {
-    float model[4];
-    float control[4];
-    float counts[4];
-    float curve[36];
-    float bands[32];
-};
-static_assert(sizeof(Ubo) == (3 * 4 + 36 + 32) * sizeof(float));
-
-// std140 layout of the View block in shaders/display.frag.
-struct ViewUbo {
-    float view[4];
-    float extra[4];
-    float target[4];
-    float pic[12];   // three vec4 rows
-    float gfx[12];
-};
-static_assert(sizeof(ViewUbo) == 36 * sizeof(float));
-
-struct ReduceUbo {
-    float sizes[4];
-};
-
-void rows_of(const Mat3& m, float* out) {
-    for (int r = 0; r < 3; ++r)
-        for (int c = 0; c < 3; ++c) out[r * 4 + c] = float(m[std::size_t(r)][std::size_t(c)]);
-}
-
-// A composite target as an RGBA32F upload: rgb, alpha 1.
-std::vector<float> rgba_of(const PlanarBuffer& rgb) {
-    const std::size_t n = rgb.plane_size();
-    std::vector<float> out(n * 4, 1.0f);
-    for (std::size_t i = 0; i < n; ++i)
-        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
-    return out;
-}
+using detail::CompositeUbo;
+using detail::ReduceUbo;
+using detail::ViewUbo;
+using detail::load_shader;
+using detail::rgba_of;
 
 class RhiCompositor final : public GpuCompositor {
 public:
@@ -95,16 +59,8 @@ public:
             return make_error(ErrorCode::Unsupported, "The curve has more parameters than the shader holds (36).");
 
         // Inputs: two RGBA32F textures, interleaved on the CPU.
-        std::vector<float> a(std::size_t(w) * h * 4), b(std::size_t(w) * h * 4);
-        const std::size_t n = std::size_t(w) * h;
-        for (std::size_t i = 0; i < n; ++i) {
-            for (int c = 0; c < 3; ++c) {
-                a[i * 4 + c] = sdr.buffer().plane(c)[i];
-                b[i * 4 + c] = fields.residual.plane(c)[i];
-            }
-            a[i * 4 + 3] = fields.shadow.plane(0)[i];
-            b[i * 4 + 3] = fields.highlight.plane(0)[i];
-        }
+        std::vector<float> a, b;
+        detail::interleave_inputs(sdr, fields, a, b);
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         const QRhiTexture::Format out_fmt = precision == GpuPrecision::Fp32 ? QRhiTexture::RGBA32F : QRhiTexture::RGBA16F;
@@ -133,33 +89,13 @@ public:
         pipe->setRenderPassDescriptor(rp.get());
         if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
 
-        Ubo u{};
-        u.model[0] = model.log_scale;
-        u.model[1] = model.max_hdr;
-        u.model[2] = static_cast<float>(std::exp2(-static_cast<double>(model.corpus_ev)) * (203.0 / 10000.0));
-        u.model[3] = params.strength;
-        u.control[0] = float(int(params.mode));
-        u.control[1] = params.preserve_outside ? 1.0f : 0.0f;
-        u.control[2] = scalars.shadow_weight;
-        u.control[3] = static_cast<float>(params.region_softness_stops);
-        const std::size_t np = scalars.curve_params.size();
-        u.counts[0] = np >= 3 ? float(np - 1) : 0.0f;
-        std::copy(scalars.curve_params.begin(), scalars.curve_params.end(), u.curve);
-        int bands = 0;
-        for (const auto& band : params.regions) {
-            if (band.ev == 0.0 || bands == 8) continue;
-            u.bands[bands * 4 + 0] = static_cast<float>(std::log2(band.low_nits));
-            u.bands[bands * 4 + 1] = static_cast<float>(std::log2(band.high_nits));
-            u.bands[bands * 4 + 2] = static_cast<float>(band.ev);
-            ++bands;
-        }
-        u.counts[1] = float(bands);
+        const CompositeUbo u = detail::composite_ubo(scalars, model, params);
 
         QRhiCommandBuffer* cb = nullptr;
         if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
             return make_error(ErrorCode::BackendError, "GPU frame could not start.");
         QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
-        up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(Ubo), &u);
+        up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(CompositeUbo), &u);
         up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
             0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
         up->uploadTexture(tb.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
@@ -231,7 +167,7 @@ public:
         if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
 
         // A typical grade: all modes on, preserve, three graded bands.
-        Ubo u{};
+        CompositeUbo u{};
         u.model[0] = 16.0f; u.model[1] = 4.0f; u.model[2] = 0.0406f; u.model[3] = 1.0f;
         u.control[1] = 1.0f; u.control[2] = 1.0f; u.control[3] = 1.0f;
         u.counts[0] = 8.0f; u.counts[1] = 3.0f;
@@ -248,7 +184,7 @@ public:
                 return make_error(ErrorCode::BackendError, "GPU frame could not start.");
             QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
             u.control[0] = float(i % 2);   // a slider move each frame: the UBO changes, nothing else
-            up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(Ubo), &u);
+            up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(CompositeUbo), &u);
             if (i == 0) {   // fields arrive once per inference, not per slider move
                 up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
                     0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
@@ -459,20 +395,7 @@ private:
         pipe->setRenderPassDescriptor(rp.get());
         if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
 
-        // The uniforms as core/view.cpp rounds them to fp32.
-        ViewUbo u{};
-        u.view[0] = float(int(params.mode));
-        u.view[1] = float(10000.0 / std::max(params.display_nits, 1e-3));
-        u.view[2] = params.wipe >= 0.0 ? float(std::clamp(params.wipe, 0.0, 1.0)) : -1.0f;
-        u.view[3] = float(params.wipe_half_width);
-        u.extra[0] = std::log2(1.0f + float(std::max(params.diff_gain, 1.0)));
-        u.extra[1] = float(w);
-        u.extra[2] = params.show == ViewSource::Baseline ? 1.0f : 0.0f;
-        u.target[0] = float(int(params.target.path));
-        u.target[1] = float(std::min(params.display_nits, params.target.peak_nits));
-        u.target[2] = float(params.target.unit_nits);
-        rows_of(rgb_to_rgb_matrix(params.source, params.target.primaries), u.pic);
-        rows_of(rgb_to_rgb_matrix(Primaries::Rec709, params.target.primaries), u.gfx);
+        const ViewUbo u = detail::view_ubo(params, w);
 
         QRhiCommandBuffer* cb = nullptr;
         if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
@@ -567,7 +490,7 @@ private:
         reduce_ = load_shader(":/rudra/shaders/reduce.frag.qsb");
         if (!vert_.isValid() || !frag_.isValid() || !display_.isValid() || !reduce_.isValid())
             return make_error(ErrorCode::NotFound, "The composite shaders are missing from the build.");
-        ubuf_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(Ubo)));
+        ubuf_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(CompositeUbo)));
         vbuf_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ViewUbo)));
         sampler_.reset(rhi_->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));

@@ -39,9 +39,10 @@ GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
 cmake -S native -B build/native_gate_b "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release \
   -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
   -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" >/dev/null
-cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity --parallel
+cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check --parallel
 EXE=build/native_gate_b/render/probe/rudra-hdr-probe
 PARITY=build/native_gate_b/render/probe/rudra-gpu-parity
+VIEWER=build/native_gate_b/render/probe/rudra-viewer-check
 
 status=1
 printf "\n%-8s %-6s %-6s %8s %8s %8s  %s\n" API ASKED GOT 203 1000 2000 VERDICT
@@ -73,5 +74,20 @@ for api in $PARITY_APIS; do
     2) echo "  $api: not available here" ;;
     *) echo "  $api: FAIL"; status=1 ;;
   esac
+done
+
+echo; echo "== The viewer window (Phase 2 step 9): swapchain parity, then Gate B through the display pass"
+for api in $PARITY_APIS; do
+  for mode in parity card; do
+    code=0
+    extra=(); [ "$mode" = card ] && extra=(--card)
+    outp=$("$VIEWER" --api "$api" "${extra[@]}" --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
+    printf '%s\n' "$outp" | grep -E "^Viewer window|^Gate B through|patch|=>|FAIL" || true
+    case $code in
+      0) ;;
+      2) echo "  $api $mode: not available here" ;;
+      *) echo "  $api $mode: FAIL"; status=1 ;;
+    esac
+  done
 done
 exit $status

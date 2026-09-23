@@ -1,8 +1,8 @@
 # The viewer: specification
 
-Status: revision 2, 24 Sep 2026 (Phase 2 steps 2 and 5). Normative for every
-implementation. Revision 2 adds the HDR output paths (section 9); later
-revisions add the viewport maths (step 9) and the guides (step 11).
+Status: revision 3, 24 Sep 2026 (Phase 2 steps 2, 5 and 9). Normative for
+every implementation. Revision 2 added the HDR output paths (section 9),
+revision 3 the viewport (section 10); the guides follow (step 11).
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -183,6 +183,8 @@ each rounded half to even into 8 bits.
 | waveform, histogram, vectorscope bins (step 8) | exact; measured: equal, and every `computeStats` number too | integer counts on the same sample |
 | HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
+| viewport vs the browser's layout (step 9) | scale and readout exact; rectangle within 1/64 px; pan within 1e-3 px | Chromium lays out in 1/64 px and reads transforms back in float32 |
+| the viewer window's swapchain vs `core/view.cpp` on `composite.cpp` (step 9) | 1 code in 8 bits; measured 1 on llvmpipe | the picture is held in RGBA16F between the display pass and the blit |
 
 ## 9. HDR output paths
 
@@ -223,8 +225,42 @@ their section 2 value `c` (the handle inverting it to `1 - c`) is shown at the
 SDR white, `n_k = 203 srgb_to_linear(c_k)` in Rec.709, then converted with
 `M_709->target` and encoded as above.
 
-## 10. Not in revision 2
+## 10. The viewport
 
-The viewport (fit, 1:1, zoom about the cursor, pan; step 9) and the guides
-(step 11). A glass measurement of the HDR paths through this pass, which
-needs the viewer window, is Gate B's re-run in step 9.
+Where the picture lands in the viewer, in the viewer's logical pixels, origin
+top-left (`core/viewport.hpp`; the oracle is ui/style.css with ui/app.js
+`fitScale`, `applyViewport` and `zoomAbout`, laid out by Chromium itself,
+tools/emit_viewport_golden.py). The viewer has a 14-pixel padding on each side.
+
+* **Fit.** `fit = min(1, (W - 28) / fw, (H - 28) / fh)`: the whole frame
+  inside the padded viewer, never above 1:1. The frame is `fw fit` by
+  `fh fit`, centred.
+* **Zoomed.** A scale `s` and a pan `(px, py)`: the frame at `fw s` by
+  `fh s`, centred on `(W / 2 + px', H / 2 + py')` where `px'` is the pan
+  rounded to 0.1 pixel (the transform is written with `toFixed(1)`).
+* **Wheel.** One notch multiplies the scale by 1.12 (or divides), clamped
+  to [0.05, 32], keeping the frame point under the cursor still: with `c`
+  the cursor minus the frame's current centre and `k = to / from`,
+  `pan = (pan - c) k + c`. From fit, `from` is the fit scale.
+* **Middle drag** pans; from fit it first becomes a zoom at the fit scale.
+  **Double click** returns to fit; 1:1 is scale 1, pan 0.
+* **Readout** `round(100 s)` percent. **Pixel under the pointer**
+  `floor((x - left) / width fw)`, and the same in y; outside the frame,
+  none. **Wipe from the pointer** `clamp((x - left) / width, 0, 1)`.
+
+The window multiplies by its device pixel ratio. At and above 1:1 the
+picture is sampled nearest, so a pixel is a pixel; below it, trilinear over
+its mip chain. The surround is neutral grey #121212, drawn as a graphic at
+the SDR white on an HDR swapchain.
+
+Three Studio defects were found by laying the page out for this, and fixed
+there on 24 Sep 2026: the zoom readout and the first wheel step used the
+uncapped fit (350% claimed for a frame shown at 100%); a frame taller than
+the viewer was never fitted (the canvas's `max-height:100%` refers to the
+plate's auto height); and a zoomed frame wider than the viewer was scaled from
+its fit size and sat at the grid track's start, so 1:1 was not 1:1 and the
+first wheel tick threw the picture off centre.
+
+## 11. Not in revision 3
+
+The guides (step 11).
