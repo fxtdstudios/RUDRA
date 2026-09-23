@@ -364,6 +364,22 @@ int main(int argc, char** argv) {
                                       {"gpu_ms", t->has_gpu_timestamps ? QJsonValue(t->gpu_ms) : QJsonValue()},
                                       {"wall_ms", t->wall_ms}});
         }
+            out << "Composite + display pass (a slider move: RGBA32F composite, RGBA16F scRGB picture), median of 50\n";
+        for (auto [w, h] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
+            auto t = (*gpu)->benchmark_view(w, h, 50);
+            if (!t) {
+                out << "  " << w << "x" << h << "  " << QString::fromStdString(t.error().message) << "\n";
+                continue;
+            }
+            out << QString("  %1x%2  gpu %3  wall %4 ms\n").arg(w).arg(h)
+                       .arg(t->has_gpu_timestamps ? QString::number(t->gpu_ms, 'f', 3) + " ms" : QString("n/a"))
+                       .arg(t->wall_ms, 0, 'f', 3);
+            out << "BENCH view " << a << " " << w << "x" << h << " " << (t->has_gpu_timestamps ? t->gpu_ms : -1.0) << " "
+                << t->wall_ms << "\n";
+            jbench.append(QJsonObject{{"size", QString("%1x%2").arg(w).arg(h)}, {"pass", "composite+view"},
+                                      {"gpu_ms", t->has_gpu_timestamps ? QJsonValue(t->gpu_ms) : QJsonValue()},
+                                      {"wall_ms", t->wall_ms}});
+        }
     }
     if (cli.isSet(report_opt)) {
         QFile f(cli.value(report_opt));

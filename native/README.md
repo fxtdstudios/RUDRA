@@ -149,7 +149,9 @@ Then the display pass (`display.frag`, Phase 2 step 4): seven views of each
 frame into RGBA8 against `core/view.cpp`, within 1 code ("view codes" in the
 gate table is the worst difference), and the HDR paths (scRGB, HDR10, EDR,
 step 5) into RGBA32F and RGBA16F. Both gate B scripts run it on every API the machine has, with `--bench`: one
-composite pass timed at 1080p and 4K into RGBA16F (QRhi GPU timestamps). Gate A
+composite pass, and a composite plus display pass (a slider move), timed at
+1080p and 4K (QRhi GPU timestamps). `rudra-native bench-scopes` times the
+viewer's CPU measurements and scopes; Gate A runs it. Gate A
 times inference at 1080p on every backend that passed (`rudra-native bench`).
 
 ## Status

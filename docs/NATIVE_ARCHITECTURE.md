@@ -415,13 +415,14 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; the view pass is Phase 2 |
+| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; composite + display pass together: `rudra-gpu-parity --bench` "+view" column, from the next `NATIVE_GATE_B.ps1` run |
 | composite + view, 4K, GPU | ≤ 12 ms | composite pass 0.505 ms (D3D12), 0.508 (Vulkan), 0.507 (D3D11), 0.366 (OpenGL) |
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
-| first frame after open (warm) | ≤ 2 s | [Phase 0] |
-| scrub to cached frame | ≤ 1 display frame | [Phase 0] |
+| viewer measurements and scopes, CPU, after a slider settles (off the render thread) | ≤ 16 ms | 29 ms at 1080p and 32 ms at 4K (768 x 432 sample) plus 7 ms vectorscope on a 2.1 GHz cloud core, one thread (`rudra-native bench-scopes`); the desktop number comes from `NATIVE_GATE_A.ps1` |
+| first frame after open (warm) | ≤ 2 s | decode plus one inference: 150 to 172 ms of inference at 1080p on the RTX 4080 SUPER (above); end to end from the app on Windows open |
+| scrub to cached frame | ≤ 1 display frame | synchronous: a cached frame is delivered inside `FrameEngine::show()` (0.01 ms in the engine test); the upload and passes are the composite + view row |
 
 Instrumentation: Tracy zones on every actor message and GPU timer queries on
 every render pass (QRhi GPU timestamps), from the first commit.
@@ -657,8 +658,19 @@ the SDR fallback), `ViewerBackend` and `OutputPath` in `render/`.
 | 9 | The viewer in the Qt shell: a `QWindow` with its own QRhi swapchain inside the widget tree (`createWindowContainer`), fit, 1:1, zoom about the cursor, pan, wipe drag, view switching with no recomposite, resize, device loss | `fitScale` and `zoomAbout` in `ui/app.js` (goldens of viewport maths) | viewport maths equal to the browser's; a still is judged in the app exactly as in the Studio; Gate B re-run through the real display pass on the PA279CRV (scRGB and HDR10) | 3 | **done** 24 Sep. Linux: `render/viewer_window.cpp` (composite, display and blit on its own swapchain, the HDR format from the display, device loss rebuilt from host copies), `core/viewport.cpp` equal to the Studio's own layout (`tools/emit_viewport_golden.py`); `rudra-viewer-check` reads the swapchain back at fit, 2x and 1:1 within 1 code of `core/view.cpp` at device pixel ratios 1, 1.25, 1.5 and 2. Windows, RTX 4080 SUPER and PA279CRV: Gate B through the real display pass passes on D3D12 and D3D11 scRGB (203 exact, 1 000 and 2 000 clipped at the display's 418 nits) and on Vulkan scRGB. The first Windows run found two things, both fixed: the parity check did not allow for texel ties at a 150 % display scale, and Qt's Vulkan swapchain reports a placeholder 1 000-nit peak, now replaced by the DXGI value on Windows. "Actual pixels" is device 1:1. Three Studio viewport defects fixed on the way (view.spec.md section 10) |
 | 10 | Frame path: decode, an engine inference job with generations and cancellation, field upload, composite, present; stills and sequences (Phase 1 step 10) with fields cached per frame | Phase 1 modules | scrubbing a 240-frame folder never shows a stale frame; latency recorded | 3 | **done** 24 Sep: `engine/frame_engine.cpp`, the InferActor: one worker owns the backend; `show()` bumps the generation, cancels older queued work, queues the frame and 12 after it; results are cached (32 frames, LRU, the frame on screen never evicted) and delivered only while current. A 240-frame scrub faster than inference never delivers another frame's pixels or fields (fakes tagged by value; ThreadSanitizer clean); with the real package on CPU over the 17 decode fixtures, every delivered frame equals a direct decode, the refused float TIFF is reported as itself, the way back is all cache hits. The app opens a still or a folder through it (comma, full stop, Home, End, Space at 24 fps). Latency at 1080p is measured with step 12 |
 | 11 | Guides (new, no Studio oracle): title and action safe, aspect masks, centre cross, specified in `view.spec.md` | the spec | CPU reference test; drawn identically on every backend | 1 | **done** 24 Sep: [`view.spec.md`](view.spec.md) section 11, `core/guides.cpp`, drawn by the blit in device pixels; `rudra-viewer-check` holds the window's readback to the CPU reference with all guides on and a 2.39 and a 4:3 mask, at fit, 2x and 1:1, device pixel ratios 1 and 1.5 (within 1 code); the app's View > Guides (G, Shift+G) |
-| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | |
+| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | **in progress** 24 Sep: the matrix above; `rudra-gpu-parity --bench` times composite plus display per slider move and `rudra-native bench-scopes` the CPU measurements, both run by the gate scripts; 6.6 filled where measured. Waiting on the next Windows gate runs and the Mac |
 | 13 | Review: Phase 2 exit written into `STATUS.md` | | probe and measurements equal the browser Studio's on every backend | 0.5 | |
+
+Backend matrix for the viewer (step 12), from the gate scripts and CI:
+
+| Backend | Composite (fp32 / fp16) | Display pass (SDR, 7 views) | HDR paths (40 cases) | Reductions | Window readback (fit, 2x, 1:1, guides) | Gate B through the viewer |
+|---|---|---|---|---|---|---|
+| OpenGL, llvmpipe (Linux, CI) | pass | exact | pass (2.8e-5, 1 ulp) | exact | pass at device pixel ratios 1 to 2 | n/a: no HDR swapchain |
+| D3D12, RTX 4080 SUPER | pass (Phase 0) | from the next gate run | from the next gate run | from the next gate run | from the next gate run | **pass**, scRGB, 203 exact, clipped at 418 |
+| D3D11, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | **pass**, scRGB, as D3D12 |
+| Vulkan, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | pass at Qt's placeholder 1 000-nit peak; now the DXGI peak, re-run |
+| OpenGL, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | n/a: Qt's OpenGL swapchain is SDR on Windows |
+| Metal, Apple Silicon | open | open | open | open | open | open (the XDR Mac run) |
 
 Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws
 into a texture that the widget backing store composites, and that path is SDR

@@ -144,9 +144,12 @@ if (Test-Path $Parity) {
             $w32 = ($d.cases | Measure-Object -Property fp32_max_abs -Maximum).Maximum
             $w16 = ($d.cases | Measure-Object -Property fp16_max_ulp -Maximum).Maximum
             $wv = if ($d.views) { ($d.views | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
-            $t = @{}; foreach ($b in $d.bench) { $t[$b.size] = if ($null -ne $b.gpu_ms) { "{0:f3}" -f $b.gpu_ms } else { "wall {0:f2}" -f $b.wall_ms } }
+            $t = @{}; foreach ($b in $d.bench) {
+                $key = if ($b.pass) { "$($b.pass) $($b.size)" } else { $b.size }
+                $t[$key] = if ($null -ne $b.gpu_ms) { "{0:f3}" -f $b.gpu_ms } else { "wall {0:f2}" -f $b.wall_ms } }
             $parityRows += [pscustomobject]@{ API = $api; Device = $d.device; "fp32 max|d|" = "{0:e2}" -f $w32;
                                               "fp16 ulp" = $w16; "view codes" = $wv; "1080p ms" = $t["1920x1080"]; "4K ms" = $t["3840x2160"];
+                                              "+view 1080p" = $t["composite+view 1920x1080"]; "+view 4K" = $t["composite+view 3840x2160"];
                                               Result = $(if ($d.pass) { "PASS" } else { "FAIL" }) }
         } else {
             $why = ($text | Select-Object -Last 1)
