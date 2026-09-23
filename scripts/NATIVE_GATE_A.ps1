@@ -17,8 +17,9 @@
        (eager PyTorch outputs) at the package's own tolerances.
     5. Write reports/native_gate_a_<date>.txt and print the summary.
 
-  Needs: Visual Studio 2022 with "Desktop development with C++", CMake 3.24+
-  (VS ships one), and a Python with torch, onnx, onnxruntime, numpy, opencv.
+  Needs: Visual Studio 2022 or 2026 (or its Build Tools) with the C++ tools,
+  which ship CMake; -InstallBuildTools installs the Build Tools with winget if
+  none is found. And a Python with torch, onnx, onnxruntime, numpy, opencv.
   For LibTorch CUDA, the CUDA toolkit matching torch.version.cuda must be
   installed (CUDA_PATH set); without it the CUDA row is skipped, not failed.
 
@@ -34,7 +35,8 @@ param(
     [string]$Python = "python",
     [string]$OrtVersion = "1.22.0",
     [switch]$SkipExport,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$InstallBuildTools
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +52,7 @@ New-Item -ItemType Directory -Force -Path $Deps, (Split-Path $Report) | Out-Null
 
 function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
+. (Join-Path $PSScriptRoot "native_toolchain.ps1")
 
 # ---------------------------------------------------------------------------
 Say "Python and torch"
@@ -140,15 +143,16 @@ Write-Host "ONNX Runtime $OrtVersion (DirectML), DirectML $DmlVersion"
 
 # ---------------------------------------------------------------------------
 if (-not $SkipBuild) {
-    Say "Configure and build native/ (Visual Studio 2022, Release)"
-    $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
-    if (-not $cmake) {
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-        $cmake = Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+    Say "Configure and build native/ (Visual Studio, Release)"
+    $tc = Find-NativeToolchain
+    if (-not $tc -and $InstallBuildTools) {
+        if (-not (Install-NativeBuildTools)) { Fail "Build Tools install" }
+        $tc = Find-NativeToolchain
     }
-    if (-not (Test-Path $cmake)) { Fail "cmake not found (install VS 2022 C++ workload or CMake)" }
-    $cfg = @("-S", "native", "-B", $Build, "-G", "Visual Studio 17 2022", "-A", "x64",
+    if (-not $tc) { Fail "no C++ toolchain (see above)" }
+    $cmake = $tc.CMake
+    Reset-StaleCMakeCache $Build $tc.Generator
+    $cfg = @("-S", "native", "-B", $Build, "-G", $tc.Generator, "-A", "x64",
              "-DRUDRA_BUILD_TESTS=OFF", "-DRUDRA_BUILD_APP=OFF",
              "-DRUDRA_WITH_ONNXRUNTIME=ON", "-DONNXRUNTIME_ROOT=$OrtRoot")
     if ($WithLibTorch) { $cfg += @("-DRUDRA_WITH_LIBTORCH=ON", "-DCMAKE_PREFIX_PATH=$LibTorchPrefix") }

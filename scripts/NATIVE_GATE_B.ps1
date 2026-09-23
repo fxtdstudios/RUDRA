@@ -19,8 +19,9 @@
   or measure, brighter than the 203-nit one. Leave -Frames 0 to keep the
   window open and look; Esc closes it.
 
-  Needs: Visual Studio 2022 with "Desktop development with C++", and a Python
-  that can pip install aqtinstall.
+  Needs: Visual Studio 2022 or 2026 (or its Build Tools) with the C++ tools;
+  -InstallBuildTools installs the Build Tools with winget if none is found.
+  And a Python that can pip install aqtinstall.
 
 .EXAMPLE
   .\scripts\NATIVE_GATE_B.ps1
@@ -31,7 +32,8 @@ param(
     [string]$Python = "python",
     [string]$QtVersion = "6.8.3",
     [int]$Frames = 240,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$InstallBuildTools
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +48,7 @@ New-Item -ItemType Directory -Force -Path $Deps, $Reports | Out-Null
 
 function Say($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Fail($m) { Write-Host "FAILED: $m" -ForegroundColor Red; exit 1 }
+. (Join-Path $PSScriptRoot "native_toolchain.ps1")
 
 # ---------------------------------------------------------------------------
 if (-not (Test-Path (Join-Path $QtRoot "bin\qsb.exe"))) {
@@ -59,15 +62,16 @@ Write-Host "Qt at $QtRoot"
 
 # ---------------------------------------------------------------------------
 if (-not $SkipBuild) {
-    Say "Configure and build rudra-hdr-probe (Visual Studio 2022, Release)"
-    $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
-    if (-not $cmake) {
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-        $cmake = Join-Path $vs "Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+    Say "Configure and build rudra-hdr-probe (Visual Studio, Release)"
+    $tc = Find-NativeToolchain
+    if (-not $tc -and $InstallBuildTools) {
+        if (-not (Install-NativeBuildTools)) { Fail "Build Tools install" }
+        $tc = Find-NativeToolchain
     }
-    if (-not (Test-Path $cmake)) { Fail "cmake not found (install VS 2022 C++ workload or CMake)" }
-    & $cmake -S native -B $Build -G "Visual Studio 17 2022" -A x64 `
+    if (-not $tc) { Fail "no C++ toolchain (see above)" }
+    $cmake = $tc.CMake
+    Reset-StaleCMakeCache $Build $tc.Generator
+    & $cmake -S native -B $Build -G $tc.Generator -A x64 `
         -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF `
         -DRUDRA_BUILD_HDR_PROBE=ON "-DCMAKE_PREFIX_PATH=$QtRoot"
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
