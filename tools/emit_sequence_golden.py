@@ -58,6 +58,11 @@ CASES = [
 ]
 
 
+def portable(text: str, root: Path) -> str:
+    """<root> for the temporary folder, and '/' throughout, so every OS records the same golden."""
+    return text.replace(str(root), "<root>").replace("\\", "/")
+
+
 def build(root: Path) -> None:
     for folder, entries in LAYOUTS.items():
         (root / folder).mkdir()
@@ -87,14 +92,14 @@ def main() -> int:
                 try:
                     d = Sequence.open(text).describe()
                     entry.update({"kind": d["kind"], "count": d["count"], "name_field": d["name"],
-                                  "path": d["path"].replace(str(root), "<root>"), "names": d["names"]})
+                                  "path": portable(d["path"], root), "names": d["names"]})
                 except SequenceError as e:
-                    entry["error"] = str(e).replace(str(root), "<root>")
+                    entry["error"] = portable(str(e), root)
             results.append(entry)
     (OUT / "index.json").write_text(json.dumps({
         "oracle": "ui/sequence.py", "frame_suffixes": sorted(FRAME_SUFFIXES),
         "video_suffixes": sorted(VIDEO_SUFFIXES), "layouts": LAYOUTS, "files": FILES,
-        "cases": results}, indent=2))
+        "cases": results}, indent=2), encoding="utf-8", newline="\n")
     for r in results:
         print(r["name"], r.get("names", r.get("error", "video")))
     return 0

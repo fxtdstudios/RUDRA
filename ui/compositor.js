@@ -233,12 +233,26 @@
   /* Point-sample into a smaller float target. The scopes and the
      distribution numbers do not need every pixel, and reading 23 MB back per
      slider move would undo the whole point of doing this on the GPU. The
-     exact peak still comes from the reduction below. */
+     exact peak still comes from the reduction below.
+
+     The source texel is chosen in integer arithmetic, the same expression
+     sourceIndex() evaluates, so the mask values it pulls always come from the
+     pixel that was sampled. A filtered texture() lookup at vUV picked the
+     texel below whenever (2y+1)*h/(2*sh) landed exactly on an integer (rows
+     8 and 25 of a 900x40 frame), and the headroom numbers then paired one
+     pixel's luminance with its neighbour's mask. */
   var COPY = ["#version 300 es", "precision highp float; precision highp sampler2D;",
+    "precision highp int;",
     "in vec2 vUV;",
     "out vec4 oCol;",
     "uniform sampler2D uSrc;",
-    "void main(){ oCol = texture(uSrc, vUV); }"].join("\n");
+    "uniform ivec2 uSrcSize;",
+    "uniform ivec2 uDstSize;",
+    "void main(){",
+    "  ivec2 d = ivec2(gl_FragCoord.xy);",
+    "  ivec2 s = min(uSrcSize - 1, ((2 * d + 1) * uSrcSize) / (2 * uDstSize));",
+    "  oCol = texelFetch(uSrc, s, 0);",
+    "}"].join("\n");
 
   /* One reduction step: a 2x2 box of the source, combined by max or sum.
      Run to 1x1 it is exact, which is what MaxCLL and MaxFALL need. */
@@ -591,6 +605,8 @@
       gl.activeTexture(gl.TEXTURE0 + SCRATCH_UNIT);
       gl.bindTexture(gl.TEXTURE_2D, sourceTarget.tex);
       gl.uniform1i(uniform(progCopy, "uSrc"), SCRATCH_UNIT);
+      gl.uniform2i(uniform(progCopy, "uSrcSize"), sourceTarget.w, sourceTarget.h);
+      gl.uniform2i(uniform(progCopy, "uDstSize"), dst.w, dst.h);
       draw(progCopy, dst.w, dst.h, dst.fb);
       var out = new Float32Array(dst.w * dst.h * 4);
       gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
@@ -604,9 +620,10 @@
     function sourceIndex(sw, sh) {
       var idx = new Int32Array(sw * sh);
       for (var y = 0; y < sh; y++) {
-        var sy = Math.min(frame.h - 1, Math.floor((y + 0.5) / sh * frame.h));
+        // Integers throughout, the same expression COPY evaluates on the GPU.
+        var sy = Math.min(frame.h - 1, Math.floor((2 * y + 1) * frame.h / (2 * sh)));
         for (var x = 0; x < sw; x++) {
-          var sx = Math.min(frame.w - 1, Math.floor((x + 0.5) / sw * frame.w));
+          var sx = Math.min(frame.w - 1, Math.floor((2 * x + 1) * frame.w / (2 * sw)));
           idx[y * sw + x] = sy * frame.w + sx;
         }
       }

@@ -93,7 +93,7 @@ def main() -> int:
                       "sidecar": out.with_suffix(".json").name,
                       "maxcll": result["maxcll"], "maxfall": result["maxfall"]})
     (OUT / "index.json").write_text(json.dumps({"oracle": "ui/server.py _render_master",
-                                                "checkpoint": CHECKPOINT.name, "cases": cases}, indent=2))
+                                                "checkpoint": CHECKPOINT.name, "cases": cases}, indent=2), encoding="utf-8", newline="\n")
     print(f"wrote {len(cases)} master cases to {OUT}")
     return 0
 

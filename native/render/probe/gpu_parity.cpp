@@ -12,7 +12,11 @@
 // Every case runs twice: into an RGBA32F target, held to the C++ fp32 result
 // (atol 1e-6, rtol 2e-4, network units), and into RGBA16F, the viewer's
 // format, held to 2 half-float ulp of the C++ result rounded to half.
-// Exit 0 when every case passes both.
+//
+// Then the display pass (docs/view.spec.md section 2, Phase 2 step 4): seven
+// views of each frame's default composite and its baseline, into an RGBA8
+// target, held to core/view.cpp within 1 code.
+// Exit 0 when every case passes.
 
 #include <QCommandLineParser>
 #include <QFile>
@@ -30,7 +34,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/render/gpu_composite.hpp"
 
@@ -155,6 +161,132 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The display pass on each frame's default composite and baseline.
+    struct ViewRow {
+        std::string label;
+        int max_code = 0;
+        std::size_t off = 0;
+        bool ok() const { return max_code <= 1; }
+    };
+    std::vector<ViewRow> vrows;
+    const std::vector<std::pair<std::string, ViewParams>> views = {
+        {"image 203", {ViewMode::Image, 203.0}},
+        {"image 1000", {ViewMode::Image, 1000.0}},
+        {"baseline", {ViewMode::Image, 203.0, ViewSource::Baseline}},
+        {"false colour", {ViewMode::FalseColour, 203.0}},
+        {"difference", {ViewMode::Difference, 203.0, ViewSource::Model, -1.0, 0.0012, 2000.0}},
+        {"wipe 0.37", {ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02}},
+        {"wipe false colour", {ViewMode::FalseColour, 203.0, ViewSource::Model, 0.61, 0.02}},
+    };
+    for (const auto& [name, f] : idx.at("frames").items()) {
+        const SdrImage sdr(load(dir, f.at("sdr")));
+        const Fields fields{load(dir, f.at("residual")), load(dir, f.at("highlight")), load(dir, f.at("shadow"))};
+        FrameScalars sc;
+        sc.shadow_weight = f.at("shadow_weight").get<float>();
+        sc.curve_params = f.at("curve_params").get<std::vector<float>>();
+        const auto m = composite(sdr, fields, sc, model, CompositeParams{});
+        const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
+        for (const auto& [vname, vp] : views) {
+            const Rgb8Image want = render_view_rgb8(m, b, vp);
+            auto got = (*gpu)->view(m, b, vp);
+            if (!got) {
+                out << "rudra-gpu-parity: " << QString::fromStdString(got.error().message) << "\n";
+                return 2;
+            }
+            ViewRow r;
+            r.label = name + " " + vname;
+            for (std::size_t i = 0; i < want.rgb.size(); ++i) {
+                const int d = std::abs(int(got->rgb[i]) - int(want.rgb[i]));
+                r.max_code = std::max(r.max_code, d);
+                r.off += d != 0;
+            }
+            vrows.push_back(r);
+        }
+    }
+
+    // The HDR output paths (Phase 2 step 5): the values each swapchain would
+    // be written with, RGBA32F against core/view.cpp and RGBA16F within 2 ulp.
+    struct HdrRow {
+        std::string label;
+        double f32_excess = 0.0, f32_rel = 0.0;
+        int f16_ulp = 0;
+        bool ok() const { return f32_excess <= 0.0 && f16_ulp <= kMaxHalfUlp; }
+    };
+    std::vector<HdrRow> hrows;
+    const std::vector<std::pair<std::string, DisplayTarget>> targets = {
+        {"scRGB 1000", DisplayTarget::scrgb(1000.0)},
+        {"HDR10 1000", DisplayTarget::hdr10(1000.0)},
+        {"EDR P3 1600", DisplayTarget::edr(1600.0)},
+        {"EDR 709 1600", DisplayTarget::edr(1600.0, Primaries::Rec709)},
+    };
+    const std::vector<std::pair<std::string, ViewParams>> hdr_views = {
+        {"image", {ViewMode::Image, 10000.0}},
+        {"image view peak 600", {ViewMode::Image, 600.0}},
+        {"false colour", {ViewMode::FalseColour, 203.0}},
+        {"difference", {ViewMode::Difference, 203.0}},
+        {"wipe", {ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02}},
+    };
+    for (const auto& [name, f] : idx.at("frames").items()) {
+        const SdrImage sdr(load(dir, f.at("sdr")));
+        const Fields fields{load(dir, f.at("residual")), load(dir, f.at("highlight")), load(dir, f.at("shadow"))};
+        FrameScalars sc;
+        sc.shadow_weight = f.at("shadow_weight").get<float>();
+        sc.curve_params = f.at("curve_params").get<std::vector<float>>();
+        const auto m = composite(sdr, fields, sc, model, CompositeParams{});
+        const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
+        for (const auto& [tname, t] : targets)
+            for (auto [vname, vp] : hdr_views) {
+                vp.target = t;
+                const PlanarBuffer want = render_view(m, b, vp);
+                auto g32 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp32);
+                auto g16 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp16);
+                if (!g32 || !g16) {
+                    out << "rudra-gpu-parity: " << QString::fromStdString((!g32 ? g32.error() : g16.error()).message) << "\n";
+                    return 2;
+                }
+                HdrRow r;
+                r.label = name + " " + tname + " " + vname;
+                for (std::size_t i = 0; i < want.span().size(); ++i) {
+                    const double wv = want.span()[i], d = std::abs(double(g32->span()[i]) - wv);
+                    r.f32_excess = std::max(r.f32_excess, d - (1e-5 + kRtol * std::abs(wv)));
+                    r.f32_rel = std::max(r.f32_rel, d / std::max(std::abs(wv), 1e-3));
+                    r.f16_ulp = std::max(r.f16_ulp, half_ulp(g16->span()[i], float(wv)));
+                }
+                hrows.push_back(r);
+            }
+    }
+
+    // The reduction ladder (Phase 2 step 6): peak exact, sum exact when the
+    // GPU adds in IEEE fp32 as the ladder is specified.
+    struct ReduceRow {
+        std::string label;
+        double peak_d = 0.0, sum_rel = 0.0;
+        bool ok() const { return peak_d == 0.0 && sum_rel <= 1e-6; }
+    };
+    std::vector<ReduceRow> rrows;
+    for (const auto& [name, f] : idx.at("frames").items()) {
+        const SdrImage sdr(load(dir, f.at("sdr")));
+        const Fields fields{load(dir, f.at("residual")), load(dir, f.at("highlight")), load(dir, f.at("shadow"))};
+        FrameScalars sc;
+        sc.shadow_weight = f.at("shadow_weight").get<float>();
+        sc.curve_params = f.at("curve_params").get<std::vector<float>>();
+        const auto m = composite(sdr, fields, sc, model, CompositeParams{});
+        const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
+        for (const auto& [label, img] : {std::pair{std::string("model"), &m}, std::pair{std::string("baseline"), &b}}) {
+            const Reductions want = reduce_ladder(img->buffer());
+            auto got = (*gpu)->reduce(*img);
+            if (!got) {
+                out << "rudra-gpu-parity: " << QString::fromStdString(got.error().message) << "\n";
+                return 2;
+            }
+            ReduceRow r;
+            r.label = name + " " + label;
+            r.peak_d = std::abs(double(got->peak) - double(want.peak));
+            r.sum_rel = std::abs(double(got->sum) - double(want.sum)) / std::max(std::abs(double(want.sum)), 1e-30);
+            rrows.push_back(r);
+        }
+    }
+
     out << "GPU composite parity: " << QString::fromStdString(info.backend) << " on "
         << QString::fromStdString(info.device) << "\n";
     out << QString("  %1 %2 %3 %4  %5\n").arg("case", -34).arg("fp32 max|d|", 12).arg("fp16 ulp", 9)
@@ -171,6 +303,47 @@ int main(int argc, char** argv) {
                                  {"fp16_max_ulp", r.f16_ulp}, {"vs_python_max_abs", r.py_abs}, {"pass", r.ok()}});
     }
     out << "  bound: fp32 atol " << kAtol << " rtol " << kRtol << "; fp16 " << kMaxHalfUlp << " half ulp\n";
+    out << "Display pass, RGBA8, against core/view.cpp\n";
+    QJsonArray jviews;
+    for (const auto& r : vrows) {
+        all = all && r.ok();
+        out << QString("  %1 %2 %3  %4\n").arg(QString::fromStdString(r.label), -34)
+                   .arg(QString("max %1 code").arg(r.max_code), 12).arg(QString("%1 off").arg(r.off), 9)
+                   .arg(r.ok() ? "pass" : "FAIL");
+        jviews.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"max_code", r.max_code},
+                                  {"values_off", qint64(r.off)}, {"pass", r.ok()}});
+    }
+    out << "  bound: 1 code in 8 bits\n";
+    out << "HDR output paths, against core/view.cpp\n";
+    QJsonArray jhdr;
+    int worst_hdr_ulp = 0;
+    double worst_hdr_rel = 0.0;
+    bool hdr_ok = true;
+    for (const auto& r : hrows) {
+        hdr_ok = hdr_ok && r.ok();
+        worst_hdr_ulp = std::max(worst_hdr_ulp, r.f16_ulp);
+        worst_hdr_rel = std::max(worst_hdr_rel, r.f32_rel);
+        if (!r.ok())
+            out << QString("  %1 fp32 rel %2  fp16 %3 ulp  FAIL\n").arg(QString::fromStdString(r.label), -44)
+                       .arg(r.f32_rel, 0, 'e', 2).arg(r.f16_ulp);
+        jhdr.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"fp32_max_rel", r.f32_rel},
+                                {"fp16_max_ulp", r.f16_ulp}, {"pass", r.ok()}});
+    }
+    all = all && hdr_ok;
+    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 5 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
+               .arg(hrows.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
+               .arg(hdr_ok ? "pass" : "FAIL");
+    out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp\n";
+    out << "Reductions (peak, fp32 sum of max RGB), against core/view.cpp reduce_ladder\n";
+    QJsonArray jred;
+    for (const auto& r : rrows) {
+        all = all && r.ok();
+        out << QString("  %1 peak |d| %2  sum rel %3  %4\n").arg(QString::fromStdString(r.label), -24)
+                   .arg(r.peak_d, 0, 'e', 1).arg(r.sum_rel, 0, 'e', 1).arg(r.ok() ? "pass" : "FAIL");
+        jred.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"peak_abs", r.peak_d},
+                                {"sum_rel", r.sum_rel}, {"pass", r.ok()}});
+    }
+    out << "  bound: peak exact; sum 1e-6 relative\n";
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
 
     QJsonArray jbench;
@@ -197,7 +370,7 @@ int main(int argc, char** argv) {
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(QJsonObject{{"backend", QString::fromStdString(info.backend)},
                                               {"device", QString::fromStdString(info.device)},
-                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"bench", jbench}})
+                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"hdr", jhdr}, {"reduce", jred}, {"bench", jbench}})
                         .toJson());
     }
     return all ? 0 : 1;

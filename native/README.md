@@ -94,6 +94,7 @@ its sidecar. `--params` takes the Studio's master parameters as JSON
 | `tools/emit_qc_golden.py` | `tests/golden/qc/`: six reconstructions, their QC reports and report text | `test_qc.cpp` |
 | `tools/emit_queue_golden.py` | `tests/golden/queue/`: a queue project, its state after a run and a resume, nine refusals | `test_queue.cpp` (state compared byte for byte) |
 | `tools/emit_sequence_golden.py` | `tests/golden/sequence/`: folder layouts and what `Sequence.open` made of them | `test_sequence.cpp` |
+| `tools/emit_viewer_golden.py` | `tests/golden/viewer/`: the browser Studio's composites, views, probes, reductions, metrics and scopes on two frames (headless Chromium, Playwright) | `test_viewer.cpp` |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
 `python tools/emit_golden.py` runs every emitter; re-run it and commit when the
@@ -133,7 +134,10 @@ reports SDR and FAIL rather than passing a clipped card.
 composite shader offscreen on this GPU for every case in the composite
 goldens and reads it back: into RGBA32F against `composite.cpp` (atol 1e-6,
 rtol 2e-4) and into RGBA16F, the viewer's format, within 2 half-float ulp.
-Both gate B scripts run it on every API the machine has, with `--bench`: one
+Then the display pass (`display.frag`, Phase 2 step 4): seven views of each
+frame into RGBA8 against `core/view.cpp`, within 1 code ("view codes" in the
+gate table is the worst difference), and the HDR paths (scRGB, HDR10, EDR,
+step 5) into RGBA32F and RGBA16F. Both gate B scripts run it on every API the machine has, with `--bench`: one
 composite pass timed at 1080p and 4K into RGBA16F (QRhi GPU timestamps). Gate A
 times inference at 1080p on every backend that passed (`rudra-native bench`).
 
@@ -157,4 +161,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
+| Phase 2 (QRhi viewer) | steps 1 to 7 of 13 done (4 to 6 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR on the CPU and in `display.frag`, the reduction ladder and the probe equal to the browser's (section 15) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

@@ -1,5 +1,7 @@
 #include "rudra/render/gpu_composite.hpp"
 
+#include "rudra/core/gamut.hpp"
+
 #include <QFile>
 #include <QFloat16>
 #include <QGuiApplication>
@@ -34,10 +36,39 @@ struct Ubo {
 };
 static_assert(sizeof(Ubo) == (3 * 4 + 36 + 32) * sizeof(float));
 
+// std140 layout of the View block in shaders/display.frag.
+struct ViewUbo {
+    float view[4];
+    float extra[4];
+    float target[4];
+    float pic[12];   // three vec4 rows
+    float gfx[12];
+};
+static_assert(sizeof(ViewUbo) == 36 * sizeof(float));
+
+struct ReduceUbo {
+    float sizes[4];
+};
+
+void rows_of(const Mat3& m, float* out) {
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) out[r * 4 + c] = float(m[std::size_t(r)][std::size_t(c)]);
+}
+
+// A composite target as an RGBA32F upload: rgb, alpha 1.
+std::vector<float> rgba_of(const PlanarBuffer& rgb) {
+    const std::size_t n = rgb.plane_size();
+    std::vector<float> out(n * 4, 1.0f);
+    for (std::size_t i = 0; i < n; ++i)
+        for (int c = 0; c < 3; ++c) out[i * 4 + std::size_t(c)] = rgb.plane(c)[i];
+    return out;
+}
+
 class RhiCompositor final : public GpuCompositor {
 public:
     ~RhiCompositor() override {
         sampler_.reset();
+        vbuf_.reset();
         ubuf_.reset();
         rhi_.reset();
     }
@@ -249,6 +280,227 @@ public:
         return t;
     }
 
+    Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                           const ViewParams& params) override {
+        if (params.target.path != OutputPath::SdrPqSimulation)
+            return make_error(ErrorCode::InvalidArgument, "The 8-bit view is the SDR path; HDR paths read back as floats.");
+        QByteArray data;
+        if (auto r = view_pass(model, baseline, params, QRhiTexture::RGBA8, data); !r) return r.error();
+        const int w = model.width(), h = model.height();
+        const std::size_t row = std::size_t(data.size()) / std::size_t(h);
+        Rgb8Image o{w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 3)};
+        for (int yy = 0; yy < h; ++yy) {
+            const auto* r = reinterpret_cast<const std::uint8_t*>(data.constData()) + std::size_t(yy) * row;
+            for (int xx = 0; xx < w; ++xx)
+                for (int c = 0; c < 3; ++c)
+                    o.rgb[(std::size_t(yy) * w + xx) * 3 + std::size_t(c)] = r[std::size_t(xx) * 4 + std::size_t(c)];
+        }
+        return o;
+    }
+
+    Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                                     const ViewParams& params, GpuPrecision precision) override {
+        if (!supports(precision))
+            return make_error(ErrorCode::Unsupported, "This GPU cannot render to that float format.");
+        const bool f32 = precision == GpuPrecision::Fp32;
+        QByteArray data;
+        if (auto r = view_pass(model, baseline, params, f32 ? QRhiTexture::RGBA32F : QRhiTexture::RGBA16F, data); !r)
+            return r.error();
+        const int w = model.width(), h = model.height();
+        const std::size_t row = std::size_t(data.size()) / std::size_t(h);
+        PlanarBuffer o(3, h, w);
+        for (int yy = 0; yy < h; ++yy) {
+            const char* r = data.constData() + std::size_t(yy) * row;
+            for (int xx = 0; xx < w; ++xx)
+                for (int c = 0; c < 3; ++c) {
+                    float v;
+                    if (f32) {
+                        std::memcpy(&v, r + std::size_t(xx) * 16 + std::size_t(c) * 4, 4);
+                    } else {
+                        qfloat16 hv;
+                        std::memcpy(&hv, r + std::size_t(xx) * 8 + std::size_t(c) * 2, 2);
+                        v = float(hv);
+                    }
+                    o.at(c, yy, xx) = v;
+                }
+        }
+        return o;
+    }
+
+    Result<Reductions> reduce(const NetworkLinearImage& image) override {
+        if (!supports(GpuPrecision::Fp32))
+            return make_error(ErrorCode::Unsupported, "This GPU cannot render to RGBA32F.");
+        const int w = image.width(), h = image.height();
+        const std::vector<float> a = rgba_of(image.buffer());
+        std::unique_ptr<QRhiTexture> src(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
+        if (!src->create()) return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
+
+        // Both ladders (max, sum), one pass per level each, one UBO per pass:
+        // a dynamic buffer may be written once per frame.
+        struct Step {
+            std::unique_ptr<QRhiTexture> tex;
+            std::unique_ptr<QRhiTextureRenderTarget> rt;
+            std::unique_ptr<QRhiRenderPassDescriptor> rp;
+            std::unique_ptr<QRhiBuffer> ubo;
+            std::unique_ptr<QRhiShaderResourceBindings> srb;
+            std::unique_ptr<QRhiGraphicsPipeline> pipe;
+            int w = 0, h = 0;
+            ReduceUbo u{};
+        };
+        std::vector<Step> steps[2];
+        for (int op = 0; op < 2; ++op) {
+            int sw = w, sh = h;
+            QRhiTexture* in = src.get();
+            bool first = true;
+            do {
+                Step st;
+                st.w = std::max(1, (sw + 1) / 2);
+                st.h = std::max(1, (sh + 1) / 2);
+                st.tex.reset(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(st.w, st.h), 1,
+                                              QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+                st.ubo.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ReduceUbo)));
+                if (!st.tex->create() || !st.ubo->create())
+                    return make_error(ErrorCode::BackendError, "GPU reduction target creation failed.");
+                st.rt.reset(rhi_->newTextureRenderTarget({QRhiColorAttachment(st.tex.get())}));
+                st.rp.reset(st.rt->newCompatibleRenderPassDescriptor());
+                st.rt->setRenderPassDescriptor(st.rp.get());
+                if (!st.rt->create()) return make_error(ErrorCode::BackendError, "GPU render target creation failed.");
+                st.srb.reset(rhi_->newShaderResourceBindings());
+                st.srb->setBindings({
+                    QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, st.ubo.get()),
+                    QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, in, sampler_.get()),
+                });
+                if (!st.srb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
+                st.pipe.reset(rhi_->newGraphicsPipeline());
+                st.pipe->setShaderStages({{QRhiShaderStage::Vertex, vert_}, {QRhiShaderStage::Fragment, reduce_}});
+                st.pipe->setVertexInputLayout({});
+                st.pipe->setShaderResourceBindings(st.srb.get());
+                st.pipe->setRenderPassDescriptor(st.rp.get());
+                if (!st.pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
+                st.u.sizes[0] = float(sw);
+                st.u.sizes[1] = float(sh);
+                st.u.sizes[2] = float(op);
+                st.u.sizes[3] = first ? 1.0f : 0.0f;
+                sw = st.w;
+                sh = st.h;
+                first = false;
+                steps[op].push_back(std::move(st));
+                in = steps[op].back().tex.get();
+            } while (sw > 1 || sh > 1);
+        }
+
+        QRhiCommandBuffer* cb = nullptr;
+        if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
+            return make_error(ErrorCode::BackendError, "GPU frame could not start.");
+        QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
+        up->uploadTexture(src.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+            0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
+        for (auto& ladder : steps)
+            for (auto& st : ladder) up->updateDynamicBuffer(st.ubo.get(), 0, sizeof(ReduceUbo), &st.u);
+        QRhiReadbackResult rb[2];
+        for (int op = 0; op < 2; ++op) {
+            auto& ladder = steps[op];
+            for (std::size_t k = 0; k < ladder.size(); ++k) {
+                auto& st = ladder[k];
+                cb->beginPass(st.rt.get(), Qt::black, {1.0f, 0}, up);
+                up = nullptr;
+                cb->setGraphicsPipeline(st.pipe.get());
+                cb->setViewport({0, 0, float(st.w), float(st.h)});
+                cb->setShaderResources(st.srb.get());
+                cb->draw(3);
+                QRhiResourceUpdateBatch* down = nullptr;
+                if (k + 1 == ladder.size()) {
+                    down = rhi_->nextResourceUpdateBatch();
+                    down->readBackTexture(QRhiReadbackDescription(st.tex.get()), &rb[op]);
+                }
+                cb->endPass(down);
+            }
+        }
+        rhi_->endOffscreenFrame();
+        Reductions r;
+        for (int op = 0; op < 2; ++op) {
+            if (rb[op].data.size() < 16) return make_error(ErrorCode::BackendError, "GPU readback returned too little data.");
+            float v;
+            std::memcpy(&v, rb[op].data.constData(), 4);
+            (op == 0 ? r.peak : r.sum) = v;
+        }
+        return r;
+    }
+
+private:
+    // One display pass into a `fmt` target, read back raw.
+    Result<void> view_pass(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                           const ViewParams& params, QRhiTexture::Format fmt, QByteArray& data) {
+        const int w = model.width(), h = model.height();
+        if (baseline.width() != w || baseline.height() != h)
+            return make_error(ErrorCode::InvalidArgument, "The two composite targets differ in size.");
+        const std::vector<float> a = rgba_of(model.buffer()), b = rgba_of(baseline.buffer());
+        std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
+        std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
+        std::unique_ptr<QRhiTexture> out(rhi_->newTexture(fmt, QSize(w, h), 1,
+                                                          QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+        if (!ta->create() || !tb->create() || !out->create())
+            return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
+        std::unique_ptr<QRhiTextureRenderTarget> rt(rhi_->newTextureRenderTarget({QRhiColorAttachment(out.get())}));
+        std::unique_ptr<QRhiRenderPassDescriptor> rp(rt->newCompatibleRenderPassDescriptor());
+        rt->setRenderPassDescriptor(rp.get());
+        if (!rt->create()) return make_error(ErrorCode::BackendError, "GPU render target creation failed.");
+        std::unique_ptr<QRhiShaderResourceBindings> srb(rhi_->newShaderResourceBindings());
+        srb->setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, vbuf_.get()),
+            QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, ta.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tb.get(), sampler_.get()),
+        });
+        if (!srb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
+        std::unique_ptr<QRhiGraphicsPipeline> pipe(rhi_->newGraphicsPipeline());
+        pipe->setShaderStages({{QRhiShaderStage::Vertex, vert_}, {QRhiShaderStage::Fragment, display_}});
+        pipe->setVertexInputLayout({});
+        pipe->setShaderResourceBindings(srb.get());
+        pipe->setRenderPassDescriptor(rp.get());
+        if (!pipe->create()) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
+
+        // The uniforms as core/view.cpp rounds them to fp32.
+        ViewUbo u{};
+        u.view[0] = float(int(params.mode));
+        u.view[1] = float(10000.0 / std::max(params.display_nits, 1e-3));
+        u.view[2] = params.wipe >= 0.0 ? float(std::clamp(params.wipe, 0.0, 1.0)) : -1.0f;
+        u.view[3] = float(params.wipe_half_width);
+        u.extra[0] = std::log2(1.0f + float(std::max(params.diff_gain, 1.0)));
+        u.extra[1] = float(w);
+        u.extra[2] = params.show == ViewSource::Baseline ? 1.0f : 0.0f;
+        u.target[0] = float(int(params.target.path));
+        u.target[1] = float(std::min(params.display_nits, params.target.peak_nits));
+        u.target[2] = float(params.target.unit_nits);
+        rows_of(rgb_to_rgb_matrix(params.source, params.target.primaries), u.pic);
+        rows_of(rgb_to_rgb_matrix(Primaries::Rec709, params.target.primaries), u.gfx);
+
+        QRhiCommandBuffer* cb = nullptr;
+        if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
+            return make_error(ErrorCode::BackendError, "GPU frame could not start.");
+        QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
+        up->updateDynamicBuffer(vbuf_.get(), 0, sizeof(ViewUbo), &u);
+        up->uploadTexture(ta.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+            0, 0, QRhiTextureSubresourceUploadDescription(a.data(), quint32(a.size() * sizeof(float))))));
+        up->uploadTexture(tb.get(), QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+            0, 0, QRhiTextureSubresourceUploadDescription(b.data(), quint32(b.size() * sizeof(float))))));
+        cb->beginPass(rt.get(), Qt::black, {1.0f, 0}, up);
+        cb->setGraphicsPipeline(pipe.get());
+        cb->setViewport({0, 0, float(w), float(h)});
+        cb->setShaderResources(srb.get());
+        cb->draw(3);
+        QRhiReadbackResult rb;
+        QRhiResourceUpdateBatch* down = rhi_->nextResourceUpdateBatch();
+        down->readBackTexture(QRhiReadbackDescription(out.get()), &rb);
+        cb->endPass(down);
+        rhi_->endOffscreenFrame();
+
+        const int bpp = fmt == QRhiTexture::RGBA32F ? 16 : fmt == QRhiTexture::RGBA16F ? 8 : 4;
+        if (rb.data.size() < qsizetype(std::size_t(w) * h * bpp))
+            return make_error(ErrorCode::BackendError, "GPU readback returned too little data.");
+        data = rb.data;
+        return {};
+    }
+
 private:
     Result<void> init(GpuApi api) {
         if (!QGuiApplication::instance())
@@ -311,12 +563,15 @@ private:
 
         vert_ = load_shader(":/rudra/shaders/fullscreen.vert.qsb");
         frag_ = load_shader(":/rudra/shaders/composite.frag.qsb");
-        if (!vert_.isValid() || !frag_.isValid())
+        display_ = load_shader(":/rudra/shaders/display.frag.qsb");
+        reduce_ = load_shader(":/rudra/shaders/reduce.frag.qsb");
+        if (!vert_.isValid() || !frag_.isValid() || !display_.isValid() || !reduce_.isValid())
             return make_error(ErrorCode::NotFound, "The composite shaders are missing from the build.");
         ubuf_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(Ubo)));
+        vbuf_.reset(rhi_->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ViewUbo)));
         sampler_.reset(rhi_->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
-        if (!ubuf_->create() || !sampler_->create())
+        if (!ubuf_->create() || !vbuf_->create() || !sampler_->create())
             return make_error(ErrorCode::BackendError, "GPU buffer creation failed.");
         return {};
     }
@@ -327,8 +582,9 @@ private:
     std::unique_ptr<QOffscreenSurface> fallback_;
     std::unique_ptr<QRhi> rhi_;
     std::unique_ptr<QRhiBuffer> ubuf_;
+    std::unique_ptr<QRhiBuffer> vbuf_;
     std::unique_ptr<QRhiSampler> sampler_;
-    QShader vert_, frag_;
+    QShader vert_, frag_, display_, reduce_;
     GpuCompositorInfo info_;
 };
 

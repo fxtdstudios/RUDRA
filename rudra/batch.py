@@ -21,7 +21,7 @@ def digest(path):
 def save(path, data):
     fd, name = tempfile.mkstemp(prefix=path.name, suffix='.tmp', dir=path.parent)
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as stream:
             json.dump(data, stream, indent=2)
             stream.flush()
             os.fsync(stream.fileno())

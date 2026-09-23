@@ -70,7 +70,7 @@ def stand_in(fail: set[str]):
         progress({"phase": "encoding", "frame": 1, "of": 2})
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(b"out:" + args.input.name.encode())
-        args.output.with_suffix(args.output.suffix + ".json").write_text(json.dumps({"qc": {"passed": True}}))
+        args.output.with_suffix(args.output.suffix + ".json").write_text(json.dumps({"qc": {"passed": True}}), encoding="utf-8", newline="\n")
     return convert_video
 
 
@@ -78,7 +78,7 @@ def project(root: Path) -> Path:
     for name, data in FILES.items():
         (root / name).write_bytes(data)
     q = root / "queue.json"
-    q.write_text(json.dumps(QUEUE, indent=2))
+    q.write_text(json.dumps(QUEUE, indent=2), encoding="utf-8", newline="\n")
     return q
 
 
@@ -105,7 +105,7 @@ def main() -> int:
         project(root)
         for name, spec in REFUSALS.items():
             q = root / f"{name}.json"
-            q.write_text(json.dumps(spec))
+            q.write_text(json.dumps(spec), encoding="utf-8", newline="\n")
             try:
                 with contextlib.redirect_stderr(io.StringIO()):   # argparse's usage text
                     batch.load_jobs(q.resolve())
@@ -119,7 +119,7 @@ def main() -> int:
                                                              "progress": {"phase": "encoding", "frame": 1, "of": 2},
                                                              "output": "out:<input name>",
                                                              "sidecar": json.dumps({"qc": {"passed": True}})},
-                                                "refusals": refusals}, indent=2))
+                                                "refusals": refusals}, indent=2), encoding="utf-8", newline="\n")
     print(f"first run exit {first}, resumed exit {final}; {len(refusals)} refusals")
     for k, v in refusals.items():
         print(f"  {k}: {v['message']}")

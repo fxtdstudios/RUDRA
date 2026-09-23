@@ -13,6 +13,7 @@
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -48,6 +49,18 @@ public:
                                            const ModelConstants& model, const CompositeParams& params,
                                            GpuPrecision precision) = 0;
     virtual Result<GpuTiming> benchmark(int width, int height, int iterations) = 0;
+    // The display pass (docs/view.spec.md section 2) on two composite targets,
+    // into an RGBA8 target read back in image order: the parity path for
+    // core/view.cpp.
+    virtual Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                                   const ViewParams& params) = 0;
+    // The display pass for any output path (params.target), into an RGBA32F
+    // or RGBA16F target: the values the swapchain would be written with.
+    // The exact reduction ladder (docs/view.spec.md section 4) over a
+    // composite target: peak and fp32 sum of max(R, G, B), network units.
+    virtual Result<Reductions> reduce(const NetworkLinearImage& image) = 0;
+    virtual Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                                             const ViewParams& params, GpuPrecision precision) = 0;
 };
 
 }  // namespace rudra

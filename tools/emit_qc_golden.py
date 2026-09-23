@@ -88,7 +88,7 @@ def main() -> int:
         np.save(OUT / f"{name}_hdr.npy", np.ascontiguousarray(np.transpose(hdr, (2, 0, 1)).astype(np.float32)),
                 allow_pickle=False)
         text = format_report(rep, f"{name}.png", f"{sdr.shape[1]}x{sdr.shape[0]}")
-        (OUT / f"{name}_report.txt").write_text(text, encoding="utf-8")
+        (OUT / f"{name}_report.txt").write_text(text, encoding="utf-8", newline="\n")
         cases.append({"name": name, "sdr": f"{name}_sdr.npy", "hdr": f"{name}_hdr.npy",
                       "report_text": f"{name}_report.txt",
                       "report": {"verdict": rep.verdict,
@@ -98,7 +98,7 @@ def main() -> int:
                                              "threshold": c.threshold, "detail": c.detail}
                                             for c in rep.checks]}})
     (OUT / "index.json").write_text(json.dumps({"oracle": "rudra/qc.py", "thresholds": "qc_reconstruction.json",
-                                                "cases": cases}, indent=2))
+                                                "cases": cases}, indent=2), encoding="utf-8", newline="\n")
     for c in cases:
         print(c["name"], c["report"]["verdict"], [(k["name"], k["status"]) for k in c["report"]["checks"]])
     return 0

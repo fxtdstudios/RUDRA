@@ -90,7 +90,7 @@ def main() -> int:
                 case["weights"].append(entry)
         index["tiles"].append(case)
 
-    (OUT / "index.json").write_text(json.dumps(index, indent=2))
+    (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8", newline="\n")
     print(f"wrote {len(list(OUT.glob('*.npy')))} arrays to {OUT}")
     return 0
 

@@ -177,7 +177,7 @@ def main() -> int:
     rng = np.random.default_rng(20260923)
     index = {"grade": grade_block(w, rng), "hdr10": hdr10_block(w, rng),
              "metadata": metadata_block(w, rng), "exr": exr_block(w, rng)}
-    (OUT / "index.json").write_text(json.dumps(index, indent=2))
+    (OUT / "index.json").write_text(json.dumps(index, indent=2), encoding="utf-8", newline="\n")
     total = sum(f.stat().st_size for f in OUT.iterdir())
     print(f"wrote {len(list(OUT.iterdir()))} files ({total / 1024:.0f} KB) to {OUT}")
     return 0

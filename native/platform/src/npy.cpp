@@ -38,6 +38,7 @@ namespace {
 struct Header {
     std::vector<std::int64_t> shape;
     bool f64 = false;
+    bool u8 = false;
 };
 
 Result<Header> read_header(std::ifstream& in, const std::filesystem::path& path, bool allow_f64) {
@@ -66,8 +67,9 @@ Result<Header> read_header(std::ifstream& in, const std::filesystem::path& path,
     const std::string descr = value_after(header, "descr");
     const bool f4 = descr == "'<f4'" || descr == "'=f4'" || descr == "'|f4'";
     h.f64 = descr == "'<f8'" || descr == "'=f8'";
-    if (!f4 && !(allow_f64 && h.f64))
-        return parse_error(path, "dtype " + descr + (allow_f64 ? " (need '<f4' or '<f8')" : " (need '<f4')"));
+    h.u8 = descr == "'|u1'";
+    if (!f4 && !h.u8 && !(allow_f64 && h.f64))
+        return parse_error(path, "dtype " + descr + (allow_f64 ? " (need '<f4', '|u1' or '<f8')" : " (need '<f4' or '|u1')"));
     if (value_after(header, "fortran_order") != "False") return parse_error(path, "Fortran order");
 
     const std::string shape = value_after(header, "shape");
@@ -110,6 +112,12 @@ Result<NpyArray> read_npy(const std::filesystem::path& path) {
     if (!h) return h.error();
     NpyArray arr;
     arr.shape = h->shape;
+    if (h->u8) {
+        std::vector<std::uint8_t> b;
+        if (!read_payload(in, b, count(arr.shape))) return parse_error(path, "truncated data");
+        arr.data.assign(b.begin(), b.end());
+        return arr;
+    }
     if (!read_payload(in, arr.data, count(arr.shape))) return parse_error(path, "truncated data");
     return arr;
 }
@@ -124,6 +132,10 @@ Result<NpyArrayF64> read_npy_f64(const std::filesystem::path& path) {
     const std::size_t n = count(arr.shape);
     if (h->f64) {
         if (!read_payload(in, arr.data, n)) return parse_error(path, "truncated data");
+    } else if (h->u8) {
+        std::vector<std::uint8_t> b;
+        if (!read_payload(in, b, n)) return parse_error(path, "truncated data");
+        arr.data.assign(b.begin(), b.end());
     } else {
         std::vector<float> f;
         if (!read_payload(in, f, n)) return parse_error(path, "truncated data");

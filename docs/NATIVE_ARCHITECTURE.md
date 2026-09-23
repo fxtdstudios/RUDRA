@@ -378,9 +378,14 @@ computed inside the model too, for the tile pass; C++ ports it separately in
 
     | Swapchain (QRhi) | OS / API | Encoding | Value written |
     |---|---|---|---|
-    | `HDRExtendedSrgbLinear` | Windows D3D12; Linux Vulkan where offered | scRGB: linear Rec.709, 1.0 = 80 nits, negatives allowed | `M709←2020 · nits / 80` |
-    | `HDR10` | Windows D3D12 (option) | PQ, Rec.2020, 10-bit | `PQ(nits)` |
-    | `HDRExtendedDisplayP3Linear` | macOS Metal (EDR) | linear Display P3, 1.0 = the display's SDR white | `MP3←2020 · nits / sdr_white_nits` |
+    | `HDRExtendedSrgbLinear` | Windows D3D12; Linux Vulkan where offered | scRGB: linear Rec.709, 1.0 = 80 nits, negatives allowed | `M709←src · nits / 80` |
+    | `HDR10` | Windows D3D12 (option) | PQ, Rec.2020, 10-bit | `PQ(M2020←src · nits)` |
+    | `HDRExtendedDisplayP3Linear` | macOS Metal (EDR) | linear Display P3, 1.0 = the display's SDR white | `MP3←src · nits / 203` |
+
+    `src` is the composite's primaries, which are the input's (Rec.709 for an
+    sRGB still): the network never changes primaries. Revision 1 of this
+    table converted from Rec.2020, which the composite never was; the
+    normative version is docs/view.spec.md section 9.
 
     Peak is clamped to what the display reports: max luminance on Windows,
     the live EDR headroom on macOS (it changes with the brightness slider, so
@@ -562,6 +567,7 @@ could test it and it stands until Phase 1 does.
 | 007 | accepted | contract 1.0 read and verified by `rudra-native`; `gpu_fp32` added without a major bump |
 | 008 | accepted | `queue.json` state written byte-identical by both sides and resumed across them (Phase 1 step 9) |
 | 009 | accepted | Windows DX12 on an RTX 4080 SUPER measured; the Apple Silicon row waits on the Mac run |
+| 010 | proposed | Phase 2 step 9; Gate B proved the `QWindow` swapchain path carries HDR |
 
 
 1. **ADR-001** Model package carries TorchScript and ONNX; AOTInductor and
@@ -581,6 +587,9 @@ could test it and it stands until Phase 1 does.
 8. **ADR-008** `queue.json` and sidecar stay byte-compatible with Python.
 9. **ADR-009** Supported hardware: Apple Silicon only on macOS; DX12 GPUs on
    Windows; the Linux GPU and compositor matrix for HDR.
+10. **ADR-010** (proposed, Phase 2) The viewer is a `QWindow` with its own QRhi
+   swapchain, embedded with `createWindowContainer`; not `QRhiWidget`, whose
+   backing-store composite is SDR (section 15).
 
 ---
 
@@ -598,7 +607,7 @@ chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
 
 | # | Deliverable | Oracle | Done when | Days | Status |
 |---|---|---|---|---|---|
-| 1 | One golden harness: `tools/emit_golden.py` runs every emitter; CI re-emits on all three OSes and runs the native tests against fresh arrays | the emitters | a Python change that moves a number fails CI | 0.5 | **done** 23 Sep: `tools/emit_golden.py` (core, composite, decode, delivery, master, qc, queue, sequence); CI re-emits on Linux and fails on any drift in the exact goldens; macOS and Windows re-emit in step 11 |
+| 1 | One golden harness: `tools/emit_golden.py` runs every emitter; CI re-emits on all three OSes and runs the native tests against fresh arrays | the emitters | a Python change that moves a number fails CI | 0.5 | **done** 23 Sep: `tools/emit_golden.py` (core, composite, decode, delivery, master, qc, queue, sequence); CI re-emits on Linux and fails on any drift in the exact goldens; since step 11 the `core` job re-emits on all three OSes |
 | 2 | Still decode in `media/`: PNG 8/16-bit (grey, alpha, palette), JPEG, TIFF 8/16/float, BMP, WebP; bit depth, padded-16-bit detection and distinct codes reported; scene-linear float refused | `rudra/decode.py` `decode_sdr` | same float pixels, bits and refusals on a fixture set of every format and depth | 2 | **done** 23 Sep: `media/still.cpp` on OpenCV imgcodecs, the decoder the Python uses; 17 fixtures bit-exact, JPEG included, across OpenCV 4.6 (C++) and 4.13 (Python). EXR dropped: the Python refuses it too |
 | 3 | Grade controls: exposure, highlight desaturation, shoulder to peak, `apply_grade`, `itm_strength_map` | `rudra/delivery/controls.py` | golden arrays, rtol 1e-12 | 1 | **done** 24 Sep: `core/grade.cpp`; four grades within 2e-7 of the float32 output (numpy's SIMD `exp` is the only difference), the strength map exact |
 | 4 | HDR10 and profiles: PQ OETF/EOTF, `master_to_peak`, `master_to_pq`, delivery profiles | `rudra/hdr10.py`, `delivery/profiles.py` | golden arrays; PQ codes exact at 10 and 12 bit | 1 | **done** 24 Sep: `core/hdr10.cpp`, every profile incl. HLG; 12-bit PQ codes exact on 407 levels; float PQ within 2e-5 of code (numpy's float32 `power` is 1 ulp off where glibc is correctly rounded, and PQ's 78.84 exponent amplifies it: a fiftieth of a 10-bit step) |
@@ -608,7 +617,7 @@ chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
 | 8 | QC: `check_frame`, thresholds file, report text | `rudra/qc.py` | same pass/fail and identical report text on the fixtures | 1.5 | **done** 24 Sep: `deliver/qc.cpp`; six fixtures walk every status (PASS, FAIL, UNMEASURED) of all ten checks and both verdicts; statuses equal, values within 1e-9 (1e-3 for the two blur-based ones, OpenCV's SIMD blur), report text byte-identical |
 | 9 | Queue: `queue.json` read, write, lock, atomic save, resume, artifact digests | `rudra/batch.py` | a queue started by Python resumes in C++ and the other way round | 1.5 | **done** 24 Sep: `deliver/queue.cpp`; a fresh run with a failing job and its `--retry-failed` resume write the Python's state files byte for byte, a Python-started state resumes here to the Python's final state, nine malformed queues refused with the same messages, one runner per queue (`busy`) |
 | 10 | Sequence open by path: frame folders and numbering rules (video frames wait for libav in Phase 4) | `ui/sequence.py` | same frame list and order on the fixture folders | 1 | **done** 24 Sep: `media/sequence.cpp`; same names, order and messages as `Sequence.open` on 14 cases (natural order across powers of ten, case, leading zeros, dot files, quoted and messy paths, empty and frameless folders); video recognised and refused until Phase 4 |
-| 11 | Review: CI green on Windows, macOS, Linux; Mac runs from Phase 0 folded in; Phase 1 exit written into `STATUS.md` | | every module passes its golden on three OSes | 1 | |
+| 11 | Review: CI green on Windows, macOS, Linux; Mac runs from Phase 0 folded in; Phase 1 exit written into `STATUS.md` | | every module passes its golden on three OSes | 1 | **in progress** 24 Sep: the `core` CI job now re-emits every golden with each runner's Python and builds with OpenCV on Windows (vcpkg, cached), macOS (Homebrew) and Linux; goldens are byte-exact in git (`.gitattributes`) and every Python writer the port matches (sidecars, OCIO config, queue state, golden indexes) writes LF on every OS, so Windows compares the same bytes. Waiting on the first three-OS run and the Mac runs |
 
 New third-party code, none in the public headers (principle P6): OpenCV
 core and imgcodecs in `media/src` (`RUDRA_WITH_OPENCV`), chosen over separate
@@ -620,3 +629,49 @@ waits until a module needs it; nothing in this list does.
 
 Order: 1 first, then 2 to 6 in any order, 7 as soon as 2 and 6 land (it is the
 milestone that proves the port end to end), then 8 to 11.
+
+## 15. Phase 2: the QRhi viewer, the next twenty working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): the picture, the probe and every
+measurement the browser Studio shows, drawn by QRhi on D3D12, Metal, Vulkan and
+OpenGL, into an HDR swapchain where the display has one. Same rules as Phases
+0 and 1, with one change of oracle: the viewer ports `ui/compositor.js` and the
+scope code in `ui/app.js`, so those files, run unchanged in a headless browser,
+are the oracle. The Python stays the oracle for anything numeric it also does
+(composite, measure), and the two must already agree.
+
+Already in hand from Phase 0: the composite shader and `GpuCompositor`
+(readback parity on four Windows backends), `rudra-hdr-probe` (scRGB, HDR10,
+the SDR fallback), `ViewerBackend` and `OutputPath` in `render/`.
+
+| # | Deliverable | Oracle | Done when | Days | Status |
+|---|---|---|---|---|---|
+| 1 | Browser oracle: `tools/emit_viewer_golden.py` drives `ui/compositor.js` and the scope functions of `ui/app.js`, unmodified, in headless Chromium (Playwright, SwiftShader WebGL2 with float targets) on the composite goldens' frames | `ui/compositor.js`, `ui/app.js` | deterministic across runs; its composite readback matches `composite.cpp` within the `gpu_fp32` bound, closing the browser readback left open in Phase 0 step 7 | 1.5 | **done** 24 Sep: `tools/emit_viewer_golden.py`, `tests/test_viewer.cpp`; two frames from the shipped checkpoint (80x48, and 900x40 so `sample()` downsamples), six composites and seven views, deterministic across runs; the browser composite matches `composite.cpp` within 3e-6 (bound 5e-5 + 1e-5\|ref\|), peak and mean too. It found a Studio defect, fixed in `ui/compositor.js`: `sample()` chose its texel with a filtered lookup and `sourceIndex()` in doubles, and they disagreed on rows where (2y+1)h/(2 sh) is an integer, pairing one pixel with its neighbour's mask; both now use the same integer expression |
+| 2 | `docs/view.spec.md` written from the `DISPLAY` shader, `present()`, `probe()`, `sample()` and the scopes: the one V flip, wipe and handle, false-colour zones, log difference ramp, exposure plus hard clip, sRGB encode, sample grid | the same files | every constant and branch in them has a line in the spec | 0.5 | **done** 24 Sep: [`view.spec.md`](view.spec.md) revision 1: orientation, the display pass and its zones, probe, reductions, sample and index, `computeStats`, `buildScopes` and the vectorscope, with evaluation order where it decides a rounding |
+| 3 | `core/view.cpp`: CPU reference of the display pass for all three views and the wipe | browser canvas readback | within 1 8-bit code of the browser; false-colour zone index exact; handle columns exact | 1.5 | **done** 24 Sep: `core/view.cpp`; 14 views on two frames (image at 203 and 1 000 nits, baseline, false colour, difference, two wipes) equal to the browser canvas in every byte but 3 of 290 k, which are 1 code off; zones and handle columns exact |
+| 4 | `display.frag` in GLSL 440 through `qsb`, run by `rudra-gpu-parity` after the composite | `core/view.cpp` | within 1 8-bit code on D3D12, D3D11, Vulkan, OpenGL (and Metal); llvmpipe in CI | 1.5 | **Linux done** 24 Sep: `render/shaders/display.frag`, `GpuCompositor::view`, seven views per frame in `rudra-gpu-parity`; OpenGL on llvmpipe equal to `core/view.cpp` in every byte (CI runs it). D3D12, D3D11 and Vulkan run with `NATIVE_GATE_B.ps1`; Metal with `native_gate_b.sh` |
+| 5 | HDR output from the display pass: scRGB, HDR10 PQ, EDR, with the Rec.2020 to Rec.709 / P3 matrices and the view peak taken from the display instead of a clip at SDR white (ADR-005); SDR keeps today's exposure and clip | `core/view.cpp` extended, `rudra-hdr-probe` patches | readback within 2 half ulp per path; Gate B re-run through the real display pass on the PA279CRV | 2 | **Linux done** 24 Sep: [`view.spec.md`](view.spec.md) section 9, `core/view.cpp` and `display.frag` for scRGB, HDR10 and EDR (P3 and Rec.709), `GpuCompositor::view_values`; 40 cases per run in `rudra-gpu-parity`, on llvmpipe fp32 within 2.8e-5 relative and fp16 within 1 half ulp; unit tests against `pq_oetf` and the gamut matrices. Found that 6.3 converted from a Rec.2020 working space the composite never had; it now converts from the source primaries. The glass re-run of Gate B through this pass needs the viewer window and moves to step 9 |
+| 6 | GPU reductions: the `REDUCE` ladder as QRhi passes for peak, mean and MaxFALL | `measure()` (Python), browser `peakNits` / `meanNits` | peak exact, mean within fp32 summation bounds, on every backend | 1 | **done** 24 Sep: `render/shaders/reduce.frag`, `GpuCompositor::reduce`, `core/view.cpp` `reduce_ladder` (the ladder's own fp32 order); peak and sum equal to the browser's bit for bit, MaxCLL and MaxFALL too, and the shader equal to the CPU ladder on llvmpipe. Windows and Metal runs with the gate scripts |
+| 7 | Probe: one texel from each float target, nits by Rec.2020 luma, no flip | browser `probe()`, `composite.cpp` | equal at a fixed point set including the four corners | 0.5 | **done** 24 Sep: `core/view.cpp` `probe`; eight points per frame, corners included, equal to the browser's `probe()` bit for bit. On the GPU it is a one-texel read of the target, done by the viewer (step 9) |
+| 8 | Sample and scopes: the 768-side point sample and its source index, the waveform quantiles and histogram, the vectorscope, ported to `core/scopes.cpp` and run on the sample | browser `sample()`, `buildScopes`, `drawVector` accumulation | sample indices exact; waveform, histogram and vectorscope bins exact; the scopes cost recorded (compute shaders only if the CPU path misses its budget) | 1.5 | |
+| 9 | The viewer in the Qt shell: a `QWindow` with its own QRhi swapchain inside the widget tree (`createWindowContainer`), fit, 1:1, zoom about the cursor, pan, wipe drag, view switching with no recomposite, resize, device loss | `fitScale` and `zoomAbout` in `ui/app.js` (goldens of viewport maths) | viewport maths equal to the browser's; a still is judged in the app exactly as in the Studio; Gate B re-run through the real display pass on the PA279CRV (scRGB and HDR10) | 3 | |
+| 10 | Frame path: decode, an engine inference job with generations and cancellation, field upload, composite, present; stills and sequences (Phase 1 step 10) with fields cached per frame | Phase 1 modules | scrubbing a 240-frame folder never shows a stale frame; latency recorded | 3 | |
+| 11 | Guides (new, no Studio oracle): title and action safe, aspect masks, centre cross, specified in `view.spec.md` | the spec | CPU reference test; drawn identically on every backend | 1 | |
+| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | |
+| 13 | Review: Phase 2 exit written into `STATUS.md` | | probe and measurements equal the browser Studio's on every backend | 0.5 | |
+
+Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws
+into a texture that the widget backing store composites, and that path is SDR
+on every platform today. Gate B already proved the `QWindow` swapchain path
+carries scRGB and HDR10 to the glass, so the viewer is that window, embedded in
+the widget layout; the widgets around it stay ordinary Qt Widgets.
+
+Why the scopes on the CPU first: they read the 768-side sample the browser
+already reads (at most 590 k pixels, a few milliseconds), the result must be
+bin-exact with the browser, and QRhi compute is unavailable on the OpenGL
+fallback below 4.3. A compute path is added only if step 8's measurement says
+the CPU path misses its budget.
+
+Order: 1 and 2 first (the oracle and the spec), then 3 to 8 in order of
+dependency (3 before 4 and 5; 6, 7 and 8 need only the composite targets), 9
+and 10 together, 11, then 12 and 13.

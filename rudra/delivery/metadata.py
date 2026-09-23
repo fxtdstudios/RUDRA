@@ -245,8 +245,8 @@ def write_all_sidecars(
         "dovi": stem.with_name(stem.name + "_dovi_generate.json"),
         "hdr10plus": stem.with_name(stem.name + "_hdr10plus_scenes.json"),
     }
-    paths["rudra"].write_text(json.dumps(to_rudra_sidecar(stats, shots), indent=2), encoding="utf-8")
+    paths["rudra"].write_text(json.dumps(to_rudra_sidecar(stats, shots), indent=2), encoding="utf-8", newline="\n")
     paths["dovi"].write_text(
-        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits), indent=2), encoding="utf-8")
-    paths["hdr10plus"].write_text(json.dumps(to_hdr10plus_json(stats, shots), indent=2), encoding="utf-8")
+        json.dumps(to_dovi_generate_json(stats, shots, mastering_peak_nits), indent=2), encoding="utf-8", newline="\n")
+    paths["hdr10plus"].write_text(json.dumps(to_hdr10plus_json(stats, shots), indent=2), encoding="utf-8", newline="\n")
     return paths
