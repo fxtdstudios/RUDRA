@@ -395,6 +395,7 @@ native module is tested against. The state before that work is tagged
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what a training set has to contain |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
 | [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) | the native desktop Studio: architecture, phases, acceptance |
+| [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) | the native app design: layers, types, threading, patterns, numerics, first ten days |
 | [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |
 
 ---
