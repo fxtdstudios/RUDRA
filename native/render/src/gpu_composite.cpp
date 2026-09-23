@@ -1,5 +1,7 @@
 #include "rudra/render/gpu_composite.hpp"
 
+#include "rudra/core/gamut.hpp"
+
 #include <QFile>
 #include <QFloat16>
 #include <QGuiApplication>
@@ -38,7 +40,16 @@ static_assert(sizeof(Ubo) == (3 * 4 + 36 + 32) * sizeof(float));
 struct ViewUbo {
     float view[4];
     float extra[4];
+    float target[4];
+    float pic[12];   // three vec4 rows
+    float gfx[12];
 };
+static_assert(sizeof(ViewUbo) == 36 * sizeof(float));
+
+void rows_of(const Mat3& m, float* out) {
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) out[r * 4 + c] = float(m[std::size_t(r)][std::size_t(c)]);
+}
 
 // A composite target as an RGBA32F upload: rgb, alpha 1.
 std::vector<float> rgba_of(const PlanarBuffer& rgb) {
@@ -267,13 +278,62 @@ public:
 
     Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                            const ViewParams& params) override {
+        if (params.target.path != OutputPath::SdrPqSimulation)
+            return make_error(ErrorCode::InvalidArgument, "The 8-bit view is the SDR path; HDR paths read back as floats.");
+        QByteArray data;
+        if (auto r = view_pass(model, baseline, params, QRhiTexture::RGBA8, data); !r) return r.error();
+        const int w = model.width(), h = model.height();
+        const std::size_t row = std::size_t(data.size()) / std::size_t(h);
+        Rgb8Image o{w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 3)};
+        for (int yy = 0; yy < h; ++yy) {
+            const auto* r = reinterpret_cast<const std::uint8_t*>(data.constData()) + std::size_t(yy) * row;
+            for (int xx = 0; xx < w; ++xx)
+                for (int c = 0; c < 3; ++c)
+                    o.rgb[(std::size_t(yy) * w + xx) * 3 + std::size_t(c)] = r[std::size_t(xx) * 4 + std::size_t(c)];
+        }
+        return o;
+    }
+
+    Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                                     const ViewParams& params, GpuPrecision precision) override {
+        if (!supports(precision))
+            return make_error(ErrorCode::Unsupported, "This GPU cannot render to that float format.");
+        const bool f32 = precision == GpuPrecision::Fp32;
+        QByteArray data;
+        if (auto r = view_pass(model, baseline, params, f32 ? QRhiTexture::RGBA32F : QRhiTexture::RGBA16F, data); !r)
+            return r.error();
+        const int w = model.width(), h = model.height();
+        const std::size_t row = std::size_t(data.size()) / std::size_t(h);
+        PlanarBuffer o(3, h, w);
+        for (int yy = 0; yy < h; ++yy) {
+            const char* r = data.constData() + std::size_t(yy) * row;
+            for (int xx = 0; xx < w; ++xx)
+                for (int c = 0; c < 3; ++c) {
+                    float v;
+                    if (f32) {
+                        std::memcpy(&v, r + std::size_t(xx) * 16 + std::size_t(c) * 4, 4);
+                    } else {
+                        qfloat16 hv;
+                        std::memcpy(&hv, r + std::size_t(xx) * 8 + std::size_t(c) * 2, 2);
+                        v = float(hv);
+                    }
+                    o.at(c, yy, xx) = v;
+                }
+        }
+        return o;
+    }
+
+private:
+    // One display pass into a `fmt` target, read back raw.
+    Result<void> view_pass(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                           const ViewParams& params, QRhiTexture::Format fmt, QByteArray& data) {
         const int w = model.width(), h = model.height();
         if (baseline.width() != w || baseline.height() != h)
             return make_error(ErrorCode::InvalidArgument, "The two composite targets differ in size.");
         const std::vector<float> a = rgba_of(model.buffer()), b = rgba_of(baseline.buffer());
         std::unique_ptr<QRhiTexture> ta(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
         std::unique_ptr<QRhiTexture> tb(rhi_->newTexture(QRhiTexture::RGBA32F, QSize(w, h)));
-        std::unique_ptr<QRhiTexture> out(rhi_->newTexture(QRhiTexture::RGBA8, QSize(w, h), 1,
+        std::unique_ptr<QRhiTexture> out(rhi_->newTexture(fmt, QSize(w, h), 1,
                                                           QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
         if (!ta->create() || !tb->create() || !out->create())
             return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
@@ -304,6 +364,11 @@ public:
         u.extra[0] = std::log2(1.0f + float(std::max(params.diff_gain, 1.0)));
         u.extra[1] = float(w);
         u.extra[2] = params.show == ViewSource::Baseline ? 1.0f : 0.0f;
+        u.target[0] = float(int(params.target.path));
+        u.target[1] = float(std::min(params.display_nits, params.target.peak_nits));
+        u.target[2] = float(params.target.unit_nits);
+        rows_of(rgb_to_rgb_matrix(params.source, params.target.primaries), u.pic);
+        rows_of(rgb_to_rgb_matrix(Primaries::Rec709, params.target.primaries), u.gfx);
 
         QRhiCommandBuffer* cb = nullptr;
         if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
@@ -325,17 +390,11 @@ public:
         cb->endPass(down);
         rhi_->endOffscreenFrame();
 
-        if (rb.data.size() < qsizetype(std::size_t(w) * h * 4))
+        const int bpp = fmt == QRhiTexture::RGBA32F ? 16 : fmt == QRhiTexture::RGBA16F ? 8 : 4;
+        if (rb.data.size() < qsizetype(std::size_t(w) * h * bpp))
             return make_error(ErrorCode::BackendError, "GPU readback returned too little data.");
-        const std::size_t row = std::size_t(rb.data.size()) / std::size_t(h);
-        Rgb8Image o{w, h, std::vector<std::uint8_t>(std::size_t(w) * h * 3)};
-        for (int yy = 0; yy < h; ++yy) {
-            const auto* r = reinterpret_cast<const std::uint8_t*>(rb.data.constData()) + std::size_t(yy) * row;
-            for (int xx = 0; xx < w; ++xx)
-                for (int c = 0; c < 3; ++c)
-                    o.rgb[(std::size_t(yy) * w + xx) * 3 + std::size_t(c)] = r[std::size_t(xx) * 4 + std::size_t(c)];
-        }
-        return o;
+        data = rb.data;
+        return {};
     }
 
 private:

@@ -54,6 +54,10 @@ public:
     // core/view.cpp.
     virtual Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                                    const ViewParams& params) = 0;
+    // The display pass for any output path (params.target), into an RGBA32F
+    // or RGBA16F target: the values the swapchain would be written with.
+    virtual Result<PlanarBuffer> view_values(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
+                                             const ViewParams& params, GpuPrecision precision) = 0;
 };
 
 }  // namespace rudra

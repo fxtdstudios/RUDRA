@@ -204,6 +204,58 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The HDR output paths (Phase 2 step 5): the values each swapchain would
+    // be written with, RGBA32F against core/view.cpp and RGBA16F within 2 ulp.
+    struct HdrRow {
+        std::string label;
+        double f32_excess = 0.0, f32_rel = 0.0;
+        int f16_ulp = 0;
+        bool ok() const { return f32_excess <= 0.0 && f16_ulp <= kMaxHalfUlp; }
+    };
+    std::vector<HdrRow> hrows;
+    const std::vector<std::pair<std::string, DisplayTarget>> targets = {
+        {"scRGB 1000", DisplayTarget::scrgb(1000.0)},
+        {"HDR10 1000", DisplayTarget::hdr10(1000.0)},
+        {"EDR P3 1600", DisplayTarget::edr(1600.0)},
+        {"EDR 709 1600", DisplayTarget::edr(1600.0, Primaries::Rec709)},
+    };
+    const std::vector<std::pair<std::string, ViewParams>> hdr_views = {
+        {"image", {ViewMode::Image, 10000.0}},
+        {"image view peak 600", {ViewMode::Image, 600.0}},
+        {"false colour", {ViewMode::FalseColour, 203.0}},
+        {"difference", {ViewMode::Difference, 203.0}},
+        {"wipe", {ViewMode::Image, 10000.0, ViewSource::Model, 0.37, 0.02}},
+    };
+    for (const auto& [name, f] : idx.at("frames").items()) {
+        const SdrImage sdr(load(dir, f.at("sdr")));
+        const Fields fields{load(dir, f.at("residual")), load(dir, f.at("highlight")), load(dir, f.at("shadow"))};
+        FrameScalars sc;
+        sc.shadow_weight = f.at("shadow_weight").get<float>();
+        sc.curve_params = f.at("curve_params").get<std::vector<float>>();
+        const auto m = composite(sdr, fields, sc, model, CompositeParams{});
+        const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
+        for (const auto& [tname, t] : targets)
+            for (auto [vname, vp] : hdr_views) {
+                vp.target = t;
+                const PlanarBuffer want = render_view(m, b, vp);
+                auto g32 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp32);
+                auto g16 = (*gpu)->view_values(m, b, vp, GpuPrecision::Fp16);
+                if (!g32 || !g16) {
+                    out << "rudra-gpu-parity: " << QString::fromStdString((!g32 ? g32.error() : g16.error()).message) << "\n";
+                    return 2;
+                }
+                HdrRow r;
+                r.label = name + " " + tname + " " + vname;
+                for (std::size_t i = 0; i < want.span().size(); ++i) {
+                    const double wv = want.span()[i], d = std::abs(double(g32->span()[i]) - wv);
+                    r.f32_excess = std::max(r.f32_excess, d - (1e-5 + kRtol * std::abs(wv)));
+                    r.f32_rel = std::max(r.f32_rel, d / std::max(std::abs(wv), 1e-3));
+                    r.f16_ulp = std::max(r.f16_ulp, half_ulp(g16->span()[i], float(wv)));
+                }
+                hrows.push_back(r);
+            }
+    }
+
     out << "GPU composite parity: " << QString::fromStdString(info.backend) << " on "
         << QString::fromStdString(info.device) << "\n";
     out << QString("  %1 %2 %3 %4  %5\n").arg("case", -34).arg("fp32 max|d|", 12).arg("fp16 ulp", 9)
@@ -231,6 +283,26 @@ int main(int argc, char** argv) {
                                   {"values_off", qint64(r.off)}, {"pass", r.ok()}});
     }
     out << "  bound: 1 code in 8 bits\n";
+    out << "HDR output paths, against core/view.cpp\n";
+    QJsonArray jhdr;
+    int worst_hdr_ulp = 0;
+    double worst_hdr_rel = 0.0;
+    bool hdr_ok = true;
+    for (const auto& r : hrows) {
+        hdr_ok = hdr_ok && r.ok();
+        worst_hdr_ulp = std::max(worst_hdr_ulp, r.f16_ulp);
+        worst_hdr_rel = std::max(worst_hdr_rel, r.f32_rel);
+        if (!r.ok())
+            out << QString("  %1 fp32 rel %2  fp16 %3 ulp  FAIL\n").arg(QString::fromStdString(r.label), -44)
+                       .arg(r.f32_rel, 0, 'e', 2).arg(r.f16_ulp);
+        jhdr.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"fp32_max_rel", r.f32_rel},
+                                {"fp16_max_ulp", r.f16_ulp}, {"pass", r.ok()}});
+    }
+    all = all && hdr_ok;
+    out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 5 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
+               .arg(hrows.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
+               .arg(hdr_ok ? "pass" : "FAIL");
+    out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp\n";
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
 
     QJsonArray jbench;
@@ -257,7 +329,7 @@ int main(int argc, char** argv) {
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(QJsonObject{{"backend", QString::fromStdString(info.backend)},
                                               {"device", QString::fromStdString(info.device)},
-                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"bench", jbench}})
+                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"hdr", jhdr}, {"bench", jbench}})
                         .toJson());
     }
     return all ? 0 : 1;

@@ -19,6 +19,8 @@
 
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/gamut.hpp"
+#include "rudra/core/hdr10.hpp"
 #include "rudra/core/half.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
@@ -224,4 +226,75 @@ TEST(Viewer, DisplayPassMatchesTheBrowserCanvas) {
             ::testing::Test::RecordProperty(vname, std::to_string(worst) + "/" + std::to_string(off_by_one));
         }
     }
+}
+
+// ---- step 5: the HDR output paths, against independent references ----------
+
+namespace {
+
+// A 1 x n picture of network-unit pixels, and the same for the baseline.
+NetworkLinearImage row_of(std::vector<std::array<float, 3>> px) {
+    PlanarBuffer b(3, 1, int(px.size()));
+    for (std::size_t i = 0; i < px.size(); ++i)
+        for (int c = 0; c < 3; ++c) b.at(c, 0, int(i)) = px[i][std::size_t(c)];
+    return NetworkLinearImage(std::move(b));
+}
+
+}  // namespace
+
+TEST(Viewer, HdrPathsWriteAbsoluteNitsClippedAtThePeak) {
+    // 203 nits white, 1 000 nits white, 3 000 nits white, a 203-nit Rec.709 red.
+    const auto m = row_of({{0.0203f, 0.0203f, 0.0203f}, {0.1f, 0.1f, 0.1f}, {0.3f, 0.3f, 0.3f}, {0.0203f, 0.0f, 0.0f}});
+    const auto b = row_of({{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}});
+    ViewParams p;
+    p.display_nits = 10000.0;   // no view ceiling below the display's
+
+    p.target = DisplayTarget::scrgb(1000.0);   // 1.0 = 80 nits, Rec.709
+    auto v = render_view(m, b, p);
+    EXPECT_NEAR(v.at(0, 0, 0), 203.0f / 80.0f, 1e-5f);
+    EXPECT_NEAR(v.at(1, 0, 1), 1000.0f / 80.0f, 1e-4f);
+    EXPECT_NEAR(v.at(2, 0, 2), 1000.0f / 80.0f, 1e-4f);   // clipped at the display's peak, not tone-mapped
+    EXPECT_NEAR(v.at(0, 0, 3), 203.0f / 80.0f, 1e-5f);
+    EXPECT_NEAR(v.at(1, 0, 3), 0.0f, 1e-6f);
+
+    p.target = DisplayTarget::hdr10(1000.0);   // PQ, Rec.2020
+    v = render_view(m, b, p);
+    EXPECT_NEAR(v.at(0, 0, 0), pq_oetf(203.0f), 1e-6f);
+    EXPECT_NEAR(v.at(0, 0, 0), 0.5807f, 5e-4f);   // BT.2408: reference white at 58 % PQ
+    EXPECT_NEAR(v.at(1, 0, 2), pq_oetf(1000.0f), 1e-6f);
+    const Mat3 to2020 = rgb_to_rgb_matrix(Primaries::Rec709, Primaries::Rec2020);
+    for (int k = 0; k < 3; ++k)
+        EXPECT_NEAR(v.at(k, 0, 3), pq_oetf(float(to2020[std::size_t(k)][0] * 203.0)), 1e-5f) << k;   // fp32 matrix, amplified by PQ
+
+    p.target = DisplayTarget::edr(1600.0);   // 1.0 = SDR white (203), Display P3
+    p.display_nits = 600.0;                  // the view peak is the lower ceiling here
+    v = render_view(m, b, p);
+    EXPECT_NEAR(v.at(0, 0, 0), 1.0f, 1e-5f);
+    EXPECT_NEAR(v.at(0, 0, 1), 600.0f / 203.0f, 1e-5f);
+    const Mat3 toP3 = rgb_to_rgb_matrix(Primaries::Rec709, Primaries::P3D65);
+    for (int k = 0; k < 3; ++k) EXPECT_NEAR(v.at(k, 0, 3), float(toP3[std::size_t(k)][0]), 1e-5f) << k;
+}
+
+TEST(Viewer, HdrOverlaysAreGraphicsAtTheSdrWhite) {
+    const auto m = row_of({{0.0203f, 0.0203f, 0.0203f}, {0.5f, 0.5f, 0.5f}});
+    const auto b = row_of({{0.0203f, 0.0203f, 0.0203f}, {0.0f, 0.0f, 0.0f}});
+    ViewParams p;
+    p.mode = ViewMode::FalseColour;
+    p.target = DisplayTarget::scrgb(1000.0);
+    const auto v = render_view(m, b, p);
+    const auto zone = false_colour(false_colour_zone(203.0f));   // diffuse white's zone, an SDR code
+    for (int k = 0; k < 3; ++k) {
+        const float c = zone[std::size_t(k)];
+        const float lin = c > 0.04045f ? std::pow((c + 0.055f) / 1.055f, 2.4f) : c / 12.92f;
+        EXPECT_NEAR(v.at(k, 0, 0), 203.0f * lin / 80.0f, 1e-5f) << k;
+    }
+    // The wipe handle inverts the picture against the ceiling on an HDR image.
+    ViewParams w;
+    w.display_nits = 1000.0;
+    w.target = DisplayTarget::scrgb(1000.0);
+    w.wipe = 0.75;           // column 1 of 2 is at u = 0.75: on the handle
+    w.wipe_half_width = 0.1;
+    const auto vw = render_view(m, b, w);
+    EXPECT_NEAR(vw.at(0, 0, 1), (1000.0f - 1000.0f) / 80.0f, 1e-5f);   // 5 000 nits clips to 1 000, inverted to 0
+    EXPECT_NEAR(vw.at(0, 0, 0), 203.0f / 80.0f, 1e-5f);                // left of the wipe: the baseline
 }

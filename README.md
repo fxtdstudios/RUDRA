@@ -427,8 +427,9 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
   unmodified in headless Chromium; its composite matches `composite.cpp`
 - [x] Display pass (image, false colour, difference, wipe) on the CPU, specified in
   [`docs/view.spec.md`](docs/view.spec.md): the browser's canvas to within one code
-- [ ] The display pass in GLSL 440 on every backend
-- [ ] HDR output from the display pass: scRGB, HDR10, EDR
+- [ ] The display pass in GLSL 440 on every backend (OpenGL passes; Windows and Mac runs open)
+- [x] HDR output from the display pass: scRGB, HDR10, EDR, from the source primaries
+  (the glass check moves to the viewer window)
 - [ ] GPU reductions, probe, sample and scopes equal to the browser's
 - [ ] The viewer in the Qt shell, with the frame path, zoom, pan and guides
 - [ ] Every backend, budgets recorded

@@ -1,5 +1,8 @@
 #include "rudra/core/view.hpp"
 
+#include "rudra/core/gamut.hpp"
+#include "rudra/core/hdr10.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -20,6 +23,23 @@ constexpr std::array<std::array<float, 3>, 10> kZoneColour{{
 
 float lum2020(float r, float g, float b) noexcept {
     return r * kRec2020Luma[0] + g * kRec2020Luma[1] + b * kRec2020Luma[2];
+}
+
+float srgb_to_linear(float c) noexcept {
+    c = std::clamp(c, 0.0f, 1.0f);
+    return c > 0.04045f ? std::pow((c + 0.055f) / 1.055f, 2.4f) : c / 12.92f;
+}
+
+using Mat3f = std::array<float, 9>;
+Mat3f to_float(const Mat3& m) {
+    Mat3f f{};
+    for (int i = 0; i < 9; ++i) f[std::size_t(i)] = float(m[std::size_t(i / 3)][std::size_t(i % 3)]);
+    return f;
+}
+
+// Absolute nits in the target's primaries -> the value the swapchain takes.
+float encode(const DisplayTarget& t, float nits) noexcept {
+    return t.path == OutputPath::Hdr10 ? pq_oetf(nits) : nits / float(t.unit_nits);
 }
 
 }  // namespace
@@ -53,6 +73,15 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
     const float half_width = float(p.wipe_half_width);
     const float log_gain = std::log2(1.0f + float(std::max(p.diff_gain, 1.0)));
 
+    const bool hdr = p.target.path != OutputPath::SdrPqSimulation;
+    // HDR paths: the picture in absolute nits, clipped at the lower of the view
+    // peak and the display's peak, never tone-mapped (ADR-005); overlays (false
+    // colour, difference, the wipe handle) are graphics at the SDR white.
+    const float ceiling = float(std::min(p.display_nits, p.target.peak_nits));
+    const Mat3f picture_m = to_float(rgb_to_rgb_matrix(p.source, p.target.primaries));
+    const Mat3f graphics_m = to_float(rgb_to_rgb_matrix(Primaries::Rec709, p.target.primaries));
+    const float graphics_white = float(kDiffuseWhite.v);
+
     PlanarBuffer out(3, h, w);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
@@ -76,14 +105,36 @@ PlanarBuffer render_view(const NetworkLinearImage& model, const NetworkLinearIma
                 }
                 case ViewMode::Image:
                 default:
-                    c[0] = linear_to_srgb(hr * scale);
-                    c[1] = linear_to_srgb(hg * scale);
-                    c[2] = linear_to_srgb(hb * scale);
+                    if (hdr) {
+                        c[0] = std::clamp(hr * kPeak, 0.0f, ceiling);
+                        c[1] = std::clamp(hg * kPeak, 0.0f, ceiling);
+                        c[2] = std::clamp(hb * kPeak, 0.0f, ceiling);
+                    } else {
+                        c[0] = linear_to_srgb(hr * scale);
+                        c[1] = linear_to_srgb(hg * scale);
+                        c[2] = linear_to_srgb(hb * scale);
+                    }
                     break;
             }
-            if (wiping && std::abs(u - wipe) < half_width)
-                for (float& v : c) v = 1.0f - v;
-            for (int k = 0; k < 3; ++k) out.at(k, y, x) = c[k];
+            const bool handle = wiping && std::abs(u - wipe) < half_width;
+            if (!hdr) {
+                if (handle)
+                    for (float& v : c) v = 1.0f - v;
+                for (int k = 0; k < 3; ++k) out.at(k, y, x) = c[k];
+                continue;
+            }
+            // HDR: c is nits in the source primaries (image) or an SDR code (graphics).
+            const bool picture = p.mode == ViewMode::Image;
+            float n[3];
+            for (int k = 0; k < 3; ++k) {
+                if (picture) n[k] = handle ? ceiling - c[k] : c[k];
+                else n[k] = graphics_white * srgb_to_linear(handle ? 1.0f - c[k] : c[k]);
+            }
+            const Mat3f& m3 = picture ? picture_m : graphics_m;
+            for (int k = 0; k < 3; ++k) {
+                const float v = m3[std::size_t(k) * 3] * n[0] + m3[std::size_t(k) * 3 + 1] * n[1] + m3[std::size_t(k) * 3 + 2] * n[2];
+                out.at(k, y, x) = encode(p.target, v);
+            }
         }
     }
     return out;

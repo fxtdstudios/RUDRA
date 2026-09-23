@@ -5,17 +5,13 @@
 
 #include "rudra/core/color.hpp"
 #include "rudra/core/image.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
 
-// Which path the picture takes to the glass. The pipe bar shows it verbatim.
-enum class OutputPath {
-    SdrPqSimulation,   // SDR swapchain, today's PQ simulation
-    ScRgb,             // FP16 linear Rec.709, 1.0 = 80 nits (Windows D3D12, Linux Vulkan)
-    Hdr10,             // PQ Rec.2020 10-bit (Windows option)
-    Edr,               // linear Display P3, 1.0 = SDR white (macOS Metal)
-};
+// OutputPath, which path the picture takes to the glass, lives with the
+// display pass in core/view.hpp.
 
 struct DisplayInfo {
     OutputPath path = OutputPath::SdrPqSimulation;

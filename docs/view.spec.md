@@ -1,8 +1,8 @@
 # The viewer: specification
 
-Status: revision 1, 24 Sep 2026 (Phase 2 step 2). Normative for every
-implementation. Later revisions add the HDR output encodings (step 5), the
-viewport maths (step 9) and the guides (step 11).
+Status: revision 2, 24 Sep 2026 (Phase 2 steps 2 and 5). Normative for every
+implementation. Revision 2 adds the HDR output paths (section 9); later
+revisions add the viewport maths (step 9) and the guides (step 11).
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -177,10 +177,50 @@ each rounded half to even into 8 bits.
 | peak (step 6) | exact against the same target | a maximum |
 | mean (step 6) | fp32 summation bound | tree order vs sequential |
 | waveform, histogram, vectorscope bins (step 8) | exact | integer counts on the same sample |
+| HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
+| HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
 
-## 9. Not in revision 1
+## 9. HDR output paths
 
-The HDR output encodings, where `displayNits` becomes the display's own peak
-and the picture is not clipped at SDR white (scRGB, HDR10 PQ, EDR; step 5,
-docs/NATIVE_ARCHITECTURE.md 6.3 and ADR-005); the viewport (fit, 1:1, zoom
-about the cursor, pan; step 9); and the guides (step 11).
+Section 2 is the SDR path, the browser Studio's view. On an HDR swapchain the
+same pass writes absolute light instead (ADR-005: the peak comes from the
+display and nothing is tone-mapped behind the artist's back). A target is
+`(path, primaries, peak, unit)`:
+
+| Path | Swapchain (QRhi) | Primaries | Value written for `n` nits |
+|---|---|---|---|
+| SDR | `SDR` | Rec.709 (sRGB) | section 2 |
+| scRGB | `HDRExtendedSrgbLinear`, scene-referred (Windows, Linux Vulkan) | Rec.709 | `n / 80` |
+| HDR10 | `HDR10` | Rec.2020 | `PQ(n)`, ST 2084 of `n / 10000` |
+| EDR | `HDRExtendedDisplayP3Linear`, or `HDRExtendedSrgbLinear` display-referred (macOS) | Display P3, or Rec.709 | `n / 203`: 1.0 is the SDR white, held at diffuse white |
+
+`peak` is what the display reports now (maximum luminance on Windows; on
+macOS the live EDR headroom times 203, re-read every frame).
+
+**Primaries.** The composite keeps the primaries of its input, Rec.709 for
+an sRGB still (docs/composite.spec.md: "the network never changes
+primaries"), so the picture is converted from those source primaries to the
+swapchain's with `rgb_to_rgb_matrix` (no adaptation: all four are D65). The
+SDR path writes the values as they are, which is the same statement for a
+Rec.709 source. (Revision 1 of NATIVE_ARCHITECTURE.md 6.3 assumed a Rec.2020
+working space here; the composite never had one.)
+
+**Image view.** Per channel in the source primaries,
+`n_k = clamp(h_k P, 0, ceiling)` with `ceiling = min(displayNits, peak)`:
+the view peak slider still sets a ceiling, but it clips at that luminance
+instead of exposing to it. Then `o = M_source->target n`, rows summed in order
+0, 1, 2 in fp32, and each `o_k` is encoded for the path. Because the
+Rec.709 to P3 and Rec.709 to Rec.2020 matrices have non-negative rows summing
+to one, clipping before the conversion keeps every output channel within the
+ceiling. The wipe handle writes `ceiling - n_k`.
+
+**Overlays.** False colour and the difference view are graphics, not light:
+their section 2 value `c` (the handle inverting it to `1 - c`) is shown at the
+SDR white, `n_k = 203 srgb_to_linear(c_k)` in Rec.709, then converted with
+`M_709->target` and encoded as above.
+
+## 10. Not in revision 2
+
+The viewport (fit, 1:1, zoom about the cursor, pan; step 9) and the guides
+(step 11). A glass measurement of the HDR paths through this pass, which
+needs the viewer window, is Gate B's re-run in step 9.
