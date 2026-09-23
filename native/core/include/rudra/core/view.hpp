@@ -90,7 +90,7 @@ struct ProbeSample {
 struct Probe {
     ProbeSample model, baseline;
 };
-Probe probe(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y);
+Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y);
 
 // The SDR picture quantised as the 8-bit framebuffer does: round(255 c).
 Rgb8Image render_view_rgb8(const NetworkLinearImage& model, const NetworkLinearImage& baseline,

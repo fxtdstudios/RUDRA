@@ -161,5 +161,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
-| Phase 2 (QRhi viewer) | steps 1 to 7 of 13 done (4 to 6 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR on the CPU and in `display.frag`, the reduction ladder and the probe equal to the browser's (section 15) |
+| Phase 2 (QRhi viewer) | steps 1 to 8 of 13 done (4 to 6 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR on the CPU and in `display.frag`, the reduction ladder, the probe, the measurements and the scopes equal to the browser's (section 15) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |
