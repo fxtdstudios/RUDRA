@@ -16,7 +16,8 @@ namespace {
 
 torch::Tensor to_tensor(const SdrImage& img, const torch::Device& dev) {
     const auto& b = img.buffer();
-    auto t = torch::from_blob(const_cast<float*>(b.span().data()), {1, 3, b.height(), b.width()},
+    auto t = torch::from_blob(const_cast<float*>(b.span().data()),
+                              {std::int64_t{1}, std::int64_t{3}, std::int64_t{b.height()}, std::int64_t{b.width()}},
                               torch::TensorOptions().dtype(torch::kFloat32));
     return dev.is_cpu() ? t : t.to(dev);
 }
@@ -58,7 +59,7 @@ public:
             c10::InferenceMode guard;
             auto scale = torch::full({1, 1, 1, 1}, s.residual_scale).to(device_);
             auto curve = torch::from_blob(const_cast<float*>(s.curve_params.data()),
-                                          {1, static_cast<long>(s.curve_params.size())},
+                                          {1, static_cast<std::int64_t>(s.curve_params.size())},
                                           torch::TensorOptions().dtype(torch::kFloat32)).clone().to(device_);
             auto out = module_.get_method("tile_pass")({to_tensor(tile, device_), scale, curve}).toTuple();
             return Fields{to_planar(out->elements()[0].toTensor()), to_planar(out->elements()[1].toTensor()),

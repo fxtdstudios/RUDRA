@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(RUDRA_BUILD_TESTS       "Build the GoogleTest suite"                        ON)
 option(RUDRA_BUILD_CLI         "Build the headless rudra-native CLI"              ON)
 option(RUDRA_BUILD_APP         "Build the Qt application (needs Qt 6)"            OFF)
+option(RUDRA_BUILD_HDR_PROBE   "Build rudra-hdr-probe, Gate B (needs Qt 6.6+)"    OFF)
 option(RUDRA_WITH_LIBTORCH     "Build the LibTorch inference backend"             OFF)
 option(RUDRA_WITH_ONNXRUNTIME  "Build the ONNX Runtime inference backend"         OFF)
 set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime package root (include/, lib/)")
@@ -40,5 +41,5 @@ if(RUDRA_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
-message(STATUS "RUDRA native: tests=${RUDRA_BUILD_TESTS} cli=${RUDRA_BUILD_CLI} app=${RUDRA_BUILD_APP} "
+message(STATUS "RUDRA native: tests=${RUDRA_BUILD_TESTS} cli=${RUDRA_BUILD_CLI} app=${RUDRA_BUILD_APP} hdr_probe=${RUDRA_BUILD_HDR_PROBE} "
                "libtorch=${RUDRA_WITH_LIBTORCH} onnxruntime=${RUDRA_WITH_ONNXRUNTIME}")

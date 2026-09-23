@@ -66,6 +66,8 @@ training/input.jpg
 !/docs/*.md
 !/STATUS.md
 !/HF_MODEL_CARD.md
+# The native build guide, linked from the root README.
+!/native/README.md
 
 # Run artefacts from the corpus tools. Reports of a measurement, not source,
 # and pilot_clipping.json has already been committed once by accident.
