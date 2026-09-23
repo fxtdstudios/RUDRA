@@ -134,7 +134,9 @@ reports SDR and FAIL rather than passing a clipped card.
 composite shader offscreen on this GPU for every case in the composite
 goldens and reads it back: into RGBA32F against `composite.cpp` (atol 1e-6,
 rtol 2e-4) and into RGBA16F, the viewer's format, within 2 half-float ulp.
-Both gate B scripts run it on every API the machine has, with `--bench`: one
+Then the display pass (`display.frag`, Phase 2 step 4): seven views of each
+frame into RGBA8 against `core/view.cpp`, within 1 code ("view codes" in the
+gate table is the worst difference). Both gate B scripts run it on every API the machine has, with `--bench`: one
 composite pass timed at 1080p and 4K into RGBA16F (QRhi GPU timestamps). Gate A
 times inference at 1080p on every backend that passed (`rudra-native bench`).
 
@@ -158,5 +160,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
-| Phase 2 (QRhi viewer) | steps 1 to 3 of 13 done: the browser Studio as oracle, `docs/view.spec.md`, the display pass on the CPU (section 15) |
+| Phase 2 (QRhi viewer) | steps 1 to 3 of 13 done and step 4 on Linux: the browser Studio as oracle, `docs/view.spec.md`, the display pass on the CPU and in `display.frag` (section 15) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

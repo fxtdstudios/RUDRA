@@ -12,7 +12,11 @@
 // Every case runs twice: into an RGBA32F target, held to the C++ fp32 result
 // (atol 1e-6, rtol 2e-4, network units), and into RGBA16F, the viewer's
 // format, held to 2 half-float ulp of the C++ result rounded to half.
-// Exit 0 when every case passes both.
+//
+// Then the display pass (docs/view.spec.md section 2, Phase 2 step 4): seven
+// views of each frame's default composite and its baseline, into an RGBA8
+// target, held to core/view.cpp within 1 code.
+// Exit 0 when every case passes.
 
 #include <QCommandLineParser>
 #include <QFile>
@@ -30,7 +34,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/platform/npy.hpp"
 #include "rudra/render/gpu_composite.hpp"
 
@@ -155,6 +161,49 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The display pass on each frame's default composite and baseline.
+    struct ViewRow {
+        std::string label;
+        int max_code = 0;
+        std::size_t off = 0;
+        bool ok() const { return max_code <= 1; }
+    };
+    std::vector<ViewRow> vrows;
+    const std::vector<std::pair<std::string, ViewParams>> views = {
+        {"image 203", {ViewMode::Image, 203.0}},
+        {"image 1000", {ViewMode::Image, 1000.0}},
+        {"baseline", {ViewMode::Image, 203.0, ViewSource::Baseline}},
+        {"false colour", {ViewMode::FalseColour, 203.0}},
+        {"difference", {ViewMode::Difference, 203.0, ViewSource::Model, -1.0, 0.0012, 2000.0}},
+        {"wipe 0.37", {ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02}},
+        {"wipe false colour", {ViewMode::FalseColour, 203.0, ViewSource::Model, 0.61, 0.02}},
+    };
+    for (const auto& [name, f] : idx.at("frames").items()) {
+        const SdrImage sdr(load(dir, f.at("sdr")));
+        const Fields fields{load(dir, f.at("residual")), load(dir, f.at("highlight")), load(dir, f.at("shadow"))};
+        FrameScalars sc;
+        sc.shadow_weight = f.at("shadow_weight").get<float>();
+        sc.curve_params = f.at("curve_params").get<std::vector<float>>();
+        const auto m = composite(sdr, fields, sc, model, CompositeParams{});
+        const auto b = corrected_baseline(sdr, model.corpus_ev, sc.curve_params);
+        for (const auto& [vname, vp] : views) {
+            const Rgb8Image want = render_view_rgb8(m, b, vp);
+            auto got = (*gpu)->view(m, b, vp);
+            if (!got) {
+                out << "rudra-gpu-parity: " << QString::fromStdString(got.error().message) << "\n";
+                return 2;
+            }
+            ViewRow r;
+            r.label = name + " " + vname;
+            for (std::size_t i = 0; i < want.rgb.size(); ++i) {
+                const int d = std::abs(int(got->rgb[i]) - int(want.rgb[i]));
+                r.max_code = std::max(r.max_code, d);
+                r.off += d != 0;
+            }
+            vrows.push_back(r);
+        }
+    }
+
     out << "GPU composite parity: " << QString::fromStdString(info.backend) << " on "
         << QString::fromStdString(info.device) << "\n";
     out << QString("  %1 %2 %3 %4  %5\n").arg("case", -34).arg("fp32 max|d|", 12).arg("fp16 ulp", 9)
@@ -171,6 +220,17 @@ int main(int argc, char** argv) {
                                  {"fp16_max_ulp", r.f16_ulp}, {"vs_python_max_abs", r.py_abs}, {"pass", r.ok()}});
     }
     out << "  bound: fp32 atol " << kAtol << " rtol " << kRtol << "; fp16 " << kMaxHalfUlp << " half ulp\n";
+    out << "Display pass, RGBA8, against core/view.cpp\n";
+    QJsonArray jviews;
+    for (const auto& r : vrows) {
+        all = all && r.ok();
+        out << QString("  %1 %2 %3  %4\n").arg(QString::fromStdString(r.label), -34)
+                   .arg(QString("max %1 code").arg(r.max_code), 12).arg(QString("%1 off").arg(r.off), 9)
+                   .arg(r.ok() ? "pass" : "FAIL");
+        jviews.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"max_code", r.max_code},
+                                  {"values_off", qint64(r.off)}, {"pass", r.ok()}});
+    }
+    out << "  bound: 1 code in 8 bits\n";
     out << "  => " << (all ? "PASS" : "FAIL") << "\n";
 
     QJsonArray jbench;
@@ -197,7 +257,7 @@ int main(int argc, char** argv) {
         if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
             f.write(QJsonDocument(QJsonObject{{"backend", QString::fromStdString(info.backend)},
                                               {"device", QString::fromStdString(info.device)},
-                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"bench", jbench}})
+                                              {"api", a}, {"pass", all}, {"cases", jrows}, {"views", jviews}, {"bench", jbench}})
                         .toJson());
     }
     return all ? 0 : 1;

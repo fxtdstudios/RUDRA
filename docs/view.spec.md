@@ -172,7 +172,7 @@ each rounded half to even into 8 bits.
 |---|---|---|
 | browser composite vs `composite.cpp` (step 1) | 5e-5 + 1e-5 \|ref\| (network units), measured 3e-6 | GPU `exp`, `log`, `pow` are not correctly rounded |
 | display pass, C++ vs browser (step 3) | 1 code in 8 bits; zone index exact; measured: 3 of 290 k values 1 code off, the rest equal | the GPU's `pow` in `linear_to_srgb` |
-| display pass, shader vs C++ (step 4) | 1 code in 8 bits | the same |
+| display pass, shader vs C++ (step 4) | 1 code in 8 bits; measured on llvmpipe: equal in every byte | the same |
 | probe, index, sample | exact | texel reads and integers |
 | peak (step 6) | exact against the same target | a maximum |
 | mean (step 6) | fp32 summation bound | tree order vs sequential |
