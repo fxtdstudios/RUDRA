@@ -69,6 +69,15 @@
 > this run's train split it is retrained on the rebuilt manifest (4 h), and
 > `scripts/next_steps_2026-09-22.ps1` does that decision by data.
 >
+> **23 Sep 2026, 17:26 — v4c is the research (non-commercial) corpus**, HdM
+> included, at `G:\datasets\corpora\corpus_v4c`; one model, `sdr2hdr_image_v4c`.
+> The commercial build waits for more clean real footage (FXTD, LIVE-TMHDR).
+> Checked on G: first: all 52,772 inventory sources resolve after the move;
+> Sparks' duplicate P3-PQ rendition (13,777 files) is dropped; ACES scaled
+> 1.0 = 100 nits (measured 55-91 against the PQ grade); Poly Haven venice_* /
+> stuttgart_* no longer read as S-Log3 / PQ / HdM. liu_hdrv and pandora are
+> still zip archives (pandora partly .part) and are not in any inventory.
+>
 > **23 Sep 2026, 17:00 — critical path built, running on the box.**
 > `scripts/RUN_CRITICAL_PATH.bat` runs N1 → N2 + N3 → N7 unattended with
 > gates and resume markers (`reports/logs/cp_*`). What is in the code now:

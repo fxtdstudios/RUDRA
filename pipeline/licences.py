@@ -18,13 +18,15 @@ from typing import Iterable
 
 # (source id, match keywords, licence, commercial_ok)
 RULES: tuple[tuple[str, tuple[str, ...], str, bool], ...] = (
-    ("hdm", ("stuttgart", "hdm-hdr", "hdm_hdr", "hdm-hfr", "hdm_hfr", "/hdm/", "hdm_commercial"),
+    # Poly Haven first: two of its panoramas are named stuttgart_hillside /
+    # stuttgart_suburbs and matched the HdM rule (23 Sep 2026).
+    ("polyhaven_moves", ("rudra_v02", "pairs_moves", "hdri_moves"), "CC0 (rendered from Poly Haven)", True),
+    ("polyhaven", ("polyhaven", "poly haven", "poly_haven"), "CC0", True),
+    ("hdm", ("stuttgart_hdr", "stuttgart", "hdm-hdr", "hdm_hdr", "hdm-hfr", "hdm_hfr", "/hdm/", "hdm_commercial"),
      "HdM Stuttgart academic licence", False),
     ("netflix_sparks", ("sparks",), "CC BY 4.0 (Netflix Open Content)", True),
     ("netflix_sol_levante", ("sollevante", "sol_levante"), "CC BY 4.0 (Netflix Open Content)", True),
     ("netflix_chimera", ("chimera", "netflix"), "CC BY 4.0 (Netflix Open Content)", True),
-    ("polyhaven_moves", ("rudra_v02", "pairs_moves", "hdri_moves"), "CC0 (rendered from Poly Haven)", True),
-    ("polyhaven", ("polyhaven", "poly haven", "poly_haven"), "CC0", True),
     ("live_tmhdr", ("live_tmhdr", "live-tmhdr"), "LIVE-TMHDR, any purpose", True),
     ("liu_hdrv", ("hdrv", "liu_hdrv", "linkoping"), "CC BY-SA 4.0", True),
     ("pandora", ("pandora",), "see fetch_corpus.py", True),

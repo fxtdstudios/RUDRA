@@ -75,6 +75,24 @@ def guess_encoding(path: Path, declared: str | None = None) -> tuple[str, str]:
         return declared, "declared:cli"
     blob = " ".join(p.lower() for p in path.parts)
     suffix = path.suffix.lower()
+    # Two rules that outrank the keyword table, both found on G: on 23 Sep 2026.
+    #
+    # 1. The FILENAME can say PQ even inside a float container:
+    #    SPARKS_P3_PQ_4000nit_*.exr holds PQ code values (max 0.9155), and the
+    #    float-means-linear rule below would read them as ~200-nit radiance.
+    #    Only whole tokens of the stem count, never a parent folder's name.
+    tokens = set(re.split(r"[^a-z0-9]+", path.stem.lower()))
+    if tokens & {"pq", "st2084", "hdr10"}:
+        return "pq", "filename-token:pq"
+    # 2. A linear-HDRI dataset outranks camera-log words that happen to be in
+    #    a scene name: Poly Haven's venice_dawn_1 / venice_sunrise matched
+    #    "venice" (a Sony camera) and were decoded as S-Log3 -- the two
+    #    "non-finite source pixels" build_manifests has been dropping since
+    #    23 Aug. They are ordinary linear EXRs.
+    if suffix in (".exr", ".hdr"):
+        for word in ("polyhaven", "poly haven", "poly_haven"):
+            if word in blob:
+                return "linear", f"keyword:{word}"
     for encoding, keywords in ENCODING_KEYWORDS:
         # A float container is scene-linear whatever the dataset is called: the
         # Sparks ACES EXRs live under netflix_sparks/, "netflix" is a PQ keyword,

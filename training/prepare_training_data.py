@@ -295,8 +295,18 @@ _AP0_TO_REC2020 = np.array([[1.4904, -0.2662, -0.2242],
                             [0.0032, -0.0348, 1.0315]], dtype=np.float32)
 
 
+# ACES scene values carry no absolute luminance; the corpus convention is
+# 1.0 = 203 nits. Measured on Sparks, where Netflix ships the same frames as an
+# ACES master and as a 4,000-nit PQ grade: midtones in the grade sit at 55-91
+# nits per ACES unit (frames 3000/6000/10000). 1.0 ACES = 100 nits is the round
+# value inside that range; without it Sparks lands 1-2 stops brighter than its
+# own colourist's master.
+ACES_UNIT_NITS = 100.0
+
+
 def eotf_aces_ap0(v: np.ndarray) -> np.ndarray:
     rgb = np.asarray(v, dtype=np.float32)[..., :3] @ _AP0_TO_REC2020.T
+    rgb *= np.float32(ACES_UNIT_NITS / HDR_REF_NITS)
     return np.clip(rgb, 0.0, None).astype(np.float32)
 
 

@@ -126,6 +126,11 @@ def load_scene_linear(path: Path, encoding: str, retries: int = 3) -> np.ndarray
             else:
                 return None
             break
+        except FileNotFoundError as exc:
+            # Not a network blip: the file is not there. Retrying cost 6 s a
+            # frame and hid a stale inventory for thousands of frames.
+            print(f"  missing {path}: {exc}", file=sys.stderr)
+            return None
         except Exception as exc:
             if attempt + 1 < retries:
                 print(f"  retry {attempt + 1}/{retries - 1} {path.name}: {exc}",
