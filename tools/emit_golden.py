@@ -14,6 +14,9 @@ Emitters, in order:
     decode     tools/emit_decode_golden.py     still decode fixtures
     delivery   tools/emit_delivery_golden.py   grade, HDR10/HLG, sidecars, EXR/ACES/OCIO
     master     tools/emit_master_golden.py     the Studio's master of three stills
+    qc         tools/emit_qc_golden.py         QC checks and report text
+    queue      tools/emit_queue_golden.py      queue state files and refusals
+    sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
 """
 from __future__ import annotations
 
@@ -28,6 +31,9 @@ EMITTERS = {
     "decode": "emit_decode_golden.py",
     "delivery": "emit_delivery_golden.py",
     "master": "emit_master_golden.py",
+    "qc": "emit_qc_golden.py",
+    "queue": "emit_queue_golden.py",
+    "sequence": "emit_sequence_golden.py",
 }
 
 

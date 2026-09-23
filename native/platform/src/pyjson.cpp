@@ -136,6 +136,22 @@ std::string repr(double d) {
     return sign + out;
 }
 
+void set(Dict& d, const std::string& key, Value value) {
+    for (auto& kv : d)
+        if (kv.first == key) { kv.second = std::move(value); return; }
+    d.emplace_back(key, std::move(value));
+}
+
+void erase(Dict& d, const std::string& key) {
+    d.erase(std::remove_if(d.begin(), d.end(), [&](const auto& kv) { return kv.first == key; }), d.end());
+}
+
+const Value* get(const Dict& d, const std::string& key) {
+    for (const auto& kv : d)
+        if (kv.first == key) return &kv.second;
+    return nullptr;
+}
+
 std::string dumps(const Value& value, int indent, bool sort_keys) {
     std::string out;
     write(out, value, indent, sort_keys, 0);

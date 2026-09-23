@@ -17,12 +17,15 @@ platform   Result<T>, hashes, .npy reader                         (no deps)
 core       colour types, Image<Space>, baseline, tiling, manifest,
            composite, gamut, master chain, measurements           (platform)
 infer      InferenceBackend: LibTorch, ONNX Runtime, the tiler    (core)
-media      still decode (OpenCV imgcodecs); video in Phase 4       (core)
+media      still decode (OpenCV imgcodecs), sequence open by path;
+           video in Phase 4                                       (core)
 render     the QRhi composite (rudra_render_gpu); probe/ holds
            rudra-hdr-probe and rudra-gpu-parity                   (core, Qt)
-deliver    EXR/ACES/OCIO writers, metadata sidecars; encode later (core)
+deliver    EXR/ACES/OCIO writers, metadata sidecars, QC, queue;
+           encode later                                           (core)
 engine     jobs, generations, priorities                          (below)
-cli        rudra-native: version | info | diff                    (never Qt, never render)
+cli        rudra-native: version | info | diff | bench | master | master-check
+           (never Qt, never render)
 app        the Qt application                                     (everything)
 tests      GoogleTest against the goldens in tests/golden/
 ```
@@ -88,6 +91,9 @@ its sidecar. `--params` takes the Studio's master parameters as JSON
 | `tools/emit_decode_golden.py` | `tests/golden/decode/`: 17 image fixtures and their decoded floats | `test_decode.cpp` |
 | `tools/emit_delivery_golden.py` | `tests/golden/delivery/`: grades, PQ/HLG, a 3-shot sidecar set, EXR/ACES files, the OCIO config | `test_delivery.cpp` (files compared byte for byte) |
 | `tools/emit_master_golden.py` | `tests/golden/master/`: three stills and the Studio's masters of them | `rudra-native master-check` (a ctest) |
+| `tools/emit_qc_golden.py` | `tests/golden/qc/`: six reconstructions, their QC reports and report text | `test_qc.cpp` |
+| `tools/emit_queue_golden.py` | `tests/golden/queue/`: a queue project, its state after a run and a resume, nine refusals | `test_queue.cpp` (state compared byte for byte) |
+| `tools/emit_sequence_golden.py` | `tests/golden/sequence/`: folder layouts and what `Sequence.open` made of them | `test_sequence.cpp` |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
 `python tools/emit_golden.py` runs every emitter; re-run it and commit when the
@@ -149,5 +155,6 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | Still decode | done: bit-exact with `rudra/decode.py` on 17 fixtures |
 | Grade, HDR10/HLG, metadata, EXR/ACES/OCIO | done: sidecars, EXRs and OCIO config byte-identical with the Python |
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
-| Phase 1 (librudra) | steps 1 to 7 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
+| QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
+| Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

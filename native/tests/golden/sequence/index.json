@@ -1,0 +1,215 @@
+{
+  "oracle": "ui/sequence.py",
+  "frame_suffixes": [
+    ".bmp",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".tif",
+    ".tiff",
+    ".webp"
+  ],
+  "video_suffixes": [
+    ".avi",
+    ".m2ts",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mxf",
+    ".ts",
+    ".webm"
+  ],
+  "layouts": {
+    "shot_A": [
+      "frame_1.png",
+      "frame_2.png",
+      "frame_10.png",
+      "Frame_3.PNG",
+      "frame_007.png",
+      "frame_100.jpg",
+      "frame_20.JPEG",
+      "a9.tif",
+      "a10b2.tif",
+      "a10b10.tiff",
+      "10.bmp",
+      "2.webp",
+      "b.png",
+      ".hidden.png",
+      ".png",
+      "trailing.",
+      "frame_5.png.bak",
+      "notes.txt",
+      "sub.png/"
+    ],
+    "empty": [],
+    "no_frames": [
+      "notes.txt",
+      "readme.md",
+      ".png",
+      "dir.jpg/"
+    ],
+    "single": [
+      "only.tif"
+    ]
+  },
+  "files": [
+    "notes.txt",
+    "clip.MOV",
+    "clip.mp4"
+  ],
+  "cases": [
+    {
+      "name": "folder",
+      "raw": "<root>/shot_A",
+      "kind": "frames",
+      "count": 14,
+      "name_field": "shot_A",
+      "path": "<root>/shot_A",
+      "names": [
+        "2.webp",
+        "10.bmp",
+        ".hidden.png",
+        "a9.tif",
+        "a10b2.tif",
+        "a10b10.tiff",
+        "b.png",
+        "frame_1.png",
+        "frame_2.png",
+        "Frame_3.PNG",
+        "frame_007.png",
+        "frame_10.png",
+        "frame_20.JPEG",
+        "frame_100.jpg"
+      ]
+    },
+    {
+      "name": "folder_quoted",
+      "raw": "  \"<root>/shot_A\"  ",
+      "kind": "frames",
+      "count": 14,
+      "name_field": "shot_A",
+      "path": "<root>/shot_A",
+      "names": [
+        "2.webp",
+        "10.bmp",
+        ".hidden.png",
+        "a9.tif",
+        "a10b2.tif",
+        "a10b10.tiff",
+        "b.png",
+        "frame_1.png",
+        "frame_2.png",
+        "Frame_3.PNG",
+        "frame_007.png",
+        "frame_10.png",
+        "frame_20.JPEG",
+        "frame_100.jpg"
+      ]
+    },
+    {
+      "name": "folder_single_quoted_slash",
+      "raw": "'<root>/shot_A/'",
+      "kind": "frames",
+      "count": 14,
+      "name_field": "shot_A",
+      "path": "<root>/shot_A",
+      "names": [
+        "2.webp",
+        "10.bmp",
+        ".hidden.png",
+        "a9.tif",
+        "a10b2.tif",
+        "a10b10.tiff",
+        "b.png",
+        "frame_1.png",
+        "frame_2.png",
+        "Frame_3.PNG",
+        "frame_007.png",
+        "frame_10.png",
+        "frame_20.JPEG",
+        "frame_100.jpg"
+      ]
+    },
+    {
+      "name": "folder_messy",
+      "raw": "<root>//shot_A/./",
+      "kind": "frames",
+      "count": 14,
+      "name_field": "shot_A",
+      "path": "<root>/shot_A",
+      "names": [
+        "2.webp",
+        "10.bmp",
+        ".hidden.png",
+        "a9.tif",
+        "a10b2.tif",
+        "a10b10.tiff",
+        "b.png",
+        "frame_1.png",
+        "frame_2.png",
+        "Frame_3.PNG",
+        "frame_007.png",
+        "frame_10.png",
+        "frame_20.JPEG",
+        "frame_100.jpg"
+      ]
+    },
+    {
+      "name": "single",
+      "raw": "<root>/single",
+      "kind": "frames",
+      "count": 1,
+      "name_field": "single",
+      "path": "<root>/single",
+      "names": [
+        "only.tif"
+      ]
+    },
+    {
+      "name": "empty",
+      "raw": "<root>/empty",
+      "error": "No frames in empty. Looked for .bmp .jpeg .jpg .png .tif .tiff .webp"
+    },
+    {
+      "name": "no_frames",
+      "raw": "<root>/no_frames",
+      "error": "No frames in no_frames. Looked for .bmp .jpeg .jpg .png .tif .tiff .webp"
+    },
+    {
+      "name": "text_file",
+      "raw": "<root>/notes.txt",
+      "error": "notes.txt is not a folder or a video RUDRA can read. Point at a folder of frames, or a avi/m2ts/m4v/mkv/mov/mp4/mxf/ts/webm file."
+    },
+    {
+      "name": "missing",
+      "raw": "<root>/missing",
+      "error": "Nothing at <root>/missing"
+    },
+    {
+      "name": "missing_nested",
+      "raw": "<root>/nope//deeper/",
+      "error": "Nothing at <root>/nope/deeper"
+    },
+    {
+      "name": "blank",
+      "raw": "",
+      "error": "No path given."
+    },
+    {
+      "name": "whitespace",
+      "raw": "  \t ",
+      "error": "No path given."
+    },
+    {
+      "name": "video_upper",
+      "raw": "<root>/clip.MOV",
+      "video": true
+    },
+    {
+      "name": "video",
+      "raw": "<root>/clip.mp4",
+      "video": true
+    }
+  ]
+}

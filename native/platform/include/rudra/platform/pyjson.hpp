@@ -33,6 +33,12 @@ struct Value {
     Value(Dict d) : v(std::make_shared<Dict>(std::move(d))) {}                     // NOLINT
 };
 
+// Ordered-dict helpers with Python's semantics: assigning an existing key
+// keeps its position, a new key goes last, pop removes it.
+void set(Dict& d, const std::string& key, Value value);
+void erase(Dict& d, const std::string& key);
+const Value* get(const Dict& d, const std::string& key);
+
 // repr(float) as Python 3 prints it.
 std::string repr(double d);
 

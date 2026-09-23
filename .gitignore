@@ -145,3 +145,6 @@ SCRUB_TRAILERS.txt
 !/native/tests/golden/decode/*
 !/native/tests/golden/delivery/*
 !/native/tests/golden/master/*
+!/native/tests/golden/qc/*
+!/native/tests/golden/queue/*
+!/native/tests/golden/queue/project/*

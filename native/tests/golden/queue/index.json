@@ -1,0 +1,190 @@
+{
+  "oracle": "rudra/batch.py",
+  "queue": {
+    "version": 1,
+    "defaults": {
+      "checkpoint": "ckpt.pt",
+      "format": "hdr10",
+      "peak_nits": 1000
+    },
+    "jobs": [
+      {
+        "input": "a.mov",
+        "output": "out/a.mp4"
+      },
+      {
+        "input": "b.mov",
+        "output": "out/b.mp4",
+        "options": {
+          "crf": 14
+        }
+      },
+      {
+        "input": "c.mov",
+        "output": "out/c.mov",
+        "options": {
+          "format": "prores422hq"
+        }
+      }
+    ]
+  },
+  "files": {
+    "a.mov": "clip a",
+    "b.mov": "clip b",
+    "c.mov": "clip c",
+    "ckpt.pt": "weights"
+  },
+  "first_exit": 1,
+  "final_exit": 0,
+  "stand_in": {
+    "fails_first_run": [
+      "b.mov"
+    ],
+    "progress": {
+      "phase": "encoding",
+      "frame": 1,
+      "of": 2
+    },
+    "output": "out:<input name>",
+    "sidecar": "{\"qc\": {\"passed\": true}}"
+  },
+  "refusals": {
+    "bad_version": {
+      "spec": {
+        "version": 2,
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4"
+          }
+        ]
+      },
+      "message": "Queue requires version 1 and a nonempty jobs list"
+    },
+    "no_jobs": {
+      "spec": {
+        "version": 1,
+        "jobs": []
+      },
+      "message": "Queue requires version 1 and a nonempty jobs list"
+    },
+    "input_in_options": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4",
+            "options": {
+              "input": "x"
+            }
+          }
+        ]
+      },
+      "message": "Set input/output on the job, not in options"
+    },
+    "bad_choice": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4",
+            "options": {
+              "format": "dvd"
+            }
+          }
+        ]
+      },
+      "message": "Invalid video options in queue"
+    },
+    "bad_int": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4",
+            "options": {
+              "crf": 12.5
+            }
+          }
+        ]
+      },
+      "message": "Invalid video options in queue"
+    },
+    "unknown_option": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4",
+            "options": {
+              "colour": "blue"
+            }
+          }
+        ]
+      },
+      "message": "Invalid video options in queue"
+    },
+    "no_checkpoint": {
+      "spec": {
+        "version": 1,
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4"
+          }
+        ]
+      },
+      "message": "Invalid video options in queue"
+    },
+    "output_is_source": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "a.mov"
+          }
+        ]
+      },
+      "message": "Queue path collision: <root>/a.mov"
+    },
+    "two_jobs_one_output": {
+      "spec": {
+        "version": 1,
+        "defaults": {
+          "checkpoint": "ckpt.pt"
+        },
+        "jobs": [
+          {
+            "input": "a.mov",
+            "output": "o.mp4"
+          },
+          {
+            "input": "b.mov",
+            "output": "o.mp4"
+          }
+        ]
+      },
+      "message": "Queue path collision: <root>/o.mp4"
+    }
+  }
+}

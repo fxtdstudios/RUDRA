@@ -417,7 +417,9 @@ Next, Phase 1 (librudra, 15 days; plan in
   sidecars, EXRs and the OCIO config byte-identical with the Python
 - [x] `rudra-native master`: a Studio-identical master EXR with no Python
   (within 1 half-float ulp, same header and sidecar, on both runtimes)
-- [ ] QC, queue, sequence open; CI green on three OSes
+- [x] QC, queue, sequence open: same report text, byte-identical queue state
+  resumable from either side, same frame order and messages
+- [ ] CI green on three OSes
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

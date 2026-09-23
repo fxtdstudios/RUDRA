@@ -1,0 +1,14 @@
+QC — tiny.png
+  56x40
+  VERDICT: FAIL
+    PASS       nan                               0   0 NaN sample(s)
+    PASS       inf                               0   0 Inf sample(s)
+    PASS       negative                          0   0 negative sample(s)
+    PASS       at_ceiling_pct                    0   0.0000% pinned at 40000 nits
+    UNMEASURED do_no_harm_median                 —   only 2095 unclipped px -- nothing to compare
+    UNMEASURED do_no_harm_within_1pct            —   no unclipped sample
+    UNMEASURED chroma_shift_uv                   —   no unclipped sample
+    UNMEASURED clip_gain                         —   only 109 clipped px -- recovery cannot be judged
+    UNMEASURED clip_structure_pct                —   only 109 clipped px -- recovery cannot be judged
+    UNMEASURED hf_excess                         —   only 428 flat px -- noise cannot be measured
+  First failure: do_no_harm_median (UNMEASURED) — only 2095 unclipped px -- nothing to compare

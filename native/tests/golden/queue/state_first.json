@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "queue_sha256": "a7b7e1b5da0700fafcc57831109e8efa8b5e29ad1a0b62225c404d0ec0e8eb88",
+  "jobs": [
+    {
+      "status": "complete",
+      "identity": {
+        "source": "4597c83a7f5b6acd0e722ea317a942a1539cd0dad1f9000c60c8f936c42003b0",
+        "checkpoint": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c"
+      },
+      "progress": {
+        "phase": "complete"
+      },
+      "artifacts": [
+        "a32718da1fe7f2a47e594292eec5d25c9400c6f12c0fae58b5d521c365d39b03",
+        "b3f1ea04d1d228e430a515e1a051a5b4608ca95bfae8c1f22cf585c4a765eab7"
+      ]
+    },
+    {
+      "status": "failed",
+      "identity": {
+        "source": "1125d5a6c136adc0b892022b6bab940a03749524cf5527d4f6f7b8b4691d6ba4",
+        "checkpoint": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c"
+      },
+      "progress": {
+        "phase": "starting"
+      },
+      "error": "synthetic failure"
+    },
+    {
+      "status": "complete",
+      "identity": {
+        "source": "73bc1d80d92172a2f4e7648c735cd25d7557a8b16eb22daade533fcd8373ea4f",
+        "checkpoint": "9a129038d9a00aed0cf6a7ea059ca50a813449061ab87848cf1a13eafdf33b2c"
+      },
+      "progress": {
+        "phase": "complete"
+      },
+      "artifacts": [
+        "613e1239878bf61b5f1a1d1fb59ee4b2fc695bc72152f1de328a35e42e591feb",
+        "b3f1ea04d1d228e430a515e1a051a5b4608ca95bfae8c1f22cf585c4a765eab7"
+      ]
+    }
+  ]
+}
