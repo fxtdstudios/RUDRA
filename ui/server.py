@@ -609,6 +609,11 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
         # constant in the shader; a 0 EV checkpoint would have previewed one
         # stop brighter than its own master.
         "corpus_ev": float(getattr(model, "corpus_ev", -1.0)),
+        # The per-frame tone-curve estimate (exposure + knots, log2), when the
+        # checkpoint has a CurveHead. The compositor applies it to the analytic
+        # baseline exactly as SDR2HDRNet.baseline_hdr does; null otherwise.
+        "curve": (None if fields.get("curve") is None
+                  else [float(v) for v in fields["curve"][0].float().cpu()]),
         "peak_nits": NETWORK_PEAK_NITS,
         "diffuse_white_nits": DIFFUSE_WHITE_NITS,
         "source_resolution": source,

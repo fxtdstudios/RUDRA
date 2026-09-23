@@ -112,6 +112,11 @@ def load_records(pairs_dir: Path, min_peak_nits: float = 0.0) -> list[dict]:
             if not records:
                 raise SystemExit("error: --min-peak-nits removed every record")
 
+    # Licence first, on the raw paths: every record carries source, licence
+    # and commercial_ok into the manifest (TRAINING_STEPS "complete" item 4).
+    from pipeline.licences import annotate
+    annotate(records)
+
     raw = {r["scene_id"] for r in records}
     for record in records:
         record["scene_id"] = normalize_scene_id(record["scene_id"])
@@ -538,6 +543,10 @@ def main() -> int:
                              "are dropped on a uniform stride so clips still form. "
                              "0 disables.")
     parser.add_argument("--seed", type=int, default=20260822)
+    parser.add_argument("--commercial-only", action="store_true",
+                        help="Keep only records whose source may train weights that are "
+                             "sold (pipeline/licences.py). The rudra-studio build. Unclassified "
+                             "sources are dropped, never assumed clean.")
     parser.add_argument("--hold-out-scenes", type=Path, default=None,
                         help="A previous manifest (.jsonl; its test rows) or a text file of "
                              "scene ids. Those scenes are forced into TEST here, matched on "
@@ -556,6 +565,16 @@ def main() -> int:
     args = parser.parse_args()
 
     records = load_records(args.pairs_dir, args.min_peak_nits)
+    by_source = Counter((r["licence_source"], r["commercial_ok"]) for r in records)
+    print("  sources: " + ", ".join(f"{sid} {n:,}{'' if ok else ' (non-commercial)'}"
+                                    for (sid, ok), n in by_source.most_common()))
+    if args.commercial_only:
+        before = len(records)
+        records = [r for r in records if r["commercial_ok"]]
+        print(f"  --commercial-only: {before:,} -> {len(records):,} records "
+              f"({before - len(records):,} non-commercial or unclassified dropped)")
+        if not records:
+            raise SystemExit("error: --commercial-only left no records")
     hold_out = load_hold_out_scenes(args.hold_out_scenes) if args.hold_out_scenes else None
     rows, image_stats = build_image_manifest(
         records, args.val_frac, args.test_frac, args.seed, args.min_video_share,

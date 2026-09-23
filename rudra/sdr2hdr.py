@@ -277,6 +277,88 @@ class SDR2HDROutput:
     # (B,1,1,1) when the shadow gate is enabled. 1.0 == recovery_mode "all",
     # 0.0 == recovery_mode "highlights"; the two measured endpoints.
     shadow_weight: torch.Tensor | None = None
+    # The analytic inverse-ACES baseline, before any learned curve correction.
+    # Equal to ``baseline`` unless the model has a CurveHead. Evaluation scores
+    # "gain" against THIS, the only baseline that is genuinely "nothing learned".
+    analytic_baseline: torch.Tensor | None = None
+    # (B, 1 + knots) log2 corrections from the CurveHead, else None.
+    curve_params: torch.Tensor | None = None
+
+
+class CurveHead(nn.Module):
+    """Estimates, per frame, how this SDR was tone-mapped, and undoes it.
+
+    The analytic baseline inverts exactly one curve: Narkowicz ACES at the
+    corpus exposure. Real SDR comes through camera LUTs, filmic curves, AgX,
+    plain clipping, and an unknown exposure. On the 23 Sep 2026 out-of-generator
+    bench (Hable + H.264) the shipped model, riding that one inverse, was worse
+    than the inverse alone on 270 of 429 frames -- and outside the learned masks
+    ``preserve_outside`` hands every pixel to that wrong inverse.
+
+    This head looks at the whole frame once (a 128-px thumbnail: a small conv
+    stack plus a soft luma histogram and clip statistics) and predicts a
+    correction in log2 radiance: a global exposure plus a piecewise-linear
+    function of the SDR code value, sampled at ``knots`` evenly spaced codes and
+    applied per channel. Bounded (tanh) and zero-initialised, so a model with a
+    fresh CurveHead reproduces the analytic baseline exactly and a checkpoint
+    without one is untouched.
+    """
+
+    def __init__(self, knots: int = 8, hidden: int = 64, bins: int = 32,
+                 max_exposure_stops: float = 3.0, max_knot_stops: float = 2.0):
+        super().__init__()
+        self.knots, self.bins = int(knots), int(bins)
+        self.max_exposure = float(max_exposure_stops)
+        self.max_knot = float(max_knot_stops)
+        self.conv = nn.Sequential(
+            nn.Conv2d(3, 16, 3, stride=2, padding=1), nn.SiLU(),
+            nn.Conv2d(16, 32, 3, stride=2, padding=1), nn.SiLU(),
+            nn.Conv2d(32, 32, 3, stride=2, padding=1), nn.SiLU(),
+        )
+        self.mlp = nn.Sequential(
+            nn.Linear(32 + self.bins + 6, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, 1 + self.knots),
+        )
+        nn.init.zeros_(self.mlp[-1].weight)
+        nn.init.zeros_(self.mlp[-1].bias)
+
+    def forward(self, sdr: torch.Tensor) -> torch.Tensor:
+        longest = max(sdr.shape[-2:])
+        view = sdr
+        if longest > 128:
+            s = 128.0 / longest
+            view = F.interpolate(sdr, size=(max(1, round(sdr.shape[-2] * s)),
+                                            max(1, round(sdr.shape[-1] * s))), mode="area")
+        pooled = self.conv(view).mean(dim=(2, 3))
+        y = luminance(view).flatten(1)
+        centres = torch.linspace(0.0, 1.0, self.bins, device=sdr.device, dtype=sdr.dtype)
+        width = 1.0 / (self.bins - 1)
+        hist = torch.exp(-((y[:, :, None] - centres) / width) ** 2).mean(dim=1)
+        hist = hist / hist.sum(dim=1, keepdim=True).clamp_min(1e-6)
+        stats = torch.stack((
+            y.mean(1), y.std(1),
+            torch.sigmoid((y - 0.98) * 200.0).mean(1),
+            torch.sigmoid((0.02 - y) * 200.0).mean(1),
+            view.amax(dim=(1, 2, 3)), view.flatten(1).median(dim=1).values,
+        ), dim=1)
+        raw = self.mlp(torch.cat((pooled, hist, stats), dim=1))
+        exposure = torch.tanh(raw[:, :1]) * self.max_exposure
+        knots = torch.tanh(raw[:, 1:]) * self.max_knot
+        return torch.cat((exposure, knots), dim=1)
+
+    def correction_log2(self, sdr: torch.Tensor, params: torch.Tensor) -> torch.Tensor:
+        """Per-pixel, per-channel log2 correction for ``sdr`` under ``params``."""
+        k = self.knots
+        pos = sdr.clamp(0.0, 1.0) * (k - 1)
+        lo = pos.floor().clamp(max=k - 2).long()
+        frac = pos - lo.to(pos.dtype)
+        knots = params[:, 1:]
+        b = sdr.shape[0]
+        flat_lo = lo.reshape(b, -1)
+        v0 = torch.gather(knots, 1, flat_lo).reshape_as(sdr)
+        v1 = torch.gather(knots, 1, flat_lo + 1).reshape_as(sdr)
+        return params[:, :1, None, None] + v0 + (v1 - v0) * frac
 
 
 class SDR2HDRNet(nn.Module):
@@ -285,7 +367,8 @@ class SDR2HDRNet(nn.Module):
     def __init__(self, base_channels: int = 32, log_scale: float = 16.0, max_hdr: float = 4.0,
                  corpus_ev: float = LEGACY_CORPUS_EV,
                  gate_conditioning: bool = False,
-                 shadow_conditioning: bool = False):
+                 shadow_conditioning: bool = False,
+                 curve_head: bool = False):
         super().__init__()
         c = base_channels
         # Off by default so every checkpoint written before 29 Aug 2026 still
@@ -293,6 +376,7 @@ class SDR2HDRNet(nn.Module):
         # the state dict is byte-identical to the old one.
         self.gate_conditioning = bool(gate_conditioning)
         self.shadow_conditioning = bool(shadow_conditioning)
+        self.curve_head = bool(curve_head)
         self.log_scale = float(log_scale)
         self.max_hdr = float(max_hdr)
         # Which corpus convention this network was trained against. Carried on
@@ -315,6 +399,9 @@ class SDR2HDRNet(nn.Module):
         nn.init.zeros_(self.head.bias)
         self.gate = ConditionGate(c * 4) if self.gate_conditioning else None
         self.shadow_gate = ShadowGate(c * 4) if self.shadow_conditioning else None
+        # Off by default for the same reason as the gates: no parameters, and
+        # every earlier checkpoint loads strict and computes exactly what it did.
+        self.curve = CurveHead() if self.curve_head else None
 
     @classmethod
     def from_config(cls, config: dict | None, **overrides) -> "SDR2HDRNet":
@@ -330,12 +417,38 @@ class SDR2HDRNet(nn.Module):
             "base_channels": int(config.get("base_channels", 32)),
             "gate_conditioning": bool(config.get("gate_conditioning", False)),
             "shadow_conditioning": bool(config.get("shadow_conditioning", False)),
+            "curve_head": bool(config.get("curve_head", False)),
         }
         for key in ("log_scale", "max_hdr", "corpus_ev"):
             if config.get(key) is not None:
                 kwargs[key] = float(config[key])
         kwargs.update(overrides)
         return cls(**kwargs)
+
+    def baseline_hdr(self, sdr: torch.Tensor, params: torch.Tensor | None = None
+                     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """(baseline, analytic_baseline, curve_params) for this SDR.
+
+        Without a CurveHead the two baselines are the same tensor. With one,
+        the analytic inverse is scaled per pixel by 2**correction, where the
+        correction is estimated from the whole frame (or taken from ``params``,
+        which is how tiled inference keeps one curve across every tile).
+        """
+        analytic = sdr_to_baseline_hdr(sdr, self.corpus_ev)
+        if self.curve is None:
+            return analytic, analytic, None
+        if params is None:
+            params = self.curve(sdr)
+        corrected = analytic * torch.exp2(self.curve.correction_log2(sdr, params))
+        return corrected, analytic, params
+
+    @torch.no_grad()
+    def predict_curve(self, sdr: torch.Tensor) -> torch.Tensor | None:
+        """The frame's curve correction, once, for tiled inference and the
+        viewer. None without a CurveHead."""
+        if self.curve is None:
+            return None
+        return self.curve(sdr.float().clamp(0.0, 1.0))
 
     def encode(self, sdr: torch.Tensor, baseline: torch.Tensor):
         x = torch.cat((sdr, baseline), dim=1)
@@ -361,7 +474,7 @@ class SDR2HDRNet(nn.Module):
             scale = max_side / longest
             view = F.interpolate(sdr, size=(max(1, round(sdr.shape[-2] * scale)),
                                             max(1, round(sdr.shape[-1] * scale))), mode="area")
-        _, _, m = self.encode(view, sdr_to_baseline_hdr(view, self.corpus_ev))
+        _, _, m = self.encode(view, self.baseline_hdr(view)[0])
         return self.shadow_gate(m, sdr, luminance(sdr))
 
     @torch.no_grad()
@@ -390,7 +503,7 @@ class SDR2HDRNet(nn.Module):
             size = (max(1, round(sdr.shape[-2] * scale)),
                     max(1, round(sdr.shape[-1] * scale)))
             view = F.interpolate(sdr, size=size, mode="area")
-        _, _, m = self.encode(view, sdr_to_baseline_hdr(view, self.corpus_ev))
+        _, _, m = self.encode(view, self.baseline_hdr(view)[0])
         # Pooled features come from the downscaled view -- alpha is a whole-frame
         # judgement and that is what makes the encode affordable. The statistics
         # come from the NATIVE frame, because the evidence that an input arrived
@@ -410,11 +523,12 @@ class SDR2HDRNet(nn.Module):
         residual_strength: float | torch.Tensor = 1.0,
         residual_scale: float | torch.Tensor | None = None,
         shadow_weight: float | torch.Tensor | None = None,
+        curve_params: torch.Tensor | None = None,
     ) -> SDR2HDROutput:
         if sdr.ndim != 4 or sdr.shape[1] != 3:
             raise ValueError(f"Expected SDR tensor (B,3,H,W), got {tuple(sdr.shape)}")
         sdr = sdr.float().clamp(0.0, 1.0)
-        baseline = sdr_to_baseline_hdr(sdr, self.corpus_ev)
+        baseline, analytic, curve_params = self.baseline_hdr(sdr, curve_params)
         e1, e2, m = self.encode(sdr, baseline)
         u2 = F.interpolate(m, size=e2.shape[-2:], mode="bilinear", align_corners=False)
         u2 = self.dec2(self.up2(torch.cat((u2, e2), dim=1)))
@@ -490,6 +604,7 @@ class SDR2HDRNet(nn.Module):
         return SDR2HDROutput(
             pred, baseline, residual, highlight, shadow,
             highlight_logits, shadow_logits, residual_scale, shadow_weight,
+            analytic, curve_params,
         )
 
 
@@ -615,8 +730,15 @@ def sdr2hdr_loss(
     shadow_chroma_weight: float = 0.15,
     shadow_smoothness_weight: float = 0.02,
     target_ceiling: torch.Tensor | None = None,
+    baseline_weight: float = 0.0,
 ) -> dict[str, torch.Tensor]:
     """Stable HDR recovery objective in log-radiance and masked regions.
+
+    ``baseline_weight`` > 0 adds a direct term on ``output.baseline`` -- the
+    curve-corrected baseline when the model has a CurveHead. Without it the
+    head is trained only through pixels the residual gate leaves alone, which
+    works but is slow; with it the head is told, everywhere, how far its
+    inverse curve is from the reference.
 
     ``target_ceiling`` (B,) or (B,1,1,1), in the same units as ``target``, is
     the delivery ceiling the source was graded to -- 4,000 nits for HdM-HDR-2014,
@@ -668,6 +790,11 @@ def sdr2hdr_loss(
              float(shadow_chroma_weight) * shadow_chroma +
              float(shadow_smoothness_weight) * shadow_smoothness +
              0.10 * edge + 0.05 * mask + 0.05 * outside + 0.10 * residual_outside)
+    baseline_term = torch.zeros((), device=total.device, dtype=total.dtype)
+    if baseline_weight > 0 and output.curve_params is not None:
+        baseline_error, _, _, _ = censored_log_error(output.baseline, target, target_ceiling, scale)
+        baseline_term = baseline_error.mean()
+        total = total + float(baseline_weight) * baseline_term
     return {
         "total": total, "log_l1": base, "highlight": highlight,
         "shadow": shadow, "chroma": chroma,
@@ -675,6 +802,7 @@ def sdr2hdr_loss(
         "shadow_smoothness": shadow_smoothness, "edge": edge,
         "mask": mask, "outside": outside, "residual_outside": residual_outside,
         "censored_fraction": censored_fraction,
+        "curve_baseline": baseline_term,
     }
 
 

@@ -281,3 +281,34 @@ The run is finished when all five are true:
 And the honest exit: if Step 2 check 3 fails, or Step 7 shows RUDRA still tied
 with the analytic inverse on clipped pixels, **stop and write that down**. Two
 negative results measured cheaply are worth more than a third retrain.
+
+---
+
+## After v4b: corpus_v4c and the curve head (23 Sep 2026)
+
+The out-of-generator bench showed the v4b recipe cannot generalise past its
+own ACES render. `scripts/critical_path_2026-09-23.ps1` runs the next corpus
+and both models end to end; the commands it runs are:
+
+```
+python pipeline\reclassify_inventory.py G:\corpus_v4b\_inv\source_inventory.jsonl G:\corpus_v4c\_inv\source_inventory.jsonl
+python pipeline\prepare_pairs.py --inventory G:\corpus_v4c\_inv\source_inventory.jsonl --dst G:\corpus_v4c ^
+    --mode log2_extended --crops 3 --video-stride 8 --tonemap-ev 0 --sdr-render mix
+python pipeline\build_manifests.py --pairs-dir G:\corpus_v4c --out-dir G:\corpus_v4c ^
+    --max-eval-scene-share 0.25 --hold-out-scenes E:\RUDRA_v3_20260822\sdr_hdr_manifest.jsonl
+python pipeline\build_manifests.py --pairs-dir G:\corpus_v4c --out-dir G:\corpus_v4c\studio ^
+    --max-eval-scene-share 0.25 --hold-out-scenes E:\RUDRA_v3_20260822\sdr_hdr_manifest.jsonl --commercial-only
+python training\train_sdr2hdr.py --mode image --manifest G:\corpus_v4c\sdr_hdr_manifest.jsonl ^
+    --output-dir checkpoints\sdr2hdr_image_v4c --curve-head [Step 4 flags]
+python training\train_sdr2hdr.py --mode image --manifest G:\corpus_v4c\studio\sdr_hdr_manifest.jsonl ^
+    --output-dir checkpoints\sdr2hdr_image_v4c_studio --curve-head [Step 4 flags]
+```
+
+Then three benches (`bench\cp_oog`, `bench\cp_mix`, `bench\cp_aces`), every
+model, and `training\paired_gate.py` into `reports\logs\cp_results.json`.
+
+**N3 gate:** `oog/v4c vs baseline` both CIs above zero. **Studio gate (N7):**
+v4c_studio within 0.3 dB / 0.03 JOD of v4c on `oog` and `mix`. **Clean
+regression:** `aces/v4c` against `aces/v4b`, reported; see the proxy note in
+STATUS before reading it.
+

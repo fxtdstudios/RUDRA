@@ -69,6 +69,39 @@
 > this run's train split it is retrained on the rebuilt manifest (4 h), and
 > `scripts/next_steps_2026-09-22.ps1` does that decision by data.
 >
+> **23 Sep 2026, 17:00 — critical path built, running on the box.**
+> `scripts/RUN_CRITICAL_PATH.bat` runs N1 → N2 + N3 → N7 unattended with
+> gates and resume markers (`reports/logs/cp_*`). What is in the code now:
+>
+> - [x] **N2** `pipeline/sdr_render.py` + `prepare_pairs.py --sdr-render mix`:
+>   six curves (ACES, Hable, Reinhard, AgX-like, camera log→709, clip), ±1.5 EV,
+>   contrast/saturation/OETF jitter, JPEG/H.264/HEVC/AV1 round trips, one
+>   recipe per shot, recorded per pair. ACES path bit-exact with the old render.
+> - [x] **N3** `rudra.sdr2hdr.CurveHead` (`--curve-head`): per-frame exposure +
+>   8-knot log2 correction of the analytic inverse, zero-init (identity), one
+>   curve per frame under tiling, the same maths in the Studio shader
+>   (`uCurve[9]`), gain still scored against the *analytic* baseline.
+> - [x] **N7** `pipeline/licences.py`: every manifest row carries
+>   `licence_source` / `commercial_ok`; `build_manifests.py --commercial-only`
+>   is the rudra-studio corpus (HdM and unclassified sources out).
+> - [x] Sparks: ACES 2065-1 EXRs now decode AP0 → Rec.2020 (`aces` encoding);
+>   `pipeline/reclassify_inventory.py` applies it without a rescan.
+> - [x] `training/paired_gate.py`: paired Δ, bootstrap CI, pass/fail.
+> - [ ] Runs: v4c ingest, v4c research + studio training, benches (hours).
+> - [ ] N8 desktop app: its plan moved to native Qt/C++ in `d427bec` (another
+>   session); not touched here.
+>
+> **CPU proxy for N3 (mechanism check, not a result).** 97 bench scenes at
+> 192×108, 70 train / 27 test, 12-channel model, ~900 steps. psnr_log, model
+> vs analytic inverse, per test curve: with the curve head Hable **31.4 vs
+> 29.8**, AgX **35.3 vs 33.4**, camera-log **33.4 vs 30.7**, clip **30.1 vs
+> 27.3**; without it +0.4/+0.9/+0.6/−0.4. **But on the corpus's own ACES render
+> it falls to ~31 vs 49**: from one frame it cannot tell ACES from the mix
+> and applies an average correction. The real run decides whether 25% ACES in
+> the mix teaches it to recognise the curve; the `aces` bench in CP7 measures
+> exactly this. If it doesn't, the fix is a confidence output that falls back
+> to the analytic inverse, not dropping the head.
+>
 > **23 Sep 2026 — scope.** RUDRA is SDR→HDR for any image or video from any
 > source, pixel-domain. Lines A and B are paused (they only work inside
 > specific latent models). Plan, competitive read and what is against us:

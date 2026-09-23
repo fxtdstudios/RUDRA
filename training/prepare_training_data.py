@@ -284,7 +284,24 @@ def eotf_srgb(v: np.ndarray) -> np.ndarray:
     return lin.astype(np.float32)
 
 
+# ACES 2065-1 (AP0, D60) to linear Rec.2020 (D65), Bradford, as
+# rudra.delivery.colorspace.rgb_to_rgb_matrix("ap0", "rec2020") derives it.
+# Rec.2020 is the space the PQ sources (the corpus majority) decode into, so
+# an ACES EXR lands in the same primaries instead of reading AP0's very wide
+# values as if they were display primaries. Written out so the ingest stays
+# free of the delivery package.
+_AP0_TO_REC2020 = np.array([[1.4904, -0.2662, -0.2242],
+                            [-0.0802, 1.1822, -0.1020],
+                            [0.0032, -0.0348, 1.0315]], dtype=np.float32)
+
+
+def eotf_aces_ap0(v: np.ndarray) -> np.ndarray:
+    rgb = np.asarray(v, dtype=np.float32)[..., :3] @ _AP0_TO_REC2020.T
+    return np.clip(rgb, 0.0, None).astype(np.float32)
+
+
 _EOTF = {
+    "aces":   eotf_aces_ap0,
     "pq":     lambda v: eotf_pq(v),
     "logc3":  eotf_logc3,
     "logc4":  eotf_logc4,

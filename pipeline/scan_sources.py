@@ -56,7 +56,12 @@ ENCODING_KEYWORDS = (
     # silence, or -- worse, with --include-unknown-encoding -- decoded as sRGB.
     ("pq", ("pq", "hdr10", "st2084", "st-2084", "2084", "dolby", "chimera",
             "netflix", "stuttgart", "hdm-hdr", "hdm_hdr", "hdm-hfr", "hdm_hfr")),
-    ("linear", ("linear", "polyhaven", "poly haven", "hdri", "aces", "acescg", "scene_linear")),
+    # ACES 2065-1 (AP0) EXRs: the Sparks and Chimera ACES masters. Float, so
+    # linear, but in AP0 primaries -- to_scene_linear converts to Rec.2020.
+    # "acescg" is AP1 and stays under linear; it is tested first there.
+    ("linear", ("acescg",)),
+    ("aces", ("aces2065", "aces_2065", "_aces", "/aces/", "aces ")),
+    ("linear", ("linear", "polyhaven", "poly haven", "hdri", "aces", "scene_linear")),
 )
 
 
@@ -77,6 +82,8 @@ def guess_encoding(path: Path, declared: str | None = None) -> tuple[str, str]:
         # below 1 nit (corpus_v4b, 18 Sep 2026). Camera-log names still win --
         # a LogC EXR is a real thing -- but the display-referred keywords do not.
         if encoding in ("pq", "hlg") and suffix in (".exr", ".hdr"):
+            continue
+        if encoding == "aces" and suffix not in (".exr", ".hdr"):
             continue
         for word in keywords:
             if word in blob:

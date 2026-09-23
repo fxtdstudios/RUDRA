@@ -99,13 +99,17 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     # interior would reconstruct as if the whole frame were a sunset.
     scale = model.predict_residual_scale(sdr) if hasattr(model, "predict_residual_scale") else None
     shadow_weight = model.predict_shadow_weight(sdr) if hasattr(model, "predict_shadow_weight") else None
+    # Same reason for the curve: one tone-curve estimate per FRAME, or every
+    # tile would invert its own guess and the seams would show.
+    curve = model.predict_curve(sdr) if hasattr(model, "predict_curve") else None
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if sdr.is_cuda else contextlib.nullcontext()
         with amp:
             return model(sdr, preserve_outside=preserve_outside,
                          recovery_mode=recovery_mode,
                          residual_strength=recovery_strength,
-                         residual_scale=scale, shadow_weight=shadow_weight).hdr.float()
+                         residual_scale=scale, shadow_weight=shadow_weight,
+                         curve_params=curve).hdr.float()
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
     result = torch.zeros((1, 3, height, width), device=sdr.device, dtype=torch.float32)
@@ -118,7 +122,8 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                 prediction = model(tile, preserve_outside=preserve_outside,
                                    recovery_mode=recovery_mode,
                                    residual_strength=recovery_strength,
-                                   residual_scale=scale, shadow_weight=shadow_weight).hdr.float()
+                                   residual_scale=scale, shadow_weight=shadow_weight,
+                         curve_params=curve).hdr.float()
             weight = _tile_weight(tile.shape[-2], tile.shape[-1], overlap, y, x,
                                   height, width, sdr.device)
             result[..., y:y + tile.shape[-2], x:x + tile.shape[-1]] += prediction * weight
@@ -160,6 +165,7 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
     # closure reads the name at call time, not at definition.)
     shadow_weight = model.predict_shadow_weight(sdr) \
         if hasattr(model, "predict_shadow_weight") else None
+    curve = model.predict_curve(sdr) if hasattr(model, "predict_curve") else None
 
     def _run(tile: torch.Tensor):
         amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda \
@@ -167,7 +173,7 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
         with amp:
             out = model(tile, preserve_outside=False, recovery_mode="all",
                         residual_strength=1.0, residual_scale=scale,
-                        shadow_weight=shadow_weight)
+                        shadow_weight=shadow_weight, curve_params=curve)
         residual = out.log_residual.float()
         # The viewer composes from these three fields alone and knows nothing
         # about a conditioning head, so the per-frame scale is folded into the
@@ -181,7 +187,7 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
         residual, highlight, shadow = _run(sdr)
         return {"residual": residual, "highlight": highlight,
-                "shadow": shadow, "tiled": False}
+                "shadow": shadow, "tiled": False, "curve": curve}
 
     if overlap < 0 or overlap >= tile_size:
         raise ValueError("tile overlap must be >= 0 and smaller than tile size")
@@ -202,7 +208,7 @@ def predict_fields(model: SDR2HDRNet, sdr: torch.Tensor, tile_size: int,
             weights[..., y:y + th, x:x + tw] += weight
     weights = weights.clamp_min(1e-6)
     return {"residual": residual / weights, "highlight": highlight / weights,
-            "shadow": shadow / weights, "tiled": True}
+            "shadow": shadow / weights, "tiled": True, "curve": curve}
 
 
 @torch.inference_mode()

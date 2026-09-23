@@ -138,7 +138,8 @@ def test_a_float_container_under_a_pq_dataset_name_is_still_linear():
     values were decoded as PQ codes. Dataset names say what a TIFF is; a float
     container says what it is itself."""
     from pipeline.scan_sources import guess_encoding
-    assert guess_encoding(Path("G:/datasets/sources/netflix_sparks/ACES/sparks_0001.exr"))[0] == "linear"
+    assert guess_encoding(Path("G:/datasets/sources/netflix_sparks/ACES/sparks_0001.exr"))[0] == "aces"
+    assert guess_encoding(Path("G:/datasets/sources/netflix_sparks/exr/sparks_0001.exr"))[0] == "linear"
     assert guess_encoding(Path("G:/datasets/sources/netflix_chimera/tif/chimera_0001.tif"))[0] == "pq"
     assert guess_encoding(Path("G:/x/alexa35_logc4/plate_0001.exr"))[0] == "logc4"
     assert guess_encoding(Path("G:/x/hdm-hfr/take_0001.tif"))[0] == "pq"

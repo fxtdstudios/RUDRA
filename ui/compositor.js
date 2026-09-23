@@ -43,6 +43,19 @@
     "uniform float uLogScale;",
     "uniform float uMaxHdr;",
     "uniform float uBaselineScale;",
+    /* CurveHead (rudra.sdr2hdr): log2 exposure in [0], then 8 knots over the
+       SDR code range. All zero for a checkpoint without one, which makes
+       curveLog2 identically 0 and baselineOf exactly what it was. The hat sum
+       is the same piecewise-linear interpolation as CurveHead.correction_log2. */
+    "uniform float uCurve[9];",
+    "vec3 curveLog2(vec3 c){",
+    "  vec3 pos = clamp(c, 0.0, 1.0) * 7.0;",
+    "  vec3 acc = vec3(uCurve[0]);",
+    "  for (int i = 0; i < 8; i++) {",
+    "    acc += uCurve[i + 1] * max(vec3(0.0), 1.0 - abs(pos - float(i)));",
+    "  }",
+    "  return acc;",
+    "}",
     "vec3 log1p3(vec3 x){",
     "  vec3 big = log(1.0 + x);",
     "  vec3 small = x - x*x*0.5 + x*x*x*(1.0/3.0);",
@@ -77,7 +90,7 @@
     "  return max(max((-qb - s) / den, (-qb + s) / den), vec3(0.0));",
     "}",
     "vec3 baselineOf(vec3 sdr){",
-    "  return inverseAces(srgbToLinear(sdr)) * uBaselineScale;",
+    "  return inverseAces(srgbToLinear(sdr)) * uBaselineScale * exp2(curveLog2(sdr));",
     "}",
     /* Region EV. A port of rudra/delivery/controls.py's qualifier_mask:
        a soft window in log luminance, feathered symmetrically in stops so a
@@ -417,7 +430,9 @@
       frame = {w: f.width, h: f.height,
                logScale: Number(f.log_scale) > 0 ? Number(f.log_scale) : LOG_SCALE,
                maxHdr: Number(f.max_hdr) > 0 ? Number(f.max_hdr) : MAX_HDR,
-               baselineScale: baselineScale(f.corpus_ev)};
+               baselineScale: baselineScale(f.corpus_ev),
+               curve: (f.curve && f.curve.length === 9) ? f.curve.map(Number)
+                                                         : [0, 0, 0, 0, 0, 0, 0, 0, 0]};
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 
       gl.activeTexture(gl.TEXTURE0);
@@ -469,6 +484,7 @@
       gl.uniform1f(uniform(progComposite, "uLogScale"), frame.logScale);
       gl.uniform1f(uniform(progComposite, "uMaxHdr"), frame.maxHdr);
       gl.uniform1f(uniform(progComposite, "uBaselineScale"), frame.baselineScale);
+      gl.uniform1fv(uniform(progComposite, "uCurve"), frame.curve);
       var lo = [], hi = [], ev = [];
       for (var i = 0; i < 3; i++) {
         var band = params.regions[i] || {low_nits: 1, high_nits: 1, ev: 0};
