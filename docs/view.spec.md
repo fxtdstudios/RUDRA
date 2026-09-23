@@ -184,7 +184,7 @@ each rounded half to even into 8 bits.
 | HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
 | viewport vs the browser's layout (step 9) | scale and readout exact; rectangle within 1/64 px; pan within 1e-3 px | Chromium lays out in 1/64 px and reads transforms back in float32 |
-| the viewer window's swapchain vs `core/view.cpp` on `composite.cpp` (step 9) | 1 code in 8 bits; measured 1 on llvmpipe | the picture is held in RGBA16F between the display pass and the blit |
+| the viewer window's swapchain vs `core/view.cpp` on `composite.cpp` (step 9) | 1 code in 8 bits, either texel where a pixel centre falls on a texel edge (fractional device pixel ratios); measured 1 on llvmpipe at ratios 1 to 2 | the picture is held in RGBA16F between the display pass and the blit |
 
 ## 9. HDR output paths
 
@@ -248,7 +248,10 @@ tools/emit_viewport_golden.py). The viewer has a 14-pixel padding on each side.
   `floor((x - left) / width fw)`, and the same in y; outside the frame,
   none. **Wipe from the pointer** `clamp((x - left) / width, 0, 1)`.
 
-The window multiplies by its device pixel ratio. At and above 1:1 the
+The window multiplies by its device pixel ratio. Placement follows the
+Studio in logical pixels; "actual pixels" and the zoom readout are in device
+pixels (scale `1 / dpr` is 100 %), so 1:1 is one frame pixel per screen
+pixel on a scaled display too. At and above 1:1 the
 picture is sampled nearest, so a pixel is a pixel; below it, trilinear over
 its mip chain. The surround is neutral grey #121212, drawn as a graphic at
 the SDR white on an HDR swapchain.

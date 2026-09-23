@@ -182,7 +182,8 @@ if (Test-Path $Viewer) {
                 $worst = if ($d.cases) { ($d.cases | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
                 $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Backend = $d.backend; Swapchain = $d.swapchain;
-                                                  Peak = [math]::Round([double]$d.peak_nits); "max code" = $worst;
+                                                  Peak = [math]::Round([double]$d.peak_nits); From = $d.peak_from;
+                                                  DPR = $d.device_pixel_ratio; "max code" = $worst;
                                                   "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"]; Verdict = $d.verdict }
             } else {
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Verdict = $(if ($code -eq 2) { "n/a" } else { "ERROR" }) }

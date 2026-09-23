@@ -12,10 +12,16 @@
 #if QT_CONFIG(vulkan)
 #include <QVulkanInstance>
 #endif
+#include <QScreen>
+
+#ifdef Q_OS_WIN
+#include <dxgi1_6.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 #include "passes.hpp"
 #include "rudra/core/baseline.hpp"
@@ -73,6 +79,37 @@ const char* swapchain_name(QRhiSwapChain::Format f, bool display_referred) {
     }
 }
 
+#ifdef Q_OS_WIN
+// The peak Windows reports for the output under `native_geometry`, from DXGI.
+// Qt's Vulkan and OpenGL swapchains report placeholder limits (1 000 nits),
+// so on Windows the viewer asks the OS directly (as rudra-hdr-probe does).
+std::optional<double> dxgi_peak(const QRect& native_geometry) {
+    std::optional<double> peak;
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return peak;
+    IDXGIAdapter1* adapter = nullptr;
+    for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+        IDXGIOutput* output = nullptr;
+        for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+            IDXGIOutput6* output6 = nullptr;
+            if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
+                DXGI_OUTPUT_DESC1 d{};
+                if (SUCCEEDED(output6->GetDesc1(&d))) {
+                    const RECT r = d.DesktopCoordinates;
+                    if (QRect(r.left, r.top, r.right - r.left, r.bottom - r.top).intersects(native_geometry) && !peak)
+                        peak = double(d.MaxLuminance);
+                }
+                output6->Release();
+            }
+            output->Release();
+        }
+        adapter->Release();
+    }
+    factory->Release();
+    return peak;
+}
+#endif
+
 }  // namespace
 
 struct ViewerWindow::Impl {
@@ -118,6 +155,8 @@ struct ViewerWindow::Impl {
     bool panning = false;
     QPointF pan_from;
     double pan_x0 = 0, pan_y0 = 0;
+
+    std::string peak_from = "swapchain";   // swapchain, DXGI, or placeholder (unknown)
 
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const Grab&)> grab_cb;
@@ -225,9 +264,27 @@ struct ViewerWindow::Impl {
     void update_target() {
         const QRhiSwapChainHdrInfo info = sc->hdrInfo();
         const bool display_referred = info.luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
-        const double nits = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits
-                                ? double(info.limits.luminanceInNits.maxLuminance)
-                                : double(info.limits.colorComponentValue.maxColorComponentValue) * kDiffuseWhite.v;
+        double nits = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits
+                          ? double(info.limits.luminanceInNits.maxLuminance)
+                          : double(info.limits.colorComponentValue.maxColorComponentValue) * kDiffuseWhite.v;
+        peak_from = "swapchain";
+        // Qt's placeholder limits (Vulkan, OpenGL): 1 000 / 0 nits, not the display's.
+        const bool placeholder = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits &&
+                                 info.limits.luminanceInNits.maxLuminance == 1000.0f &&
+                                 info.limits.luminanceInNits.minLuminance == 0.0f;
+        if (placeholder && format != QRhiSwapChain::SDR) {
+            peak_from = "placeholder";
+#ifdef Q_OS_WIN
+            if (const QScreen* scr = w->screen()) {
+                const qreal dpr = scr->devicePixelRatio();
+                const QRect native(scr->geometry().topLeft() * dpr, scr->geometry().size() * dpr);
+                if (auto p = dxgi_peak(native)) {
+                    nits = *p;
+                    peak_from = "DXGI";
+                }
+            }
+#endif
+        }
         DisplayTarget t = DisplayTarget::sdr();
         switch (format) {
             case QRhiSwapChain::HDRExtendedSrgbLinear:
@@ -536,7 +593,11 @@ struct ViewerWindow::Impl {
             sc && has_swapchain && sc->hdrInfo().luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
         s.swapchain = swapchain_name(format, display_referred);
         s.target = view.target;
-        s.zoom_percent = zoom_percent(viewport, viewer_size(), frame_view_size());
+        // In device pixels: 100 % is one frame pixel per screen pixel.
+        s.zoom_percent = int(std::floor(displayed_scale(viewport, viewer_size(), frame_view_size()) *
+                                        w->devicePixelRatio() * 100.0 + 0.5));
+        s.peak_from = peak_from;
+        s.device_pixel_ratio = w->devicePixelRatio();
         s.has_frame = has_frame;
         s.wiping = view.wipe >= 0.0;
         return s;
@@ -622,7 +683,9 @@ void ViewerWindow::zoom_fit() {
 }
 
 void ViewerWindow::zoom_actual() {
-    rudra::zoom_actual(d_->viewport);
+    // Actual pixels are the screen's: one frame pixel per device pixel, so a
+    // 150 % display scale does not turn 1:1 into 1.5:1.
+    d_->viewport = {1.0 / devicePixelRatio(), 0.0, 0.0};
     d_->moved();
 }
 

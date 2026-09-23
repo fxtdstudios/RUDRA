@@ -28,6 +28,7 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -160,7 +161,7 @@ int main(int argc, char** argv) {
                  {"image 1000", view_params(ViewMode::Image, 1000.0)},
                  {"false colour", view_params(ViewMode::FalseColour, 203.0)},
                  {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)}};
-        zooms = {{"fit", 0.0}, {"2x", 2.0}};
+        zooms = {{"fit", 0.0}, {"2x", 2.0}, {"1:1", -1.0}};   // -1: actual pixels (device 1:1)
         win.resize(400, 300);   // an 80x48 frame lands on whole pixels at fit and at 2x
     }
 
@@ -174,24 +175,25 @@ int main(int argc, char** argv) {
 
     QJsonArray rows;
     std::function<void()> next;
+    bool no_hdr = false;
     auto finish = [&] {
         report["cases"] = rows;
-        report["verdict"] = pass ? "PASS" : "FAIL";
+        report["verdict"] = no_hdr ? "NO-HDR" : pass ? "PASS" : "FAIL";
         const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);
         if (cli.isSet(report_opt)) {
             QFile f(cli.value(report_opt));
             if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(json);
         }
-        out << "  => " << (pass ? "PASS" : "FAIL") << "\n";
+        out << "  => " << (no_hdr ? "NO-HDR (not a failure: this API has no HDR swapchain here)" : pass ? "PASS" : "FAIL") << "\n";
         out.flush();
-        QCoreApplication::exit(pass ? 0 : 1);
+        QCoreApplication::exit(no_hdr ? 2 : pass ? 0 : 1);
     };
 
     auto check_card = [&](const ViewerWindow::Grab& g) {
         const ViewerStatus s = info();
         out << "Gate B through the viewer: " << QString::fromStdString(s.backend) << ", swapchain "
             << QString::fromStdString(s.swapchain) << " (" << QString::fromStdString(g.format) << "), display peak "
-            << s.target.peak_nits << " nits\n";
+            << s.target.peak_nits << " nits (from " << QString::fromStdString(s.peak_from) << ")\n";
         const PlacedRect r = place(win.viewport(), {double(win.width()), double(win.height())}, {kCardW, kCardH});
         const double dpr = win.devicePixelRatio();
         // Each patch must read as its own luminance up to the display's peak and
@@ -212,8 +214,15 @@ int main(int argc, char** argv) {
         }
         report["patches"] = patches;
         const bool hdr = s.target.path != OutputPath::SdrPqSimulation;
-        pass = hdr && all_exact && s.target.peak_nits > 2.0 * 203.0;
-        report["verdict_note"] = !hdr ? "SDR swapchain: the display offers no HDR format (is HDR on?)"
+        report["peak_from"] = QString::fromStdString(s.peak_from);
+        if (!hdr) {
+            no_hdr = true;
+            report["verdict_note"] = "SDR swapchain: this API offers no HDR format here";
+            finish();
+            return;
+        }
+        pass = all_exact && s.target.peak_nits > 2.0 * 203.0 && s.peak_from != "placeholder";
+        report["verdict_note"] = s.peak_from == "placeholder" ? "the swapchain reports Qt's placeholder peak, not the display's"
                                  : pass ? "every patch at its luminance up to the display peak and clipped above it, "
                                           "through the display pass; confirm on the glass"
                                         : "the display pass did not carry the card to the swapchain exactly";
@@ -231,24 +240,51 @@ int main(int argc, char** argv) {
         want_p.target = s.target;
         const Rgb8Image want = render_view_rgb8(cpu_model, cpu_base, want_p);
         const bool bgra = g.format == "BGRA8";
+        // Device pixel centres against the picture's texels. At a fractional
+        // device pixel ratio (150 % display scale) a pixel centre can sit exactly
+        // on a texel edge, where nearest sampling may take either texel, so both
+        // are accepted there; likewise the surround or the edge texel on the
+        // rectangle's border.
+        const double L = r.left * dpr, T = r.top * dpr, W = r.width * dpr, H = r.height * dpr;
+        constexpr double kTie = 1e-3;
+        auto candidates = [](double u, int n, std::vector<int>& list) {   // texel indices, -1 for outside
+            list.clear();
+            for (double e : {-kTie, kTie}) {
+                const double v = std::floor(u + e);
+                const int k = (v < 0 || v >= n) ? -1 : int(v);
+                if (std::find(list.begin(), list.end(), k) == list.end()) list.push_back(k);
+            }
+        };
+        std::vector<int> cx, cy;
         int worst = 0, surround_off = 0;
         std::size_t off = 0;
         for (int y = 0; y < g.height; ++y)
             for (int x = 0; x < g.width; ++x) {
                 const unsigned char* p = g.bytes.data() + (std::size_t(y) * std::size_t(g.width) + std::size_t(x)) * 4;
                 const int rgb[3] = {bgra ? p[2] : p[0], p[1], bgra ? p[0] : p[2]};
-                const double lx = (x + 0.5) / dpr, ly = (y + 0.5) / dpr;
-                const auto fp = pixel_at(r, {double(fw), double(fh)}, lx, ly);
-                if (!fp) {
-                    for (int c : rgb) surround_off = std::max(surround_off, std::abs(c - 0x12));
-                    continue;
-                }
-                for (int c = 0; c < 3; ++c) {
-                    const int wv = want.rgb[(std::size_t(fp->y) * std::size_t(fw) + std::size_t(fp->x)) * 3 + std::size_t(c)];
-                    const int d = std::abs(rgb[c] - wv);
-                    worst = std::max(worst, d);
-                    off += d != 0;
-                }
+                candidates((x + 0.5 - L) / W * fw, fw, cx);
+                candidates((y + 0.5 - T) / H * fh, fh, cy);
+                int best = 1 << 20;
+                bool surround_ok = false;
+                for (int ty : cy)
+                    for (int tx : cx) {
+                        if (tx < 0 || ty < 0) {
+                            int d = 0;
+                            for (int c : rgb) d = std::max(d, std::abs(c - 0x12));
+                            if (d == 0) surround_ok = true;
+                            if (cx.size() == 1 && cy.size() == 1) surround_off = std::max(surround_off, d);
+                            continue;
+                        }
+                        int d = 0;
+                        for (int c = 0; c < 3; ++c)
+                            d = std::max(d, std::abs(rgb[c] - int(want.rgb[(std::size_t(ty) * std::size_t(fw) + std::size_t(tx)) * 3 +
+                                                                           std::size_t(c)])));
+                        best = std::min(best, d);
+                    }
+                if (surround_ok) best = 0;
+                if (best == 1 << 20) continue;   // only surround candidates: counted above
+                worst = std::max(worst, best);
+                off += best != 0;
             }
         const bool ok = worst <= 1 && surround_off == 0 && s.target.path == OutputPath::SdrPqSimulation;
         pass = pass && ok;
@@ -269,7 +305,9 @@ int main(int argc, char** argv) {
             const ViewerStatus s = info();
             out << "Viewer window parity: " << QString::fromStdString(s.backend) << ", swapchain "
                 << QString::fromStdString(s.swapchain) << ", frame " << frame.sdr.width() << "x" << frame.sdr.height()
-                << " in a " << win.width() << "x" << win.height() << " window\n";
+                << " in a " << win.width() << "x" << win.height() << " window, device pixel ratio "
+                << win.devicePixelRatio() << "\n";
+            report["device_pixel_ratio"] = win.devicePixelRatio();
         }
         if (step >= int(views.size() * zooms.size())) {
             out << "  bound: 1 code in 8 bits against core/view.cpp on core/composite.cpp\n";
@@ -279,6 +317,7 @@ int main(int argc, char** argv) {
         win.set_view(views[std::size_t(step / int(zooms.size()))].second);
         const double z = zooms[std::size_t(step % int(zooms.size()))].second;
         if (z > 0) win.set_viewport({z, 0.0, 0.0});
+        else if (z < 0) win.zoom_actual();
         else win.zoom_fit();
         // Two frames: the one that renders the change, then the grab.
         QTimer::singleShot(50, [&] { win.grab(check_parity); });

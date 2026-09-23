@@ -8,6 +8,8 @@
 // Studio's plate work the same: wheel zooms about the cursor, middle drag
 // pans, double click fits; W toggles the wipe and left drag moves it; B or a
 // held left button shows the baseline; arrows nudge the wipe; Esc leaves it.
+// Placement is the Studio's, in logical pixels; "actual pixels" and the zoom
+// readout are in device pixels, so 1:1 is true 1:1 on a scaled display.
 //
 // QRhi stays behind the pimpl: this header includes only QtGui.
 
@@ -30,7 +32,9 @@ struct ViewerStatus {
     std::string backend;     // QRhi backend name
     std::string swapchain;   // SDR, scRGB, HDR10, EDR
     DisplayTarget target;
-    int zoom_percent = 100;
+    std::string peak_from;           // swapchain, DXGI (Windows, when Qt only has placeholders), placeholder
+    double device_pixel_ratio = 1.0;
+    int zoom_percent = 100;          // in device pixels: 100 is one frame pixel per screen pixel
     bool has_frame = false;
     bool wiping = false;
 };
