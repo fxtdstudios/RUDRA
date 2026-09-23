@@ -7,7 +7,8 @@ name: native
 #             ONNX Runtime, and run the package's golden frames in C++
 #   app     - the Qt shell compiles and starts headless
 #   probe   - Gate B's rudra-hdr-probe builds on Qt 6.8 on all three OSes and
-#             reports its SDR fallback honestly on a headless Linux runner
+#             reports its SDR fallback honestly on a headless Linux runner;
+#             the composite shader matches the C++ composite on llvmpipe
 
 on:
   push:
@@ -138,7 +139,7 @@ jobs:
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |
@@ -149,3 +150,6 @@ jobs:
           test "$code" = "1"
           grep -q '"output_path": "SDR"' probe.json
           grep -q '"verdict": "FAIL"' probe.json
+      - name: GPU composite parity on llvmpipe (Linux, OpenGL)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a build/render/probe/rudra-gpu-parity --api gl

@@ -12,6 +12,8 @@
        a few seconds. Each run opens a window with the test card, reads the
        swapchain back and writes reports/native_gate_b_<api>_<format>_<date>.json.
     4. Print the table.
+    5. Day 8: run rudra-gpu-parity on D3D12, D3D11, Vulkan and OpenGL, the
+       composite shader against the C++ composite on the composite goldens.
 
   PASS means the swapchain carried the 1 000-nit patch at least a stop above
   SDR white. It is necessary, not sufficient: Windows HDR must be ON for the
@@ -77,12 +79,15 @@ if (-not $SkipBuild) {
         -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF `
         -DRUDRA_BUILD_HDR_PROBE=ON "-DCMAKE_PREFIX_PATH=$QtRoot"
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
-    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe
+    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity
     if ($LASTEXITCODE -ne 0) { Fail "build" }
 }
 $Exe = Join-Path $Build "render\probe\Release\rudra-hdr-probe.exe"
 if (-not (Test-Path $Exe)) { Fail "probe not built: $Exe" }
-& (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $Exe | Out-Null
+$Parity = Join-Path (Split-Path $Exe) "rudra-gpu-parity.exe"
+foreach ($e in @($Exe, $Parity)) {
+    if (Test-Path $e) { & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $e | Out-Null }
+}
 
 # ---------------------------------------------------------------------------
 Say "Displays"
@@ -116,4 +121,36 @@ Say "Gate B"
 $rows | Format-Table -AutoSize | Out-String | Write-Host
 if ($hint) { Write-Host $hint -ForegroundColor Yellow }
 Write-Host "Reports in $Reports. PASS is the swapchain half of the gate; confirm on the glass."
-if ($rows | Where-Object { $_.API -eq "d3d12" -and $_.Verdict -eq "PASS" }) { exit 0 } else { exit 1 }
+$gateB = [bool]($rows | Where-Object { $_.API -eq "d3d12" -and $_.Verdict -eq "PASS" })
+
+# ---------------------------------------------------------------------------
+# Day 8: the composite shader on this GPU against the C++ reference, on every
+# API the viewer can run on here. fp32 target within 1e-6 + 2e-4 |ref|, fp16
+# target within 2 half-float ulp.
+Say "GPU composite parity (day 8)"
+$parityRows = @()
+if (Test-Path $Parity) {
+    foreach ($api in @("d3d12", "d3d11", "vulkan", "gl")) {
+        $json = Join-Path $Reports "native_gpu_parity_${api}_$Stamp.json"
+        $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        $text = & $Parity --api $api --report $json 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prev
+        $text | Where-Object { $_ -match "^GPU composite parity" } | Write-Host
+        if (Test-Path $json) {
+            $d = Get-Content $json -Raw | ConvertFrom-Json
+            $w32 = ($d.cases | Measure-Object -Property fp32_max_abs -Maximum).Maximum
+            $w16 = ($d.cases | Measure-Object -Property fp16_max_ulp -Maximum).Maximum
+            $parityRows += [pscustomobject]@{ API = $api; Device = $d.device; "fp32 max|d|" = "{0:e2}" -f $w32;
+                                              "fp16 ulp" = $w16; Result = $(if ($d.pass) { "PASS" } else { "FAIL" }) }
+        } else {
+            $why = ($text | Select-Object -Last 1)
+            $parityRows += [pscustomobject]@{ API = $api; Device = ""; "fp32 max|d|" = ""; "fp16 ulp" = "";
+                                              Result = $(if ($code -eq 2) { "n/a: $why" } else { "ERROR" }) }
+        }
+    }
+    $parityRows | Format-Table -AutoSize | Out-String | Write-Host
+}
+$parityOk = [bool]($parityRows | Where-Object { $_.API -eq "d3d12" -and $_.Result -eq "PASS" }) -and
+            -not ($parityRows | Where-Object { $_.Result -in @("FAIL", "ERROR") })
+if ($gateB -and $parityOk) { exit 0 } else { exit 1 }

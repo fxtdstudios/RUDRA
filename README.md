@@ -382,7 +382,7 @@ The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against; the state before that work
 is tagged `webui-v1`.
 
-Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
+Progress: Phase 0, days 1 to 9 of 10 (day 4 on Windows; day 8 on OpenGL).
 - [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
   with eager; ONNX within tolerance)
 - [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
@@ -395,12 +395,15 @@ Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
 - [x] Measurements in C++: MaxRGB stats, MaxCLL/MaxFALL, the Studio QC numbers
 - [x] Gate B probe: `rudra-hdr-probe` on QRhi, with `scripts/NATIVE_GATE_B.ps1`
   (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
-- [ ] Gate A on the 429 bench frames and on CUDA / DirectML / MPS / Core ML
-  (`scripts/NATIVE_GATE_A.ps1`)
+- [x] Gate A on Windows GPUs: LibTorch CUDA (true fp32) and ONNX Runtime
+  DirectML pass on an RTX 4080 SUPER (`scripts/NATIVE_GATE_A.ps1`)
+- [ ] Gate A on the 429 bench frames, MPS and Core ML
 - [x] Gate B on Windows: D3D12 scRGB and HDR10 carry 1 000 and 2 000 nits to
   the swapchain on an HDR display
 - [ ] Gate B on an XDR Mac (Metal EDR)
-- [ ] Composite shader in GLSL 440 with readback parity (day 8)
+- [x] Composite shader in GLSL 440 on QRhi, read back against the C++
+  composite (`rudra-gpu-parity`): passes on OpenGL
+- [ ] GPU composite parity on D3D12, D3D11, Vulkan and Metal
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

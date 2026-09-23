@@ -18,7 +18,8 @@ core       colour types, Image<Space>, baseline, tiling, manifest,
            composite, gamut, master chain, measurements           (platform)
 infer      InferenceBackend: LibTorch, ONNX Runtime, the tiler    (core)
 media      decode (interfaces)                                    (core)
-render     the QRhi viewer; probe/ is Gate B's rudra-hdr-probe    (core, Qt)
+render     the QRhi composite (rudra_render_gpu); probe/ holds
+           rudra-hdr-probe and rudra-gpu-parity                   (core, Qt)
 deliver    encode and write (interfaces)                          (core)
 engine     jobs, generations, priorities                          (below)
 cli        rudra-native: version | info | diff                    (never Qt, never render)
@@ -51,7 +52,8 @@ Options:
 | `RUDRA_TORCH_ROOT` | empty | import LibTorch or a pip torch folder directly, without TorchConfig: a CUDA torch then needs no CUDA toolkit to build |
 | `RUDRA_WITH_ONNXRUNTIME` | OFF | ONNX Runtime backend (`ONNXRUNTIME_ROOT` with `include/`, `lib/`) |
 | `RUDRA_BUILD_APP` | OFF | the Qt shell (Qt 6.4+) |
-| `RUDRA_BUILD_HDR_PROBE` | OFF | `rudra-hdr-probe` (Qt 6.6+ with Qt Shader Tools) |
+| `RUDRA_BUILD_RENDER` | OFF | `rudra_render_gpu`: the QRhi composite (Qt 6.6+ with Qt Shader Tools) |
+| `RUDRA_BUILD_HDR_PROBE` | OFF | `rudra-hdr-probe` and `rudra-gpu-parity` (turns `RUDRA_BUILD_RENDER` on) |
 | `RUDRA_TEST_PACKAGE` | empty | a model package: adds its golden frames to `ctest` |
 
 ## Model package
@@ -107,6 +109,12 @@ PASS means the swapchain carried the 1 000-nit patch at least a stop above SDR
 white; the glass is then checked by eye or meter. On an SDR swapchain it
 reports SDR and FAIL rather than passing a clipped card.
 
+**Day 8, GPU composite parity.** `rudra-gpu-parity --api <api>` renders the
+composite shader offscreen on this GPU for every case in the composite
+goldens and reads it back: into RGBA32F against `composite.cpp` (atol 1e-6,
+rtol 2e-4) and into RGBA16F, the viewer's format, within 2 half-float ulp.
+Both gate B scripts run it on every API the machine has.
+
 ## Status
 
 | Piece | State |
@@ -114,9 +122,10 @@ reports SDR and FAIL rather than passing a clipped card.
 | Model package export, TorchScript and ONNX | done: TorchScript bit-exact with eager, ONNX within tolerance |
 | Core types, baseline, tiling | done: bit-exact with the Python |
 | LibTorch and ONNX Runtime CPU backends, tiler | done: Gate A passes on CPU |
-| GPU execution providers (CUDA, DirectML, Core ML, ROCm, OpenVINO) | written; Gate A on GPU runs on the Windows box |
+| GPU execution providers (CUDA, DirectML, Core ML, ROCm, OpenVINO) | CUDA and DirectML pass; Core ML, ROCm, OpenVINO written, not yet run |
 | Composite, Region EV, master chain, AP0 | done: against `predict_image` and the `_render_master` stages |
 | Measurements (MaxRGB stats, MaxCLL/MaxFALL, Studio QC) | done |
+| Gate A | Windows passes on all four: LibTorch CPU and CUDA, ONNX Runtime CPU and DirectML |
 | Gate B | Windows passes: D3D12 scRGB and HDR10, D3D11 scRGB on a 418-nit HDR display; XDR Mac open |
-| Composite shader in GLSL 440, readback parity | next (day 8) |
+| Composite shader in GLSL 440, readback parity | done on OpenGL (fp32 2.1e-6, fp16 1 ulp); D3D12, D3D11, Vulkan, Metal run in the gate B scripts |
 | Decode, encode, engine, viewer, app | Phase 1 onward |
