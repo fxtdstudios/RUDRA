@@ -48,6 +48,7 @@ Options:
 | `RUDRA_BUILD_TESTS` | ON | the GoogleTest suite |
 | `RUDRA_BUILD_CLI` | ON | `rudra-native` |
 | `RUDRA_WITH_LIBTORCH` | OFF | LibTorch backend (`CMAKE_PREFIX_PATH` to LibTorch or `torch.utils.cmake_prefix_path`) |
+| `RUDRA_TORCH_ROOT` | empty | import LibTorch or a pip torch folder directly, without TorchConfig: a CUDA torch then needs no CUDA toolkit to build |
 | `RUDRA_WITH_ONNXRUNTIME` | OFF | ONNX Runtime backend (`ONNXRUNTIME_ROOT` with `include/`, `lib/`) |
 | `RUDRA_BUILD_APP` | OFF | the Qt shell (Qt 6.4+) |
 | `RUDRA_BUILD_HDR_PROBE` | OFF | `rudra-hdr-probe` (Qt 6.6+ with Qt Shader Tools) |
@@ -81,7 +82,8 @@ Re-run the script and commit when the Python it reads changes.
 **Gate A, model parity.** `scripts/NATIVE_GATE_A.ps1` on a Windows machine
 exports the package, builds with LibTorch and ONNX Runtime (DirectML), and
 runs the golden frames on every backend the box has: LibTorch CPU and CUDA,
-ONNX Runtime CPU and DirectML. `-BenchDir` adds the bench frames. Report in
+ONNX Runtime CPU and DirectML, taking LibTorch from the Python's own torch (no
+CUDA toolkit needed). `-BenchDir` adds the bench frames. Report in
 `reports/`. Both Windows gate scripts need Visual Studio 2022 or 2026 (or the
 Build Tools) with the C++ tools; `-InstallBuildTools` installs the Build Tools
 with winget when none is found.
@@ -95,6 +97,11 @@ scripts/NATIVE_GATE_B.ps1          # Windows: D3D12 scRGB and HDR10, D3D11 scRGB
 scripts/native_gate_b.sh           # macOS: Metal EDR (Display P3, sRGB); Linux: Vulkan, GL
 FRAMES=0 scripts/native_gate_b.sh  # keep the window open and look; Esc quits
 ```
+
+The Windows script lists the displays first; `-Screen N` opens the probe on
+another one when the HDR display is not the primary. When a display reports
+HDR luminance but the swapchain falls back to SDR, the report says HDR is off
+for that display.
 
 PASS means the swapchain carried the 1 000-nit patch at least a stop above SDR
 white; the glass is then checked by eye or meter. On an SDR swapchain it

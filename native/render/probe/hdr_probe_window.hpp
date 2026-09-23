@@ -21,6 +21,7 @@ struct Options {
     Want want = Want::ScRgb;
     QString report_path;         // empty: stdout only
     int exit_after_frames = 0;   // 0: stay open (Esc quits, R re-reads)
+    int screen = -1;             // QGuiApplication::screens() index, -1: primary
 };
 
 QString to_string(Api a);

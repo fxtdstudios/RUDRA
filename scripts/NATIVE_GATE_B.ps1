@@ -26,12 +26,14 @@
 .EXAMPLE
   .\scripts\NATIVE_GATE_B.ps1
   .\scripts\NATIVE_GATE_B.ps1 -Frames 0          # keep the window open
+  .\scripts\NATIVE_GATE_B.ps1 -Screen 1          # the HDR display, if it is not the primary
 #>
 [CmdletBinding()]
 param(
     [string]$Python = "python",
     [string]$QtVersion = "6.8.3",
     [int]$Frames = 240,
+    [int]$Screen = -1,
     [switch]$SkipBuild,
     [switch]$InstallBuildTools
 )
@@ -83,27 +85,34 @@ if (-not (Test-Path $Exe)) { Fail "probe not built: $Exe" }
 & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $Exe | Out-Null
 
 # ---------------------------------------------------------------------------
+Say "Displays"
+& $Exe --list-screens | Write-Host
+$screenArgs = if ($Screen -ge 0) { @("--screen", $Screen) } else { @() }
+
 $runs = @(@("d3d12", "scrgb"), @("d3d12", "hdr10"), @("d3d11", "scrgb"))
 $rows = @()
+$hint = $null
 foreach ($r in $runs) {
     $api, $fmt = $r
     Say "rudra-hdr-probe --api $api --format $fmt"
     $json = Join-Path $Reports "native_gate_b_${api}_${fmt}_$Stamp.json"
-    & $Exe --api $api --format $fmt --frames $Frames --report $json | Out-Null
+    & $Exe --api $api --format $fmt --frames $Frames --report $json @screenArgs | Out-Null
     if (Test-Path $json) {
         $d = Get-Content $json -Raw | ConvertFrom-Json
         $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
-        $peak = if ($d.hdr_info.limits -eq "nits") { $d.hdr_info.max_luminance } else { "" }
-        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = $d.output_path; Device = $d.device;
+        $peak = if ($d.hdr_info.limits -eq "nits") { [math]::Round([double]$d.hdr_info.max_luminance) } else { "" }
+        if ($d.hint) { $hint = $d.hint }
+        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = $d.output_path; Screen = $d.screen_model;
                                     "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"];
                                     PeakNits = $peak; SdrWhite = $d.hdr_info.sdr_white_level; Verdict = $d.verdict }
     } else {
-        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = ""; Device = ""; "203" = ""; "1000" = "";
+        $rows += [pscustomobject]@{ API = $api; Asked = $fmt; Got = ""; Screen = ""; "203" = ""; "1000" = "";
                                     "2000" = ""; PeakNits = ""; SdrWhite = ""; Verdict = "ERROR" }
     }
 }
 
 Say "Gate B"
 $rows | Format-Table -AutoSize | Out-String | Write-Host
+if ($hint) { Write-Host $hint -ForegroundColor Yellow }
 Write-Host "Reports in $Reports. PASS is the swapchain half of the gate; confirm on the glass."
 if ($rows | Where-Object { $_.API -eq "d3d12" -and $_.Verdict -eq "PASS" }) { exit 0 } else { exit 1 }

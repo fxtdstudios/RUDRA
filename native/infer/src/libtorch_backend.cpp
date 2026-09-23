@@ -9,10 +9,34 @@
 
 #include <cstring>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#elif defined(__linux__)
+#include <dlfcn.h>
+#endif
+
 #include "rudra/infer/backend.hpp"
 
 namespace rudra {
 namespace {
+
+// LibTorch registers its CUDA backend when torch_cuda is loaded. A build that
+// imports LibTorch without TorchConfig (RUDRA_TORCH_ROOT) links nothing from
+// it, so the linker drops it and CUDA reads as absent; load it here instead.
+// Harmless when it is already loaded, and a CPU-only LibTorch simply has none.
+void load_torch_cuda() noexcept {
+#if defined(_WIN32)
+    LoadLibraryA("torch_cuda.dll");
+#elif defined(__linux__)
+    dlopen("libtorch_cuda.so", RTLD_NOW | RTLD_GLOBAL);
+#endif
+}
 
 torch::Tensor to_tensor(const SdrImage& img, const torch::Device& dev) {
     const auto& b = img.buffer();
@@ -82,6 +106,7 @@ Result<std::unique_ptr<InferenceBackend>> make_libtorch_backend(const ModelManif
     switch (device) {
         case Device::Cpu: break;
         case Device::Cuda:
+            load_torch_cuda();
             if (!torch::cuda::is_available())
                 return make_error(ErrorCode::Unsupported, "No CUDA device is available to LibTorch.");
             dev = torch::Device(torch::kCUDA, 0);

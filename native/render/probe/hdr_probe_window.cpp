@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QOffscreenSurface>
 #include <QPlatformSurfaceEvent>
+#include <QScreen>
 #include <QTextStream>
 #include <QFloat16>
 
@@ -230,6 +231,10 @@ bool HdrProbeWindow::init() {
         supported[format_name(f)] = sc_->isFormatSupported(f);
     report_["formats_supported"] = supported;
     report_["format"] = format_name(format_);
+    if (const QScreen* sc = screen()) {
+        report_["screen"] = sc->name();
+        report_["screen_model"] = sc->model();
+    }
     return true;
 }
 
@@ -276,9 +281,22 @@ void HdrProbeWindow::update_encoding() {
     hdr["luminance_behavior"] = display_referred ? "display_referred" : "scene_referred";
     hdr["sdr_white_level"] = info.sdrWhiteLevel;
     if (format_ == QRhiSwapChain::SDR) {
-        // Qt reports placeholder limits for an SDR swapchain; do not draw them.
-        hdr["note"] = "SDR swapchain: these are Qt's defaults, not the display's";
+        // No peak tick on an SDR card. What the limits mean depends on the
+        // API: OpenGL and Vulkan report Qt's placeholders (1000 / 0 / 200),
+        // D3D reports the display's own DXGI numbers even with HDR off.
+        const bool placeholder = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits &&
+                                 info.limits.luminanceInNits.maxLuminance == 1000.0f &&
+                                 info.limits.luminanceInNits.minLuminance == 0.0f;
         peak_nits_ = 0.0f;
+        if (placeholder) {
+            hdr["note"] = "SDR swapchain: Qt's placeholder limits, not the display's";
+        } else {
+            hdr["note"] = "the display reports these limits, but no HDR swapchain format is available on it";
+            report_["hint"] =
+                "The display this window opened on is not in HDR mode. Windows: Settings > System > Display, "
+                "select that display, turn on Use HDR, then run again (--screen N picks another display). "
+                "macOS: run on the XDR panel or an HDR display with High Dynamic Range on.";
+        }
     }
     report_["hdr_info"] = hdr;
 
