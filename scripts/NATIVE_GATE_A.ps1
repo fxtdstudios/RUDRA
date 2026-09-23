@@ -155,13 +155,20 @@ $rows = @(
     @{ Name = "ONNX Runtime DirectML"; Runtime = "onnxruntime"; Device = "directml"; Run = $true }
 )
 $log = @("RUDRA native Gate A, $Stamp", "package $Package", "torch $TorchVersion (cuda '$TorchCuda'), ONNX Runtime $OrtVersion, DirectML $DmlVersion", "")
-& $Exe info $Package | Tee-Object -Variable infoOut | Out-Null
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$infoOut = & $Exe info $Package 2>&1 | ForEach-Object { "$_" }
+$ErrorActionPreference = $prev
 $log += $infoOut; $log += ""
 $summary = @()
 foreach ($r in $rows) {
     if (-not $r.Run) { $summary += [pscustomobject]@{ Backend = $r.Name; Result = "skipped"; "Worst |d|" = "" }; continue }
-    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device 2>&1
+    # Windows PowerShell turns any stderr line of a native program into a
+    # terminating error under "Stop"; a runtime's warning is not a failure,
+    # the exit code is. Collect both streams as text and judge by the code.
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $out = & $Exe diff $Package --runtime $r.Runtime --device $r.Device 2>&1 | ForEach-Object { "$_" }
     $code = $LASTEXITCODE
+    $ErrorActionPreference = $prev
     $log += "---- $($r.Name)"; $log += $out; $log += ""
     $worst = ($out | Select-String "max \|d\| ([0-9.e+-]+)" -AllMatches | ForEach-Object { $_.Matches } | ForEach-Object { [double]$_.Groups[1].Value } | Measure-Object -Maximum).Maximum
     $result = switch ($code) { 0 { "PASS" } 1 { "FAIL" } default { "ERROR" } }

@@ -31,7 +31,9 @@ namespace rudra {
 namespace {
 
 Ort::Env& env() {
-    static Ort::Env e(ORT_LOGGING_LEVEL_WARNING, "rudra");
+    // ERROR, not WARNING: ORT warns on every GPU session that it placed shape
+    // ops on the CPU, which is by design and not something to act on.
+    static Ort::Env e(ORT_LOGGING_LEVEL_ERROR, "rudra");
     return e;
 }
 
