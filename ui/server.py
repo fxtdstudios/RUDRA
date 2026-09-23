@@ -693,13 +693,11 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     started = time.time()
     decoded = decode_sdr(image_bytes)
     # Full resolution: a master is the one output that must not be downsampled.
-    limit = int(params.get("master_max_side", 0))
-    if limit > 0 and max(image.size) > limit:
-        ratio = limit / max(image.size)
-        image = image.resize((max(1, int(image.width * ratio)),
-                              max(1, int(image.height * ratio))), Image.LANCZOS)
-
-    sdr = np.asarray(image, dtype=np.float32) / 255.0
+    # 0 = no limit. The GitHub merge of PR #1 (869ecfa) kept the branch's
+    # 8-bit PIL resize around main's full-depth decode, leaving `image`
+    # undefined: every master render raised UnboundLocalError. _fit resizes
+    # in float, so a 16-bit plate stays 16-bit into the network.
+    sdr = _fit(decoded.rgb, int(params.get("master_max_side", 0)))
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     def _predict(tile_size: int):

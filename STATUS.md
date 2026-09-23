@@ -117,14 +117,20 @@
 >    `peak_nits_estimate` (expect thousands of nits). Then a **corpus_v4c**
 >    re-ingest with Sparks in, before the `rudra-studio` (no-HdM) retrain. Not
 >    before this run's acceptance: one variable at a time.
-> 10. **`codex/rudra-final-release` reviewed** (23 Sep,
->     `reports/CODEX_BRANCH_REVIEW_2026-09-23.md`): nothing merges as-is —
->     `rudra/video.py` duplicates `rudra deliver` and feeds the network
->     Rec.2020 input; the benchmark scripts score the baseline at the legacy
->     −1 EV; the UI diff is against the pre-re-skin page and writes EXRs to any
->     folder a request names. Five small cherry-picks are listed (eval-seed for
->     the gate, `preserved_composite_gain`, infer's EXR master + collision
->     check, CUDA→CPU fallback, per-region PU21 for the bench).
+> 10. **`codex/rudra-final-release` merged to main on GitHub (PR #1, `205b19b`).**
+>     The review (`reports/CODEX_BRANCH_REVIEW_2026-09-23.md`, local) still
+>     stands as a to-do list against what is now in main: `rudra/video.py`
+>     duplicates `rudra deliver` and converts input to Rec.2020 before the
+>     network; `quality_benchmark.py` / `recovery_ablation.py` /
+>     `assess_finetune.py` score the analytic baseline at the legacy −1 EV;
+>     `master_targets` writes EXRs to any absolute folder a request names.
+>     **Fixed on integration (23 Sep):** the merge (`869ecfa`) left
+>     `_render_master` resizing an undefined PIL `image` around main's
+>     full-depth `decode_sdr`, so every Studio master raised
+>     `UnboundLocalError`; it now uses `_fit(decoded.rgb, master_max_side)`
+>     (0 = full resolution). Suite on the merged tree: 498 passed on
+>     FFmpeg 8.0.1. `rudra/video.py`'s QC needs ffprobe ≥ 5
+>     (`frame_side_data`).
 >
 > **The paper ([`paper/main.pdf`](paper/main.pdf)) is about line C.** It is not
 > the earlier manuscript, which was about line B; what was withdrawn from that
