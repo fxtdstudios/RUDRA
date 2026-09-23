@@ -687,3 +687,43 @@ the CPU path misses its budget.
 Order: 1 and 2 first (the oracle and the spec), then 3 to 8 in order of
 dependency (3 before 4 and 5; 6, 7 and 8 need only the composite targets), 9
 and 10 together, 11, then 12 and 13.
+
+## 16. Phase 3: the Qt UI, the next fifteen working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): the full Studio workflow in the
+native app with no Python installed. Open a package and a shot, scrub it,
+reconstruct and grade it, compare, probe, measure and master it, and every
+number and file matches what the browser Studio gives for the same actions.
+Same rules as before, with the page itself as the oracle for behaviour.
+`ui/index.html` names the actions and panels, `ui/app.js` holds the state and
+what each control does, `ui/theme.css` holds the colours, and `ui/server.py`
+holds the master's naming and parameters. Layout follows section 2.5 of the
+desktop plan and the Pro-direction boards.
+
+In hand from Phase 2: the viewer window (with its wipe, flip, zoom, pan and
+guides), the frame engine, the display pass in every encoding, and the
+measurements and scopes as data, all equal to the Studio's.
+
+| # | Deliverable | Oracle | Done when | Days | Status |
+|---|---|---|---|---|---|
+| 1 | Theme: QSS generated at build time from the custom properties in `ui/theme.css`; IBM Plex Mono and Plex Sans Condensed embedded (OFL) | `ui/theme.css` | every colour in the QSS is a `theme.css` token (a build-time test), the surround is R = G = B | 1 | |
+| 2 | Actions: all 33 `data-act` ids as `QAction`s with the Studio's shortcuts and menus; the native menubar on macOS, in-window elsewhere | `ui/index.html` `data-act`, `SHORTCUTS` in `ui/app.js` | a test extracts both from the page and compares them to the app's actions | 1 | |
+| 3 | Session model (`engine/session`): the page's `state` in C++, with undo and redo as commands (5.6) where the page pushes undo | `ui/app.js` `state`, `params()`, `pushUndo` | the same scripted actions give byte-identical `params()` JSON (goldens from the page, headless) | 1.5 | |
+| 4 | Main window: media rail (drop zone, shot list, open by path), viewer toolbar (compare, layer, probe, guides, zoom, HDR badge), transport (prev, play, next, timecode, scrub), right rail (scopes; Reconstruct, Grade, Deliver tabs; frame measurements), pipe bar; the simple and full workspaces | `ui/index.html`, the Pro-direction boards | every panel present and wired; a side-by-side screenshot review against the boards | 2.5 | |
+| 5 | Scope widgets: waveform, histogram and vectorscope painted from `ScopeData` as `drawScopes` and `drawVector` draw them (zone colours, gridlines, the dashed 203 line, the clip band) | `ui/app.js` `drawScopes`, `drawVector` | a raster of the page's scope SVG and the widget's paint agree within 2 codes on 99 % of pixels | 1.5 | |
+| 6 | Reconstruct and Grade panels: mode, strength, preserve, view peak, the three-band Region EV editor (the `#regions` drag behaviour), anchor and chroma carry, container and primaries | `ui/app.js` handlers | each control drives the composite, the view and `params()` as the page does (the step 3 goldens) | 2 | |
+| 7 | Probe: the floating box and the rail panel at the cursor (`probeAt`, `showProbePanel`): nits, stops, baseline and model values, masks, the SDR codes | `ui/app.js` | text identical to the page's for the same pixel | 0.5 | |
+| 8 | Frame measurements panel (`showMetrics`), the clip bar, the pipe bar's warning | `ui/app.js` `showMetrics`, `paintClipBar`, `updatePipe` | text identical to the page's for the same frame | 0.5 | |
+| 9 | Deliver tab: a master EXR of the frame or the whole sequence as an engine background job with progress and cancel; `render_master` moves out of the CLI into `deliver` so the app and the CLI share it | `ui/server.py` `/api/master/plan` and `/api/master` | the same paths and names as the plan, and the same EXR and sidecar bytes as the Studio for a 3-frame sequence (within the master goldens' bound) | 2 | |
+| 10 | Checkpoint manager and first run: find, verify and switch model packages and the runtime and device (the page's `#ckpt`, `#device`) without a restart; the first-run wizard runs the viewer's HDR card on the display it opens on | `/api/model`, `/api/checkpoints` | switching packages mid-session keeps the session; the wizard reports the display's real peak | 1.5 | |
+| 11 | The rest of the page: the sheets (shortcuts, about, copy metrics, scopes and delivery), drop to open, recent shots, settings kept between runs | `ui/app.js` | every remaining `data-act` works | 0.5 | |
+| 12 | Review: the whole workflow on Windows with no Python on the machine, scripted and by hand; Phase 3 exit in `STATUS.md` | | open, scrub, grade, compare, probe and master a 240-frame folder with the numbers matching the Studio's | 0.5 | |
+
+Order: 1 to 3 first (look, actions and state are what everything else binds
+to), then 4, then 5 to 8 in any order, then 9 and 10 (they need the engine
+jobs), 11, 12.
+
+The one structural change: step 9 moves the master pipeline, which is in
+`cli/master.cpp` today, into a library the app can call. It goes to
+`deliver/` (the stages are core and deliver already), and the CLI keeps only
+argument parsing, so the layer rule stays as it is.

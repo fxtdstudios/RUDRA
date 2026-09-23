@@ -439,6 +439,10 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 - [x] Guides: action and title safe, centre cross, aspect masks, one screen pixel wide at any zoom
 - [ ] Every backend, budgets recorded
 
+Then Phase 3 (the Qt UI, 15 days; plan in
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 16): the full
+Studio workflow with no Python installed, every number and file matching the Studio's.
+
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
 [`native/README.md`](native/README.md).
