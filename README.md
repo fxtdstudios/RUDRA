@@ -413,7 +413,8 @@ Next, Phase 1 (librudra, 15 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 14):
 - [x] One golden harness across every emitter (`tools/emit_golden.py`), re-run in CI
 - [x] Still decode (PNG, JPEG, TIFF, BMP, WebP) bit-exact with `rudra/decode.py`
-- [ ] Grade controls, HDR10/PQ, metadata writers, EXR/ACES writers
+- [x] Grade controls, HDR10/HLG, metadata sidecars, EXR/ACES/OCIO writers:
+  sidecars, EXRs and the OCIO config byte-identical with the Python
 - [ ] `rudra-native master`: a Studio-identical master EXR with no Python
 - [ ] QC, queue, sequence open; CI green on three OSes
 

@@ -1,5 +1,7 @@
 #include "rudra/core/measure.hpp"
 
+#include "rudra/core/numeric.hpp"
+
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -8,18 +10,6 @@
 
 namespace rudra {
 namespace {
-
-// Neumaier-compensated sum: numpy's pairwise sum is within a few ulp of the
-// exact sum, and so is this; a naive loop over 8 million pixels is not.
-struct Sum {
-    double s = 0.0, c = 0.0;
-    void add(double v) noexcept {
-        const double t = s + v;
-        c += std::abs(s) >= std::abs(v) ? (s - t) + v : (v - t) + s;
-        s = t;
-    }
-    double value() const noexcept { return s + c; }
-};
 
 // numpy's _lerp: a + (b - a) t, evaluated from b when t >= 0.5.
 double lerp_np(double a, double b, double t) noexcept {
@@ -45,13 +35,13 @@ double percentile_linear(std::vector<double>& v, double q, bool already_sorted) 
     return lerp_np(v[lo], v[hi], idx - lo_f);
 }
 
-FrameStats analyze_frame(const NitsFrame& nits) {
+FrameStats analyze_frame(const NitsFrame& nits, int index) {
     const std::size_t n = nits.plane_size();
     assert(n > 0);
     FrameStats st;
+    st.index = index;
     std::vector<double> max_rgb(n);
     std::array<double, 3> maxscl{0.0, 0.0, 0.0};
-    Sum sum;
     std::array<std::size_t, kLogHistBins> counts{};
     // np.histogram with uniform bins: index from the scaled value, then
     // corrected against the linspace edges it would compare with.
@@ -72,7 +62,6 @@ FrameStats analyze_frame(const NitsFrame& nits) {
         max_rgb[i] = m;
         mn = std::min(mn, m);
         mx = std::max(mx, m);
-        sum.add(m);
         const double l = std::log2(std::max(m, 1e-4));
         if (l >= kLogHistLo && l <= kLogHistHi) {
             auto b = static_cast<int>((l - kLogHistLo) / (kLogHistHi - kLogHistLo) * kLogHistBins);
@@ -84,7 +73,7 @@ FrameStats analyze_frame(const NitsFrame& nits) {
     }
     st.min_nits = mn;
     st.max_nits = mx;
-    st.avg_nits = sum.value() / static_cast<double>(n);
+    st.avg_nits = np_mean(max_rgb);
     st.maxscl_nits = maxscl;
     for (int i = 0; i < kLogHistBins; ++i)
         st.log_hist[static_cast<std::size_t>(i)] = static_cast<double>(counts[static_cast<std::size_t>(i)]) / static_cast<double>(n);
@@ -124,24 +113,24 @@ StudioMeasure measure(const NetworkLinearImage& hdr, const NetworkLinearImage& b
     r.baseline_peak_nits = base_peak;
     r.headroom_stops = std::log2(std::max(peak, 1e-6) / std::max(base_peak, 1e-6));
 
-    Sum hl_luma, hl_base, sh_luma, sh_base, sq;
-    std::size_t hl_n = 0, sh_n = 0;
+    // Masked means and the RMS through numpy's pairwise sum, like the Python.
+    std::vector<double> hl_luma, hl_base, sh_luma, sh_base, sq(n);
     for (std::size_t i = 0; i < n; ++i) {
         const double luma = std::max({nits.plane(0)[i], nits.plane(1)[i], nits.plane(2)[i]});
         const double bl = std::max({base.plane(0)[i], base.plane(1)[i], base.plane(2)[i]});
-        if (highlight_mask.plane(0)[i] > 0.5f) { hl_luma.add(luma); hl_base.add(bl); ++hl_n; }
-        if (shadow_mask.plane(0)[i] > 0.5f) { sh_luma.add(luma); sh_base.add(bl); ++sh_n; }
+        if (highlight_mask.plane(0)[i] > 0.5f) { hl_luma.push_back(luma); hl_base.push_back(bl); }
+        if (shadow_mask.plane(0)[i] > 0.5f) { sh_luma.push_back(luma); sh_base.push_back(bl); }
         const double ratio = std::log2((luma + 1e-4) / (bl + 1e-4));
-        sq.add(ratio * ratio);
+        sq[i] = ratio * ratio;
     }
-    auto stops_in = [](const Sum& a, const Sum& b, std::size_t count) {
-        if (count == 0) return std::numeric_limits<double>::quiet_NaN();
-        const double c = static_cast<double>(count);
-        return std::log2(std::max(a.value() / c, 1e-6) / std::max(b.value() / c, 1e-6));
+    auto stops_in = [](const std::vector<double>& a, const std::vector<double>& b) {
+        if (a.empty()) return std::numeric_limits<double>::quiet_NaN();
+        return std::log2(std::max(np_mean(a), 1e-6) / std::max(np_mean(b), 1e-6));
     };
-    r.headroom_highlight_stops = stops_in(hl_luma, hl_base, hl_n);
-    r.headroom_shadow_stops = stops_in(sh_luma, sh_base, sh_n);
-    r.departure_rms_stops = std::sqrt(sq.value() / static_cast<double>(n));
+    r.headroom_highlight_stops = stops_in(hl_luma, hl_base);
+    r.headroom_shadow_stops = stops_in(sh_luma, sh_base);
+    r.departure_rms_stops = std::sqrt(np_mean(sq));
+    const std::size_t hl_n = hl_luma.size(), sh_n = sh_luma.size();
 
     std::vector<double> all(nits.span().begin(), nits.span().end());
     std::size_t above_white = 0, above_1000 = 0;

@@ -143,3 +143,4 @@ SCRUB_TRAILERS.txt
 
 # Decoder fixtures: small image files the native tests read (tools/emit_decode_golden.py).
 !/native/tests/golden/decode/*
+!/native/tests/golden/delivery/*

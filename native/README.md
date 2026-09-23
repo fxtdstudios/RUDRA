@@ -20,7 +20,7 @@ infer      InferenceBackend: LibTorch, ONNX Runtime, the tiler    (core)
 media      still decode (OpenCV imgcodecs); video in Phase 4       (core)
 render     the QRhi composite (rudra_render_gpu); probe/ holds
            rudra-hdr-probe and rudra-gpu-parity                   (core, Qt)
-deliver    encode and write (interfaces)                          (core)
+deliver    EXR/ACES/OCIO writers, metadata sidecars; encode later (core)
 engine     jobs, generations, priorities                          (below)
 cli        rudra-native: version | info | diff                    (never Qt, never render)
 app        the Qt application                                     (everything)
@@ -78,6 +78,7 @@ rudra-native bench dist/models/sdr2hdr_shadow_v1 --runtime libtorch --device cud
 | `tools/emit_core_golden.py` | `tests/golden/core/`: baseline, curve, tile weights | `test_core.cpp` |
 | `tools/emit_composite_golden.py` | `tests/golden/composite/`: composite, Region EV, anchor, chroma, AP0, master chain, measurements | `test_composite.cpp` |
 | `tools/emit_decode_golden.py` | `tests/golden/decode/`: 17 image fixtures and their decoded floats | `test_decode.cpp` |
+| `tools/emit_delivery_golden.py` | `tests/golden/delivery/`: grades, PQ/HLG, a 3-shot sidecar set, EXR/ACES files, the OCIO config | `test_delivery.cpp` (files compared byte for byte) |
 | `tools/export_model.py` | the package's `golden/` | `rudra-native diff` |
 
 `python tools/emit_golden.py` runs every emitter; re-run it and commit when the
@@ -137,5 +138,6 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | Budgets (NATIVE_ARCHITECTURE.md 6.6) | recorded: composite 0.11 ms 1080p, 0.51 ms 4K; inference 150 ms (DirectML) and 172 ms (CUDA) at 1080p fp32 |
 | Phase 0 | closed 23 Sep 2026: GO on Windows, macOS conditional on MPS/Core ML, Metal EDR and Metal parity runs |
 | Still decode | done: bit-exact with `rudra/decode.py` on 17 fixtures |
-| Phase 1 (librudra) | steps 1 and 2 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
+| Grade, HDR10/HLG, metadata, EXR/ACES/OCIO | done: sidecars, EXRs and OCIO config byte-identical with the Python |
+| Phase 1 (librudra) | steps 1 to 6 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

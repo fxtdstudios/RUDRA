@@ -600,10 +600,10 @@ chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
 |---|---|---|---|---|---|
 | 1 | One golden harness: `tools/emit_golden.py` runs every emitter; CI re-emits on all three OSes and runs the native tests against fresh arrays | the emitters | a Python change that moves a number fails CI | 0.5 | **done** 23 Sep: `tools/emit_golden.py` (core, composite, decode); CI re-emits on Linux and fails on any drift in the exact goldens; macOS and Windows re-emit in step 11 |
 | 2 | Still decode in `media/`: PNG 8/16-bit (grey, alpha, palette), JPEG, TIFF 8/16/float, BMP, WebP; bit depth, padded-16-bit detection and distinct codes reported; scene-linear float refused | `rudra/decode.py` `decode_sdr` | same float pixels, bits and refusals on a fixture set of every format and depth | 2 | **done** 23 Sep: `media/still.cpp` on OpenCV imgcodecs, the decoder the Python uses; 17 fixtures bit-exact, JPEG included, across OpenCV 4.6 (C++) and 4.13 (Python). EXR dropped: the Python refuses it too |
-| 3 | Grade controls: exposure, highlight desaturation, shoulder to peak, `apply_grade`, `itm_strength_map` | `rudra/delivery/controls.py` | golden arrays, rtol 1e-12 | 1 | |
-| 4 | HDR10 and profiles: PQ OETF/EOTF, `master_to_peak`, `master_to_pq`, delivery profiles | `rudra/hdr10.py`, `delivery/profiles.py` | golden arrays; PQ codes exact at 10 and 12 bit | 1 | |
-| 5 | Metadata writers: `detect_shots`, `l1_per_shot`, Dolby Vision generate JSON, HDR10+ JSON, the RUDRA sidecar | `delivery/metadata.py` | byte-identical JSON on a multi-shot fixture | 1.5 | |
-| 6 | EXR and ACES writers on OpenEXR: half pixels, chromaticities, provenance attributes, AP0 container | `delivery/exr.py`, `delivery/aces.py` | pixels exact after the half cast; every header attribute equal when read back by Python | 2 | |
+| 3 | Grade controls: exposure, highlight desaturation, shoulder to peak, `apply_grade`, `itm_strength_map` | `rudra/delivery/controls.py` | golden arrays, rtol 1e-12 | 1 | **done** 24 Sep: `core/grade.cpp`; four grades within 2e-7 of the float32 output (numpy's SIMD `exp` is the only difference), the strength map exact |
+| 4 | HDR10 and profiles: PQ OETF/EOTF, `master_to_peak`, `master_to_pq`, delivery profiles | `rudra/hdr10.py`, `delivery/profiles.py` | golden arrays; PQ codes exact at 10 and 12 bit | 1 | **done** 24 Sep: `core/hdr10.cpp`, every profile incl. HLG; 12-bit PQ codes exact on 407 levels; float PQ within 2e-5 of code (numpy's float32 `power` is 1 ulp off where glibc is correctly rounded, and PQ's 78.84 exponent amplifies it: a fiftieth of a 10-bit step) |
+| 5 | Metadata writers: `detect_shots`, `l1_per_shot`, Dolby Vision generate JSON, HDR10+ JSON, the RUDRA sidecar | `delivery/metadata.py` | byte-identical JSON on a multi-shot fixture | 1.5 | **done** 24 Sep: `core/metadata.cpp`, `deliver/sidecars.cpp`, `platform/pyjson` (Python's `json.dumps` and `repr`) and numpy's pairwise sum; all three sidecars byte-identical on a 12-frame, 3-shot sequence |
+| 6 | EXR and ACES writers on OpenEXR: half pixels, chromaticities, provenance attributes, AP0 container | `delivery/exr.py`, `delivery/aces.py` | pixels exact after the half cast; every header attribute equal when read back by Python | 2 | **done** 24 Sep: `deliver/exr.cpp` writes the EXR directly, like the Python (no OpenEXR library needed); half, float, RGBA, ACES AP0 and ACEScg files and the OCIO config byte-identical; float16 rounding exact on 1 012 values incl. subnormals and overflow |
 | 7 | **`rudra-native master <package> <image> --out x.exr`**: decode, infer, composite, master chain, measure, EXR, sidecar | `ui/server.py` `_render_master` | the same EXR within 1 half-float ulp and the same sidecar numbers as the Studio master, on three stills, no Python installed | 2 | |
 | 8 | QC: `check_frame`, thresholds file, report text | `rudra/qc.py` | same pass/fail and identical report text on the fixtures | 1.5 | |
 | 9 | Queue: `queue.json` read, write, lock, atomic save, resume, artifact digests | `rudra/batch.py` | a queue started by Python resumes in C++ and the other way round | 1.5 | |
@@ -614,7 +614,8 @@ New third-party code, none in the public headers (principle P6): OpenCV
 core and imgcodecs in `media/src` (`RUDRA_WITH_OPENCV`), chosen over separate
 PNG, JPEG and TIFF libraries because it is the decoder `rudra/decode.py` calls,
 so the two decode the same bytes to the same floats, quirks included (palette
-expansion, grey-alpha, 16-bit TIFF). OpenEXR (with Imath) for step 6. OCIO
+expansion, grey-alpha, 16-bit TIFF). No OpenEXR: the Python writes EXR itself and
+the port does the same, byte for byte. OCIO
 waits until a module needs it; nothing in this list does.
 
 Order: 1 first, then 2 to 6 in any order, 7 as soon as 2 and 6 land (it is the

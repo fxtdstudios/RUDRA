@@ -12,7 +12,7 @@ name: native
 
 on:
   push:
-    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_golden.py", "rudra/decode.py",
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
             "tools/check_layers.py", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
             "rudra/delivery/**", "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
   pull_request:
@@ -77,7 +77,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
       - name: Every golden, from this Python
         # tools/emit_golden.py runs every emitter. Core and decode are exact
-        # and must not move; composite is re-emitted, not diffed (torch on the
+        # and must not move; composite and delivery are re-emitted, not diffed (torch on the
         # runner may differ in the last bit) and the C++ tests below then run
         # against what the Python on this runner computes.
         run: |

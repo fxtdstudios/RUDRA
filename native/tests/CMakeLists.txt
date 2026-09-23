@@ -1,5 +1,5 @@
-add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_engine.cpp)
-target_link_libraries(rudra_tests PRIVATE rudra::rudra_core rudra::rudra_engine
+add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_delivery.cpp test_engine.cpp)
+target_link_libraries(rudra_tests PRIVATE rudra::rudra_core rudra::rudra_deliver rudra::rudra_engine
                       nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(rudra_tests PRIVATE RUDRA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden")
 rudra_warnings(rudra_tests)
