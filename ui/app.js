@@ -692,7 +692,7 @@
     ctx.setFrame({width: head.width, height: head.height,
                   sdr: sdr, fields: fieldsU16, shadow: shadowU16,
                   log_scale: head.log_scale, max_hdr: head.max_hdr,
-                  corpus_ev: head.corpus_ev});
+                  corpus_ev: head.corpus_ev, curve: head.curve});
     ctx.setParams({strength: state.strength, mode: state.mode,
                    preserve: state.preserve, regions: state.regions});
     $("empty").hidden = true;

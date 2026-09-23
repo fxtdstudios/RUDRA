@@ -129,7 +129,17 @@ def evaluate_image(model: SDR2HDRNet, loader: DataLoader, device: torch.device,
             sums[key] += float(losses[key])
         sums["psnr_tm"] += float(-10.0 * torch.log10(mse_tm))
         sums["psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(mse_log))
-        base_log = torch.log1p(output.baseline * 16.0)
+        # "Gain" is always against the ANALYTIC baseline -- the one thing that
+        # is genuinely "nothing learned". A CurveHead's corrected baseline is
+        # part of the model and is scored separately as curve_baseline_psnr_log.
+        analytic = output.analytic_baseline if output.analytic_baseline is not None \
+            else output.baseline
+        if output.curve_params is not None:
+            cb_mse = F.mse_loss(torch.log1p(output.baseline.clamp_min(0.0) * 16.0),
+                                target_log).clamp_min(1e-12)
+            sums["curve_baseline_psnr_log"] = sums.get("curve_baseline_psnr_log", 0.0) + float(
+                20.0 * torch.log10(peak) - 10.0 * torch.log10(cb_mse))
+        base_log = torch.log1p(analytic * 16.0)
         base_mse = F.mse_loss(base_log, target_log).clamp_min(1e-12)
         sums["baseline_log_l1"] += float(F.l1_loss(base_log, target_log))
         sums["baseline_psnr_log"] += float(20.0 * torch.log10(peak) - 10.0 * torch.log10(base_mse))
@@ -329,6 +339,7 @@ def train(args: argparse.Namespace) -> Path:
         model: torch.nn.Module = SDR2HDRNet(
             base_channels=args.base_channels,
             gate_conditioning=args.gate_conditioning,
+            curve_head=args.curve_head,
             corpus_ev=corpus_ev).to(device)
     else:
         if not args.image_checkpoint:
@@ -379,7 +390,7 @@ def train(args: argparse.Namespace) -> Path:
         # keys are allowed to be missing. Nothing else is: a silently
         # half-loaded backbone would train from noise and look like a bad idea
         # rather than a bad load.
-        stray = [k for k in missing if not k.startswith("gate.")]
+        stray = [k for k in missing if not k.startswith(("gate.", "curve."))]
         if stray or unexpected:
             raise RuntimeError(
                 f"--init-checkpoint {args.init_checkpoint} does not match this "
@@ -491,6 +502,7 @@ def train(args: argparse.Namespace) -> Path:
                     args.shadow_smoothness_weight,
                     target_ceiling=(batch["ceiling"].to(device, non_blocking=True)
                                     if "ceiling" in batch else None),
+                    baseline_weight=args.baseline_weight if args.curve_head else 0.0,
                 )
                 loss = losses["total"]
             else:
@@ -597,6 +609,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temporal-weight", type=float, default=0.5)
     parser.add_argument("--shadow-chroma-weight", type=float, default=0.15)
     parser.add_argument("--shadow-smoothness-weight", type=float, default=0.02)
+    parser.add_argument("--curve-head", action="store_true",
+                        help="Add rudra.sdr2hdr.CurveHead: estimate each frame's tone curve "
+                             "and exposure and correct the analytic inverse before the "
+                             "residual. Needed for SDR that did not come through the "
+                             "corpus's own ACES render (bench/oog, 23 Sep 2026). Train on a "
+                             "--sdr-render mix corpus, or the head has nothing to learn.")
+    parser.add_argument("--baseline-weight", type=float, default=0.25,
+                        help="With --curve-head: weight of the direct loss on the corrected "
+                             "baseline (default %(default)s)")
     parser.add_argument("--gate-conditioning", action="store_true",
                         help="Add the per-frame residual-scale head (rudra.sdr2hdr."
                              "ConditionGate). The per-pixel priors decide WHERE to "

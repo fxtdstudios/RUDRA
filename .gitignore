@@ -134,5 +134,7 @@ SCRUB_TRAILERS.txt
 /scripts/archive/
 /scripts/finalize_*.ps1
 /scripts/next_*.ps1
+/scripts/critical_*.ps1
+/scripts/RUN_CRITICAL_PATH.bat
 /scripts/RUN_NEXT_STEPS.bat
 /reports/
