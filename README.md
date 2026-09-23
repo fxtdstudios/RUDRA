@@ -382,15 +382,23 @@ The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against; the state before that work
 is tagged `webui-v1`.
 
-Progress: Phase 0, days 1 and 2 of 10.
+Progress: Phase 0, days 1 to 4, 7 and 9 of 10 (day 4 on CPU).
 - [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
   with eager; ONNX within tolerance)
 - [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
   LibTorch and ONNX Runtime backends, `rudra-native diff`, Qt shell, CI
 - [x] Gate A on CPU: LibTorch bit-exact through the native tiler, ONNX Runtime
   within tolerance, on the package's golden frames
+- [x] Composite in C++ ([`docs/composite.spec.md`](docs/composite.spec.md)):
+  recovery modes, strength, preserve, Region EV, anchor, chroma carry, AP0,
+  each stage against the Python it ports
+- [x] Measurements in C++: MaxRGB stats, MaxCLL/MaxFALL, the Studio QC numbers
+- [x] Gate B probe: `rudra-hdr-probe` on QRhi, with `scripts/NATIVE_GATE_B.ps1`
+  (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
 - [ ] Gate A on the 429 bench frames and on CUDA / DirectML / MPS / Core ML
-- [ ] Gate B: HDR patch on a Windows HDR display and an XDR display
+  (`scripts/NATIVE_GATE_A.ps1`)
+- [ ] Gate B on the glass: a Windows HDR display and an XDR display
+- [ ] Composite shader in GLSL 440 with readback parity (day 8)
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
@@ -412,6 +420,7 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
 | [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) | the native desktop Studio: architecture, phases, acceptance |
 | [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) | the native app design: layers, types, threading, patterns, numerics, first ten days |
+| [`docs/composite.spec.md`](docs/composite.spec.md) | the composite, master chain and measurements as a spec: every stage, precision and tolerance |
 | [`native/README.md`](native/README.md) | building the native app, the model package, what is done and what is not |
 | [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |
 

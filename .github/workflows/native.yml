@@ -6,13 +6,17 @@ name: native
 #   parity  - Gate A: export the shipped checkpoint, build with LibTorch and
 #             ONNX Runtime, and run the package's golden frames in C++
 #   app     - the Qt shell compiles and starts headless
+#   probe   - Gate B's rudra-hdr-probe builds on Qt 6.8 on all three OSes and
+#             reports its SDR fallback honestly on a headless Linux runner
 
 on:
   push:
-    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/check_layers.py",
-            "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+    paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py",
+            "tools/check_layers.py", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
+            "rudra/delivery/**", "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
   pull_request:
-    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "training/infer_sdr2hdr.py", ".github/workflows/native.yml"]
+    paths: ["native/**", "tools/**", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py", "rudra/delivery/**",
+            "training/infer_sdr2hdr.py", "ui/server.py", ".github/workflows/native.yml"]
   workflow_dispatch:
 
 jobs:
@@ -72,6 +76,11 @@ jobs:
         run: |
           python tools/emit_core_golden.py
           git diff --exit-code native/tests/golden/core/index.json
+      - name: Composite goldens from this Python
+        # Re-emitted, not diffed: torch on the runner may differ from the
+        # committed files in the last bit. The C++ tests below then run against
+        # what the Python on this runner computes, which is the real check.
+        run: python tools/emit_composite_golden.py
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API
@@ -107,3 +116,36 @@ jobs:
           QT_QPA_PLATFORM=offscreen timeout 5 build/app/RUDRA
           code=$?
           test "$code" = "124" || { echo "RUDRA exited with $code before the timeout"; exit 1; }
+
+  probe:
+    name: Gate B probe, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          modules: qtshadertools
+          cache: true
+      - name: Linux display deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev
+      - name: Configure
+        shell: bash
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
+      - name: Build
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe
+      - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
+        if: runner.os == 'Linux'
+        run: |
+          set +e
+          xvfb-run -a build/render/probe/rudra-hdr-probe --api gl --frames 10 --report probe.json
+          code=$?
+          set -e
+          test "$code" = "1"
+          grep -q '"output_path": "SDR"' probe.json
+          grep -q '"verdict": "FAIL"' probe.json

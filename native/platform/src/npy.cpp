@@ -10,7 +10,7 @@ namespace rudra {
 namespace {
 
 Error parse_error(const std::filesystem::path& p, const std::string& why) {
-    return make_error(ErrorCode::ParseError, "The array file is not a float32 .npy file.",
+    return make_error(ErrorCode::ParseError, "The array file is not a float .npy file.",
                       p.string() + ": " + why);
 }
 
@@ -33,10 +33,14 @@ std::string value_after(const std::string& header, const std::string& key) {
 
 }  // namespace
 
-Result<NpyArray> read_npy(const std::filesystem::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return make_error(ErrorCode::NotFound, "The array file could not be opened.", path.string());
+namespace {
 
+struct Header {
+    std::vector<std::int64_t> shape;
+    bool f64 = false;
+};
+
+Result<Header> read_header(std::ifstream& in, const std::filesystem::path& path, bool allow_f64) {
     char magic[6];
     in.read(magic, 6);
     if (!in || std::memcmp(magic, "\x93NUMPY", 6) != 0) return parse_error(path, "bad magic");
@@ -58,12 +62,14 @@ Result<NpyArray> read_npy(const std::filesystem::path& path) {
     in.read(header.data(), header_len);
     if (!in) return parse_error(path, "truncated header");
 
+    Header h;
     const std::string descr = value_after(header, "descr");
-    if (descr != "'<f4'" && descr != "'=f4'" && !(descr == "'|f4'"))
-        return parse_error(path, "dtype " + descr + " (need '<f4')");
+    const bool f4 = descr == "'<f4'" || descr == "'=f4'" || descr == "'|f4'";
+    h.f64 = descr == "'<f8'" || descr == "'=f8'";
+    if (!f4 && !(allow_f64 && h.f64))
+        return parse_error(path, "dtype " + descr + (allow_f64 ? " (need '<f4' or '<f8')" : " (need '<f4')"));
     if (value_after(header, "fortran_order") != "False") return parse_error(path, "Fortran order");
 
-    NpyArray arr;
     const std::string shape = value_after(header, "shape");
     if (shape.size() < 2) return parse_error(path, "no shape");
     std::size_t i = 1;
@@ -73,16 +79,56 @@ Result<NpyArray> read_npy(const std::filesystem::path& path) {
         std::size_t j = i;
         while (j < shape.size() - 1 && std::isdigit(static_cast<unsigned char>(shape[j]))) ++j;
         if (j == i) return parse_error(path, "bad shape " + shape);
-        arr.shape.push_back(std::stoll(shape.substr(i, j - i)));
+        h.shape.push_back(std::stoll(shape.substr(i, j - i)));
         i = j;
     }
+    return h;
+}
 
-    const auto n = static_cast<std::size_t>(arr.size());
-    arr.data.resize(n);
-    in.read(reinterpret_cast<char*>(arr.data.data()), static_cast<std::streamsize>(n * sizeof(float)));
-    if (static_cast<std::size_t>(in.gcount()) != n * sizeof(float)) return parse_error(path, "truncated data");
-    static_assert(std::endian::native == std::endian::little,
-                  "the .npy reader assumes a little-endian host; every RUDRA target is one");
+template <class T>
+bool read_payload(std::ifstream& in, std::vector<T>& out, std::size_t n) {
+    out.resize(n);
+    in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(n * sizeof(T)));
+    return static_cast<std::size_t>(in.gcount()) == n * sizeof(T);
+}
+
+std::size_t count(const std::vector<std::int64_t>& shape) {
+    std::size_t n = 1;
+    for (auto d : shape) n *= static_cast<std::size_t>(d);
+    return n;
+}
+
+static_assert(std::endian::native == std::endian::little,
+              "the .npy reader assumes a little-endian host; every RUDRA target is one");
+
+}  // namespace
+
+Result<NpyArray> read_npy(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return make_error(ErrorCode::NotFound, "The array file could not be opened.", path.string());
+    auto h = read_header(in, path, false);
+    if (!h) return h.error();
+    NpyArray arr;
+    arr.shape = h->shape;
+    if (!read_payload(in, arr.data, count(arr.shape))) return parse_error(path, "truncated data");
+    return arr;
+}
+
+Result<NpyArrayF64> read_npy_f64(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return make_error(ErrorCode::NotFound, "The array file could not be opened.", path.string());
+    auto h = read_header(in, path, true);
+    if (!h) return h.error();
+    NpyArrayF64 arr;
+    arr.shape = h->shape;
+    const std::size_t n = count(arr.shape);
+    if (h->f64) {
+        if (!read_payload(in, arr.data, n)) return parse_error(path, "truncated data");
+    } else {
+        std::vector<float> f;
+        if (!read_payload(in, f, n)) return parse_error(path, "truncated data");
+        arr.data.assign(f.begin(), f.end());
+    }
     return arr;
 }
 

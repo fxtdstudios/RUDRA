@@ -7,26 +7,12 @@
 #include <string>
 #include <vector>
 
+#include "rudra/core/fields.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
-
-// Once per frame, from the whole frame. A model without a head reports the
-// value that head's absence means: scale 1, weight 1, a one-element zero curve.
-struct FrameScalars {
-    float residual_scale = 1.0f;
-    float shadow_weight = 1.0f;
-    std::vector<float> curve_params{0.0f};
-};
-
-// The fields for a tile or a whole frame. Invariant to every user control.
-struct Fields {
-    PlanarBuffer residual;    // 3 x h x w, log domain, residual scale folded in
-    PlanarBuffer highlight;   // 1 x h x w, in [0,1]
-    PlanarBuffer shadow;      // 1 x h x w, in [0,1]
-};
 
 enum class Runtime { LibTorch, OnnxRuntime };
 enum class Device { Cpu, Cuda, Mps, DirectML, CoreML, Rocm, OpenVino };
