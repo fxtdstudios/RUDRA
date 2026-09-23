@@ -330,7 +330,7 @@ TEST(Viewer, ProbeEqualsTheBrowsersExactly) {
         const auto base = image_of(npy(frame.at("base").get<std::string>()));
         for (const auto& pr : frame.at("probes")) {
             const auto at = pr.at("at").get<std::vector<double>>();
-            const Probe got = probe(model, base, at[0], at[1]);
+            const Probe got = probe_pixel(model, base, at[0], at[1]);
             const std::string what = name + " probe " + pr.at("at").dump();
             EXPECT_EQ(got.model.x, pr.at("x").get<int>()) << what;
             EXPECT_EQ(got.model.y, pr.at("y").get<int>()) << what;

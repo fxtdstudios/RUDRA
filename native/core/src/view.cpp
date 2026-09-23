@@ -184,7 +184,7 @@ Reductions reduce_ladder(const PlanarBuffer& rgb) {
     return {mx[0], sm[0]};
 }
 
-Probe probe(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y) {
+Probe probe_pixel(const NetworkLinearImage& model, const NetworkLinearImage& baseline, double x, double y) {
     const int w = model.width(), h = model.height();
     // Math.round: half up.
     const int px = std::clamp(int(std::floor(x + 0.5)), 0, w - 1);
