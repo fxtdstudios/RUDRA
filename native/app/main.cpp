@@ -220,6 +220,34 @@ private:
         });
         view->addAction("Fit", QKeySequence("Ctrl+0"), this, [this] { viewer_->zoom_fit(); });
         view->addAction("Actual pixels", QKeySequence("Ctrl+1"), this, [this] { viewer_->zoom_actual(); });
+        auto* guides = view->addMenu("Guides");
+        auto toggle = [this](bool rudra::GuideOptions::*flag) {
+            return [this, flag] (bool on) {
+                auto g = viewer_->guides();
+                g.*flag = on;
+                viewer_->set_guides(g);
+            };
+        };
+        auto* action_safe = guides->addAction("Action safe (90 %)", QKeySequence("G"), this,
+                                              toggle(&rudra::GuideOptions::action_safe));
+        auto* title_safe = guides->addAction("Title safe (80 %)", QKeySequence("Shift+G"), this,
+                                             toggle(&rudra::GuideOptions::title_safe));
+        auto* centre = guides->addAction("Centre cross", this, toggle(&rudra::GuideOptions::centre));
+        for (auto* a : {action_safe, title_safe, centre}) a->setCheckable(true);
+        guides->addSeparator();
+        auto* aspects = new QActionGroup(this);
+        const std::pair<const char*, double> ratios[] = {{"No aspect mask", 0.0}, {"2.39", 2.39}, {"1.85", 1.85},
+                                                          {"16:9", 16.0 / 9.0}, {"4:3", 4.0 / 3.0}, {"1:1", 1.0}};
+        for (const auto& [label, r] : ratios) {
+            auto* a = guides->addAction(label, this, [this, r = r] {
+                auto g = viewer_->guides();
+                g.aspect = r;
+                viewer_->set_guides(g);
+            });
+            a->setCheckable(true);
+            a->setChecked(r == 0.0);
+            aspects->addAction(a);
+        }
         auto* peak = view->addMenu("View peak");
         for (double nits : {203.0, 400.0, 1000.0, 4000.0, 10000.0}) {
             peak->addAction(nits >= 10000.0 ? QString("The display's own") : QString("%1 nits").arg(nits), this,

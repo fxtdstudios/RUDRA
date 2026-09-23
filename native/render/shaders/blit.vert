@@ -8,7 +8,8 @@ layout(location = 0) out vec2 v_uv;
 layout(std140, binding = 0) uniform Blit {
     mat4 clip_corr;   // QRhi::clipSpaceCorrMatrix()
     vec4 rect;        // left, top, right, bottom in window pixels
-    vec4 window;      // width, height in pixels
+    vec4 window;      // width, height in pixels, y-up flag, SDR white (the fragment stage)
+    vec4 guides;      // read by blit.frag
 };
 
 void main() {

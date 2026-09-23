@@ -36,9 +36,10 @@ using detail::load_shader;
 struct BlitUbo {
     float clip_corr[16];
     float rect[4];
-    float window[4];
+    float window[4];   // width, height, y-up, SDR white encoded
+    float guides[4];   // action, title, centre, aspect
 };
-static_assert(sizeof(BlitUbo) == 24 * sizeof(float));
+static_assert(sizeof(BlitUbo) == 28 * sizeof(float));
 
 // The surround: neutral grey #121212, a graphic at the SDR white.
 constexpr float kSurroundCode = 0x12 / 255.0f;
@@ -148,6 +149,7 @@ struct ViewerWindow::Impl {
     CompositeParams composite;
     ViewParams view;
     ViewportState viewport;
+    GuideOptions guides;
     bool upload_dirty = false, composite_dirty = false, view_dirty = true;
 
     // Interaction.
@@ -306,12 +308,14 @@ struct ViewerWindow::Impl {
         if (!picture) return true;
         blit_srb_nearest.reset(rhi->newShaderResourceBindings());
         blit_srb_nearest->setBindings({
-            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, blit_ubo.get()),
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+                                                     blit_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, picture.get(), nearest.get()),
         });
         blit_srb_trilinear.reset(rhi->newShaderResourceBindings());
         blit_srb_trilinear->setBindings({
-            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, blit_ubo.get()),
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+                                                     blit_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, picture.get(), trilinear.get()),
         });
         if (!blit_srb_nearest->create() || !blit_srb_trilinear->create()) return false;
@@ -389,6 +393,13 @@ struct ViewerWindow::Impl {
             has_swapchain = false;
             sc->destroy();
         }
+    }
+
+    // White as a graphic (the SDR white) in the swapchain's encoding.
+    float graphic_white() const {
+        if (view.target.path == OutputPath::SdrPqSimulation) return 1.0f;
+        const float nits = float(kDiffuseWhite.v);
+        return view.target.path == OutputPath::Hdr10 ? pq_oetf(nits) : nits / float(view.target.unit_nits);
     }
 
     // The surround as the swapchain wants it: a graphic at the SDR white.
@@ -489,6 +500,12 @@ struct ViewerWindow::Impl {
         bu.rect[3] = float((rect.top + rect.height) * dpr);
         bu.window[0] = float(px.width());
         bu.window[1] = float(px.height());
+        bu.window[2] = rhi->isYUpInFramebuffer() ? 1.0f : 0.0f;
+        bu.window[3] = graphic_white();
+        bu.guides[0] = guides.action_safe ? 1.0f : 0.0f;
+        bu.guides[1] = guides.title_safe ? 1.0f : 0.0f;
+        bu.guides[2] = guides.centre ? 1.0f : 0.0f;
+        bu.guides[3] = float(guides.aspect);
         u->updateDynamicBuffer(blit_ubo.get(), 0, sizeof(bu), &bu);
 
         cb->beginPass(sc->currentFrameRenderTarget(), surround(), {1.0f, 0}, u);
@@ -676,6 +693,13 @@ void ViewerWindow::set_viewport(const ViewportState& v) {
     d_->viewport = v;
     d_->moved();
 }
+
+void ViewerWindow::set_guides(const GuideOptions& g) {
+    d_->guides = g;
+    requestUpdate();
+}
+
+GuideOptions ViewerWindow::guides() const { return d_->guides; }
 
 void ViewerWindow::zoom_fit() {
     rudra::zoom_fit(d_->viewport);

@@ -1,8 +1,8 @@
 # The viewer: specification
 
-Status: revision 3, 24 Sep 2026 (Phase 2 steps 2, 5 and 9). Normative for
+Status: revision 4, 24 Sep 2026 (Phase 2 steps 2, 5, 9 and 11). Normative for
 every implementation. Revision 2 added the HDR output paths (section 9),
-revision 3 the viewport (section 10); the guides follow (step 11).
+revision 3 the viewport (section 10), revision 4 the guides (section 11).
 
 The viewer takes the two float pictures the composite produces, the
 reconstruction and its analytic baseline (docs/composite.spec.md), and turns
@@ -184,6 +184,7 @@ each rounded half to even into 8 bits.
 | HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
 | viewport vs the browser's layout (step 9) | scale and readout exact; rectangle within 1/64 px; pan within 1e-3 px | Chromium lays out in 1/64 px and reads transforms back in float32 |
+| guides, shader vs `core/guides.cpp` (step 11) | 1 code in 8 bits, in the same readback | the same pixel rules in fp32 |
 | the viewer window's swapchain vs `core/view.cpp` on `composite.cpp` (step 9) | 1 code in 8 bits, either texel where a pixel centre falls on a texel edge (fractional device pixel ratios); measured 1 on llvmpipe at ratios 1 to 2 | the picture is held in RGBA16F between the display pass and the blit |
 
 ## 9. HDR output paths
@@ -264,6 +265,31 @@ plate's auto height); and a zoomed frame wider than the viewer was scaled from
 its fit size and sat at the grid track's start, so 1:1 was not 1:1 and the
 first wheel tick threw the picture off centre.
 
-## 11. Not in revision 3
+## 11. Guides
 
-The guides (step 11).
+Over the picture, in screen space: one device pixel wide at every zoom,
+blended as graphics at the SDR white in the swapchain's encoding
+(`core/guides.cpp`, drawn by the blit). The Studio's stylesheet defines the
+two safe areas (`.guides .g90`, `.g80`: dashed, `#ffffff2e`) but never turns
+them on; the native viewer does, and adds the cross and the mask.
+
+With the placed rectangle `(l, t, w, h)` in device pixels and a device pixel
+`(x, y)`, top-left origin:
+
+* **Safe areas.** Action safe insets 5 % each side, title safe 10 %. A box
+  with inset `f` is the columns `floor(l + f w)` and `ceil(l + (1 - f) w) - 1`
+  and the rows likewise, each drawn over the box's extent in the other axis,
+  dashed 3 pixels on and 3 off, counted from the box's first row or column.
+* **Centre cross.** Column `floor(l + w / 2)` and row `floor(t + h / 2)`,
+  arms of `max(8, floor(0.02 min(w, h)))` pixels each way, solid.
+* **Aspect mask.** For a ratio `r` wider than the frame, the rows whose
+  centre lies outside the centred band of height `w / r` (letterbox); for a
+  narrower one, the columns outside the band of width `h r` (pillarbox).
+* **Blend**, per encoded channel: the mask first, `c (1 - 0.6)`, then the
+  line, `c (1 - a) + white a` with `a = 46 / 255` and `white` the SDR white
+  (1.0 on SDR, 203 / 80 on scRGB, 1.0 on EDR, PQ(203) on HDR10).
+
+## 12. Not in revision 4
+
+Nothing the viewer draws is left unspecified; the rest of Phase 2 is the
+backend matrix and the budgets (steps 12 and 13).

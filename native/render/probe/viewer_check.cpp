@@ -6,9 +6,10 @@
 //
 // Default: an SDR swapchain. A frame from the viewer goldens goes in as fields,
 // through the window's composite, display and blit passes, and the swapchain
-// is read back: at fit and at 2x (nearest) every picture pixel must equal
+// is read back: at fit, 2x and 1:1 every picture pixel must equal
 // core/view.cpp on core/composite.cpp within 1 code, for the image, false
-// colour and wipe views, and the surround must be #121212.
+// colour and wipe views, and with the guides on (core/guides.cpp: safe areas,
+// centre cross, a 2.39 and a 4:3 mask); the surround must be #121212.
 //
 // --card: Gate B through the real display pass. An HDR swapchain if the
 // display has one; a card of known luminance (10, 100, 203, 600, 1 000 and
@@ -38,6 +39,7 @@
 
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/guides.hpp"
 #include "rudra/core/half.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/view.hpp"
@@ -160,7 +162,9 @@ int main(int argc, char** argv) {
         views = {{"image 203", view_params(ViewMode::Image, 203.0)},
                  {"image 1000", view_params(ViewMode::Image, 1000.0)},
                  {"false colour", view_params(ViewMode::FalseColour, 203.0)},
-                 {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)}};
+                 {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)},
+                 {"guides 2.39", view_params(ViewMode::Image, 203.0)},
+                 {"guides 4:3", view_params(ViewMode::FalseColour, 203.0)}};
         zooms = {{"fit", 0.0}, {"2x", 2.0}, {"1:1", -1.0}};   // -1: actual pixels (device 1:1)
         win.resize(400, 300);   // an 80x48 frame lands on whole pixels at fit and at 2x
     }
@@ -264,6 +268,7 @@ int main(int argc, char** argv) {
                 const int rgb[3] = {bgra ? p[2] : p[0], p[1], bgra ? p[0] : p[2]};
                 candidates((x + 0.5 - L) / W * fw, fw, cx);
                 candidates((y + 0.5 - T) / H * fh, fh, cy);
+                const GuideSample gs = guide_at(win.guides(), L, T, W, H, x, y);
                 int best = 1 << 20;
                 bool surround_ok = false;
                 for (int ty : cy)
@@ -276,9 +281,11 @@ int main(int argc, char** argv) {
                             continue;
                         }
                         int d = 0;
-                        for (int c = 0; c < 3; ++c)
-                            d = std::max(d, std::abs(rgb[c] - int(want.rgb[(std::size_t(ty) * std::size_t(fw) + std::size_t(tx)) * 3 +
-                                                                           std::size_t(c)])));
+                        for (int c = 0; c < 3; ++c) {
+                            const float v = float(want.rgb[(std::size_t(ty) * std::size_t(fw) + std::size_t(tx)) * 3 + std::size_t(c)]) / 255.0f;
+                            const int e = int(std::lround(std::clamp(apply_guides(v, 1.0f, gs), 0.0f, 1.0f) * 255.0f));
+                            d = std::max(d, std::abs(rgb[c] - e));
+                        }
                         best = std::min(best, d);
                     }
                 if (surround_ok) best = 0;
@@ -314,6 +321,13 @@ int main(int argc, char** argv) {
             finish();
             return;
         }
+        const std::string& vname = views[std::size_t(step / int(zooms.size()))].first;
+        GuideOptions gopt;
+        if (vname.rfind("guides", 0) == 0) {
+            gopt.action_safe = gopt.title_safe = gopt.centre = true;
+            gopt.aspect = vname == "guides 2.39" ? 2.39 : 4.0 / 3.0;
+        }
+        win.set_guides(gopt);
         win.set_view(views[std::size_t(step / int(zooms.size()))].second);
         const double z = zooms[std::size_t(step % int(zooms.size()))].second;
         if (z > 0) win.set_viewport({z, 0.0, 0.0});

@@ -21,6 +21,7 @@
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
+#include "rudra/core/guides.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/core/viewport.hpp"
@@ -69,6 +70,9 @@ public:
     void set_viewport(const ViewportState& v);
     void zoom_fit();
     void zoom_actual();
+    // Safe areas, centre cross, aspect mask: screen space, over the picture.
+    void set_guides(const GuideOptions& g);
+    GuideOptions guides() const;
 
     ViewerStatus status() const;
     void on_status(std::function<void(const ViewerStatus&)> cb);

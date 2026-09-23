@@ -77,3 +77,40 @@ TEST(Viewport, PixelAndWipeUnderThePointer) {
     EXPECT_EQ(wipe_at(r, r.left + r.width * 0.25), 0.25);
     EXPECT_EQ(wipe_at(r, 5000), 1.0);
 }
+
+#include "rudra/core/guides.hpp"
+
+TEST(Guides, SafeAreasCrossAndMaskLandOnTheirPixels) {
+    GuideOptions g;
+    g.action_safe = g.title_safe = g.centre = true;
+    g.aspect = 2.39;
+    auto at = [&](int x, int y) { return guide_at(g, 0, 0, 100, 100, x, y); };
+    // Action safe (5 %): columns 5 and 94, dashed 3 on, 3 off from row 5.
+    EXPECT_GT(at(5, 5).line, 0.0f);
+    EXPECT_GT(at(5, 7).line, 0.0f);
+    EXPECT_EQ(at(5, 8).line, 0.0f);
+    EXPECT_GT(at(5, 11).line, 0.0f);
+    EXPECT_GT(at(94, 5).line, 0.0f);
+    EXPECT_EQ(at(95, 5).line, 0.0f);
+    // Title safe (10 %): columns 10 and 89.
+    EXPECT_GT(at(10, 10).line, 0.0f);
+    EXPECT_GT(at(89, 10).line, 0.0f);
+    // Centre cross: column 50 and row 50, arms of 8 pixels.
+    EXPECT_GT(at(50, 42).line, 0.0f);
+    EXPECT_EQ(at(50, 41).line, 0.0f);
+    EXPECT_GT(at(58, 50).line, 0.0f);
+    EXPECT_EQ(at(59, 50).line, 0.0f);
+    EXPECT_FLOAT_EQ(at(5, 5).line, kGuideLineAlpha);
+    // 2.39 letterbox in a square: 41.84 high, from 29.08; row 28 is outside, 29 inside.
+    EXPECT_FLOAT_EQ(at(40, 28).mask, kGuideMaskAlpha);
+    EXPECT_EQ(at(40, 29).mask, 0.0f);
+    EXPECT_EQ(at(40, 70).mask, 0.0f);
+    EXPECT_FLOAT_EQ(at(40, 71).mask, kGuideMaskAlpha);
+    // Blend: the mask darkens, then the line goes toward white.
+    const GuideSample both{kGuideLineAlpha, kGuideMaskAlpha};
+    EXPECT_FLOAT_EQ(apply_guides(0.5f, 1.0f, both), 0.5f * 0.4f * (1 - kGuideLineAlpha) + kGuideLineAlpha);
+    // Off: nothing.
+    const GuideSample none = guide_at(GuideOptions{}, 0, 0, 100, 100, 5, 5);
+    EXPECT_EQ(none.line, 0.0f);
+    EXPECT_EQ(none.mask, 0.0f);
+}

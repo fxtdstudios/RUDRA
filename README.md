@@ -436,7 +436,7 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
   cursor, pan, wipe and hold-to-flip, placed exactly as the Studio places it
 - [x] The frame path: decode and inference on the engine's own thread, generations and
   cancellation, read-ahead and a frame cache; a fast scrub never shows a stale frame
-- [ ] The guides
+- [x] Guides: action and title safe, centre cross, aspect masks, one screen pixel wide at any zoom
 - [ ] Every backend, budgets recorded
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
