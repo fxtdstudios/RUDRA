@@ -488,7 +488,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   tags checked where each format keeps them, the report byte for byte
 - [x] Video jobs in the queue, resumable from either side (`rudra-native batch run`): a queue either side stopped
   mid-clip finishes on the other
-- [ ] ffmpeg capability probe and self-test
+- [x] ffmpeg capability probe and self-test (`rudra-native ffmpeg-check`): what the build lacks, in words, and a
+  16-frame HDR10 export through it, cached per build
 - [ ] The app: movies open, export tiles live, a queue window
 - [ ] The Windows review
 

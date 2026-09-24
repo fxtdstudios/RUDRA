@@ -54,6 +54,7 @@
 #include "video.hpp"
 #endif
 #include "deliver.hpp"
+#include "ffmpeg_check.hpp"
 
 using namespace rudra;
 namespace fs = std::filesystem;
@@ -395,6 +396,7 @@ void usage() {
                  "       rudra-native batch status <queue.json>\n"
                  "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
                  "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
+                 "       rudra-native ffmpeg-check [--ffmpeg PATH] [--ffprobe PATH] [--force] [--no-self-test]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
 }
 
@@ -407,6 +409,7 @@ int main(int argc, char** argv) {
         std::printf("rudra-native 0.1.0 (model contract %d.x)\n", kSupportedContractMajor);
         return 0;
     }
+    if (args[0] == "ffmpeg-check") return cmd_ffmpeg_check(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "bench-scopes") {
         int iters = 7;
         if (args.size() == 3 && args[1] == "--iters") iters = std::max(1, std::atoi(args[2].c_str()));
