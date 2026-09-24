@@ -127,6 +127,9 @@ int main(int argc, char** argv) {
     const bool card = cli.isSet(card_opt);
 
     ViewerWindow win(api_of(cli.value(api_opt)), /*prefer_hdr=*/card);
+    // A wheel turn or a click on the window while it runs must not move the
+    // picture: the first Windows runs were scrolled mid-check.
+    win.set_input_enabled(false);
     QJsonObject report;
     bool pass = true;
     int step = 0;
@@ -315,7 +318,10 @@ int main(int argc, char** argv) {
                         {"values_off", qint64(off)}, {"surround_off", surround_off}, {"pass", ok},
                         {"grab", QJsonArray{g.width, g.height}}, {"grab_format", QString::fromStdString(g.format)},
                         {"window", QJsonArray{win.width(), win.height()}},
-                        {"rect_device", QJsonArray{L, T, W, H}}, {"first_mismatches", samples}};
+                        {"rect_device", QJsonArray{L, T, W, H}},
+                        {"viewport", QJsonArray{win.viewport().scale ? *win.viewport().scale : 0.0, win.viewport().pan_x,
+                                                win.viewport().pan_y}},
+                        {"first_mismatches", samples}};
         rows.append(row);
         if (!ok && cli.isSet(dump_opt)) {
             const QString dir = cli.value(dump_opt);

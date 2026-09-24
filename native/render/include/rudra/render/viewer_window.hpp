@@ -77,6 +77,10 @@ public:
     ViewerStatus status() const;
     void on_status(std::function<void(const ViewerStatus&)> cb);
 
+    // Off: mouse, wheel and keys do nothing (the check tools, so a wheel or a
+    // click that lands on the window while it runs cannot move the picture).
+    void set_input_enabled(bool on);
+
     // The next presented frame, read back from the swapchain (tests, Gate B).
     // Pixels are top-down RGBA in the swapchain's format: 8-bit sRGB codes
     // for SDR, half floats for scRGB and EDR, 10-bit PQ words for HDR10.

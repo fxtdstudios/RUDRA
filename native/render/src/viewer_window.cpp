@@ -153,6 +153,7 @@ struct ViewerWindow::Impl {
     bool upload_dirty = false, composite_dirty = false, view_dirty = true;
 
     // Interaction.
+    bool input = true;
     bool wipe_dragging = false, flip_held_key = false, flip_held_mouse = false;
     bool panning = false;
     QPointF pan_from;
@@ -727,6 +728,11 @@ void ViewerWindow::zoom_actual() {
 ViewerStatus ViewerWindow::status() const { return d_->status(); }
 void ViewerWindow::on_status(std::function<void(const ViewerStatus&)> cb) { d_->status_cb = std::move(cb); }
 
+void ViewerWindow::set_input_enabled(bool on) {
+    d_->input = on;
+    if (!on) d_->wipe_dragging = d_->panning = d_->flip_held_key = d_->flip_held_mouse = false;
+}
+
 void ViewerWindow::grab(std::function<void(const Grab&)> done) {
     d_->grab_cb = std::move(done);
     requestUpdate();
@@ -762,6 +768,7 @@ bool ViewerWindow::event(QEvent* e) {
 }
 
 void ViewerWindow::wheelEvent(QWheelEvent* e) {
+    if (!d_->input) return;
     if (!d_->has_frame) return;
     const double notches = e->angleDelta().y() / 120.0;
     if (notches == 0.0) return;
@@ -772,6 +779,7 @@ void ViewerWindow::wheelEvent(QWheelEvent* e) {
 }
 
 void ViewerWindow::mousePressEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::MiddleButton && d_->has_frame) {
         d_->panning = true;
         d_->pan_from = e->position();
@@ -794,6 +802,7 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (d_->panning) {
         d_->viewport.pan_x = d_->pan_x0 + (e->position().x() - d_->pan_from.x());
         d_->viewport.pan_y = d_->pan_y0 + (e->position().y() - d_->pan_from.y());
@@ -807,6 +816,7 @@ void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::MiddleButton) d_->panning = false;
     if (e->button() == Qt::LeftButton) {
         d_->wipe_dragging = false;
@@ -818,10 +828,12 @@ void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::LeftButton) zoom_fit();
 }
 
 void ViewerWindow::keyPressEvent(QKeyEvent* e) {
+    if (!d_->input) return;
     switch (e->key()) {
         case Qt::Key_B:
             if (!e->isAutoRepeat()) {
@@ -858,6 +870,7 @@ void ViewerWindow::keyPressEvent(QKeyEvent* e) {
 }
 
 void ViewerWindow::keyReleaseEvent(QKeyEvent* e) {
+    if (!d_->input) return;
     if (e->key() == Qt::Key_B && !e->isAutoRepeat()) {
         d_->flip_held_key = false;
         d_->changed_view();
