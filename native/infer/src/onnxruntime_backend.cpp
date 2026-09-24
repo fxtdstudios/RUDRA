@@ -133,6 +133,10 @@ private:
 
 Result<std::unique_ptr<InferenceBackend>> make_onnxruntime_backend(const ModelManifest& m, Device device) {
     try {
+        // The Env first: it registers ONNX Runtime's default logger, and adding
+        // an execution provider logs (Core ML does), which aborts the process
+        // when no logger exists yet.
+        (void)env();
         Ort::SessionOptions so;
         so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
         const auto available = Ort::GetAvailableProviders();
