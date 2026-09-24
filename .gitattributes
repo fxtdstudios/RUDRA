@@ -8,6 +8,9 @@
 # Never touch these.
 *.png  binary
 *.jpg  binary
+*.mp4  binary
+*.mkv  binary
+*.mov  binary
 *.jpeg binary
 *.exr  binary
 *.tif  binary

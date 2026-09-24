@@ -468,6 +468,23 @@ Studio workflow with no Python installed, every number and file matching the Stu
 - [x] The whole workflow scripted (`RUDRA --workflow-check`, its masters held to the CLI's): passes on Linux on 240 frames
 - [ ] The same on Windows with no Python on the PATH, and by hand on the HDR display (`scripts/NATIVE_PHASE3_EXIT.ps1`)
 
+Then Phase 4 (video delivery, 12 days; plan in
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 17): a movie in, an HDR10, HLG
+or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe run as programs as the Python runs them.
+- [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 23 clip and argument cases
+  (HDR, alpha, interlace, rotation, anamorphic, odd sizes, variable timing, RGB, colour tags and overrides)
+- [ ] Decode on a pipe, bit for bit
+- [ ] The video predictor with the shadow smoother
+- [ ] Mastering and the PNG spool
+- [ ] Encode and publish, argument for argument
+- [ ] QC and the alpha check
+- [ ] `rudra-native video` end to end
+- [ ] Frames to video (`encode_sequence`)
+- [ ] Video jobs in the queue, resumable from either side
+- [ ] ffmpeg capability probe and self-test
+- [ ] The app: movies open, export tiles live, a queue window
+- [ ] The Windows review
+
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
 [`native/README.md`](native/README.md).

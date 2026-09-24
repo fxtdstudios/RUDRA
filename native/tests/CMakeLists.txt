@@ -1,9 +1,9 @@
-add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_delivery.cpp test_qc.cpp test_queue.cpp test_sequence.cpp test_viewer.cpp test_viewport.cpp test_engine.cpp test_theme.cpp test_actions.cpp test_session.cpp test_scope_draw.cpp test_readouts.cpp test_render_plan.cpp test_master_job.cpp test_model_catalog.cpp test_copy_texts.cpp)
+add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_delivery.cpp test_qc.cpp test_queue.cpp test_sequence.cpp test_viewer.cpp test_viewport.cpp test_engine.cpp test_theme.cpp test_actions.cpp test_session.cpp test_scope_draw.cpp test_readouts.cpp test_render_plan.cpp test_master_job.cpp test_model_catalog.cpp test_copy_texts.cpp test_video.cpp)
 target_link_libraries(rudra_tests PRIVATE rudra::rudra_core rudra::rudra_deliver rudra::rudra_media rudra::rudra_engine
                       nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(rudra_tests PRIVATE RUDRA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
                            RUDRA_THEME_DIR="${RUDRA_THEME_DIR}" RUDRA_THEME_CSS="${RUDRA_THEME_CSS}"
-                           RUDRA_APP_DIR="${PROJECT_SOURCE_DIR}/app")
+                           RUDRA_APP_DIR="${PROJECT_SOURCE_DIR}/app" RUDRA_CMAKE_COMMAND="${CMAKE_COMMAND}")
 add_dependencies(rudra_tests rudra_theme)   # test_theme reads the generated sheet
 rudra_warnings(rudra_tests)
 if(RUDRA_WITH_OPENCV)
