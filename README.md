@@ -478,7 +478,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   within 2.7e-6 of it, whole frames and tiles, on LibTorch and ONNX Runtime
 - [x] Mastering and the PNG spool: MaxCLL, frame averages, ceilings and HLG codes identical to the Python's, PQ codes
   within one of 65535 (numpy's SIMD power is not correctly rounded)
-- [ ] Encode and publish, argument for argument
+- [x] Encode and publish, argument for argument: the Python's command on ten runs over the five profiles, the
+  Python's spool encoding with it, nothing ever replaced
 - [ ] QC and the alpha check
 - [ ] `rudra-native video` end to end
 - [ ] Frames to video (`encode_sequence`)

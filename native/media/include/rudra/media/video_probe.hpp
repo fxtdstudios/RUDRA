@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rudra/core/video_clock.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -53,13 +54,6 @@ struct VideoProbe {
 struct InputContract {
     std::string transfer, primaries, matrix, range;
     bool operator==(const InputContract&) const = default;
-};
-
-// timing(): the clip's clock.
-struct VideoClock {
-    std::string fps;                           // str(Fraction): "24000/1001" or "25"
-    int frames = 0;
-    double start = 0, duration = 0, tolerance = 0;
 };
 
 // Everything convert_video learns before it predicts a frame.

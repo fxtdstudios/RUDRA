@@ -42,6 +42,15 @@ RUNS = {
     "hlg_600": ("h264_709.mp4", ".mp4", ["--format", "hlg", "--peak-nits", "600"]),
     "prores4444_alpha": ("prores4444_alpha.mov", ".mov",
                          ["--format", "prores4444", "--alpha-mode", "straight", "--input-range", "limited"]),
+    # Step 5: the encoder's command for the other presets and options.
+    "prores422": ("h264_709.mp4", ".mov", ["--format", "prores422"]),
+    "prores422hq": ("h264_709.mp4", ".mov", ["--format", "prores422hq", "--peak-nits", "2000", "--min-nits", "0.0001"]),
+    "hdr10_aac_slow": ("h264_709.mp4", ".mp4", ["--format", "hdr10", "--audio", "aac", "--crf", "18",
+                                                 "--preset", "slow", "--min-nits", "0.05"]),
+    "hdr10_mkv_no_audio": ("untagged.mp4", ".mkv", ["--format", "hdr10", "--audio", "none", "--input-transfer",
+                                                     "rec709", "--input-primaries", "rec709", "--input-matrix",
+                                                     "bt709", "--input-range", "limited"]),
+    "hlg_mov": ("bt2020.mkv", ".MOV", ["--format", "hlg", "--peak-nits", "1500"]),
 }
 MEAN_SIZES = [5, 8, 9, 127, 128, 129, 1000, 2304, 8191, 8193, 100003, 1920 * 1080]
 
@@ -69,6 +78,10 @@ def run(name: str, clip: str, suffix: str, flags: list[str]) -> dict:
 
     def encode_command(args, source, clock, spool, output, max_cll, max_fall):
         captured["max_cll"], captured["max_fall"] = max_cll, max_fall
+        command = real[1](args, source, clock, spool, output, max_cll, max_fall)
+        portable = {str(Path(spool) / "%08d.png"): "SPOOL/%08d.png", str(source): clip, str(output): "OUTPUT" + suffix}
+        captured["command"] = ["ffmpeg", *[portable.get(c, c) for c in command[1:]]]
+        captured["clock"] = clock
         captured["spool"] = sorted(p for p in Path(spool).glob("*.png"))
         for p in captured["spool"]:
             shutil.copyfile(p, OUT / "spool" / f"{name}_{p.name}")
@@ -97,7 +110,10 @@ def run(name: str, clip: str, suffix: str, flags: list[str]) -> dict:
                        "max_cll": float(maxrgb.max()), "frame_average": float(maxrgb.mean())})
     return {"name": name, "clip": clip, "format": args.format, "peak_nits": args.peak_nits,
             "knee_nits": args.knee_nits, "alpha": "prores4444" in name, "frames": frames,
-            "max_cll": captured["max_cll"], "max_fall": captured["max_fall"]}
+            "max_cll": captured["max_cll"], "max_fall": captured["max_fall"],
+            "request": {"format": args.format, "preset": args.preset, "crf": args.crf, "audio": args.audio,
+                        "peak_nits": args.peak_nits, "min_nits": args.min_nits, "alpha": bool(args.preserve_alpha)},
+            "clock": captured["clock"], "suffix": suffix, "command": captured["command"]}
 
 
 def main() -> int:
