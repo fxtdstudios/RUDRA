@@ -156,6 +156,10 @@ Say "Deploy"
 foreach ($e in @($App, $AppTests)) {
     if (Test-Path $e) { & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $e | Out-Null }
 }
+# windeployqt deploys the "windows" platform plugin only; the offscreen tests need theirs.
+$Platforms = Join-Path (Split-Path $App) "platforms"
+New-Item -ItemType Directory -Force -Path $Platforms | Out-Null
+Copy-Item (Join-Path $QtRoot "plugins\platforms\qoffscreen.dll") $Platforms -Force
 foreach ($dir in @((Split-Path $App), (Split-Path $Cli))) {
     Copy-Item "$OrtRoot\lib\*.dll" $dir -Force
     Copy-Item $DmlDll.FullName $dir -Force
