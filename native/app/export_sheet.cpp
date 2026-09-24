@@ -13,6 +13,7 @@
 #include <QVBoxLayout>
 
 #include <functional>
+#include <map>
 
 #include "main_window.hpp"
 
@@ -35,9 +36,7 @@ public:
         setProperty("role", "tile");
         setAttribute(Qt::WA_StyledBackground, true);
         setFixedHeight(84);
-        setEnabled(offered);
-        setCursor(offered ? Qt::PointingHandCursor : Qt::ArrowCursor);
-        if (!offered) setToolTip("Arrives with video delivery; rudra deliver writes it from the command line today.");
+        set_offered(offered);
         auto* v = new QVBoxLayout(this);
         v->setContentsMargins(12, 10, 12, 10);
         v->setSpacing(3);
@@ -48,6 +47,13 @@ public:
         v->addWidget(s);
     }
     std::function<void()> picked;
+    void set_offered(bool offered) {
+        setEnabled(offered);
+        setCursor(offered ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        setToolTip(offered ? QString()
+                           : "For a movie: open one and it goes to the queue. A folder of frames goes out as EXR here, "
+                             "and to HDR10 or ProRes with rudra-native deliver.");
+    }
     void set_on(bool on) {
         setProperty("on", on);
         style()->unpolish(this);
@@ -94,6 +100,7 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     int col = 0;
     for (const auto& f : formats) {
         auto* t = new Tile(f.id, f.name, f.sub, f.offered, tiles);
+        tiles_[f.id] = t;
         const QString id = f.id;
         t->picked = [this, id] { pick(id); };
         tg->addWidget(t, 0, col++);
@@ -152,6 +159,11 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     fh->setContentsMargins(0, 8, 0, 0);
     fh->setSpacing(10);
     fh->addStretch(1);
+    auto* queue = new QPushButton("Queue", foot);
+    queue->setObjectName("exportQueue");
+    queue->setToolTip("The exports queued, with their progress");
+    connect(queue, &QPushButton::clicked, this, [this] { w_->open_queue_window(); });
+    fh->insertWidget(0, queue);
     auto* cancel = new QPushButton("Cancel", foot);
     cancel->setObjectName("exportCancel");
     auto* go = new QPushButton("Export", foot);
@@ -165,7 +177,17 @@ ExportSheet::ExportSheet(MainWindow* w) : QDialog(w), w_(w) {
     refresh();
 }
 
+namespace {
+bool is_video_format(const QString& id) { return id == "hdr10" || id == "hlg" || id == "prores"; }
+}  // namespace
+
 void ExportSheet::pick(const QString& id) {
+    if (is_video_format(id)) {
+        if (!w_->shot_is_video()) return;
+        picked_ = id;
+        refresh();
+        return;
+    }
     if (id != "exr-aces" && id != "exr-linear") return;
     picked_ = id;
     // The container is the session's: the same switch as Deliver > container.
@@ -174,7 +196,10 @@ void ExportSheet::pick(const QString& id) {
 }
 
 void ExportSheet::refresh() {
-    picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
+    const bool movie = w_->shot_is_video();
+    for (const char* id : {"hdr10", "hlg", "prores"})
+        if (auto it = tiles_.find(id); it != tiles_.end()) static_cast<Tile*>(it->second)->set_offered(movie);
+    if (!(movie && is_video_format(picked_))) picked_ = w_->container() == "linear" ? "exr-linear" : "exr-aces";
     for (const char* id : {"exr-aces", "exr-linear", "hdr10", "hlg", "prores"})
         if (auto* t = findChild<QWidget*>(id)) {
             t->setProperty("on", picked_ == id);
@@ -182,24 +207,43 @@ void ExportSheet::refresh() {
             t->style()->polish(t);
         }
     const auto& frames = w_->frames();
-    const QString shot = frames.empty() ? QStringLiteral("no shot")
-                         : frames.size() > 1 ? QString::fromStdString(frames.front().parent_path().filename().string())
-                                             : QString::fromStdString(frames.front().filename().string());
+    const QString shot = frames.empty() ? QStringLiteral("no shot") : w_->shot_title();
     title_->setText("Export " + shot);
     sub_->setText(QStringLiteral("%1 frame%2 loaded").arg(frames.size()).arg(frames.size() == 1 ? "" : "s"));
-    signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · half" : "Scene linear · Rec.2020 · half");
-    auto* mode = w_->findChild<QComboBox*>("renderMode");
-    const bool sequence = mode && mode->currentData().toString() == "sequence";
-    frames_->setText(sequence ? QStringLiteral("All %1, as a sequence").arg(frames.size()) : QStringLiteral("The frame on screen"));
     const QString dir = w_->findChild<QLineEdit*>("renderDir")->text().trimmed();
     const QString name = w_->findChild<QLineEdit*>("renderName")->text().trimmed();
-    dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
-                                 : QDir::toNativeSeparators(dir) + QDir::separator() + name +
-                                       (sequence ? QStringLiteral(".######.exr") : QStringLiteral(".exr")));
+    if (is_video_format(picked_)) {
+        signal_->setText(picked_ == "hdr10"  ? "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata"
+                         : picked_ == "hlg" ? "HLG · Rec.2020 · HEVC 10-bit"
+                                            : "PQ · Rec.2020 · ProRes 422 HQ 10-bit");
+        frames_->setText(QStringLiteral("All %1, as a movie with its audio").arg(frames.size()));
+        const QString file = (name.isEmpty() ? QString::fromStdString(w_->shot_video()->path.stem().string()) + "_" +
+                                                   (picked_ == "prores" ? QString("prores422hq") : picked_)
+                                             : name) +
+                             (picked_ == "prores" ? ".mov" : ".mp4");
+        dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
+                                     : QDir::toNativeSeparators(dir) + QDir::separator() + file);
+    } else {
+        signal_->setText(picked_ == "exr-aces" ? "Scene linear · AP0 · half" : "Scene linear · Rec.2020 · half");
+        auto* mode = w_->findChild<QComboBox*>("renderMode");
+        const bool sequence = mode && mode->currentData().toString() == "sequence";
+        frames_->setText(sequence ? QStringLiteral("All %1, as a sequence").arg(frames.size()) : QStringLiteral("The frame on screen"));
+        dest_->setText(dir.isEmpty() ? QStringLiteral("choose a folder on the Deliver tab")
+                                     : QDir::toNativeSeparators(dir) + QDir::separator() + name +
+                                           (sequence ? QStringLiteral(".######.exr") : QStringLiteral(".exr")));
+    }
     if (auto* go = findChild<QPushButton*>("exportGo")) go->setEnabled(!dir.isEmpty() && !frames.empty());
 }
 
 void ExportSheet::export_now() {
+    if (is_video_format(picked_)) {
+        const QString fmt = picked_ == "prores" ? QString("prores422hq") : picked_;
+        if (w_->queue_video_export(fmt)) {
+            accept();
+            w_->open_queue_window();
+        }
+        return;
+    }
     accept();
     w_->run("master");
 }

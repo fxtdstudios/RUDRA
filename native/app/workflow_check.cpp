@@ -283,6 +283,47 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         o["folder"] = a.out;
         step("master", o, ok);
     }
+    if (!a.movie.isEmpty()) {
+        // Phase 4: the movie as a shot, every frame delivered, then HDR10 through the queue.
+        QJsonObject o;
+        QElapsedTimer t;
+        t.start();
+        w.open_source(a.movie);
+        const int count = int(w.frame_count());
+        bool ok = w.shot_is_video() && count > 0;
+        int delivered = 0;
+        for (int i = 0; ok && i < count; ++i) {
+            if (i) w.run("next");
+            if (wait_for([&] { return w.current_index() == i && w.frame_fields(); }, 120000)) ++delivered;
+        }
+        o["frames"] = count;
+        o["delivered"] = delivered;
+        o["scrub_s"] = double(t.elapsed()) / 1000.0;
+        ok = ok && delivered == count;
+        const QString name = "workflow_movie_hdr10";
+        w.findChild<QLineEdit*>("renderDir")->setText(a.out);
+        w.findChild<QLineEdit*>("renderName")->setText(name);
+        QElapsedTimer e;
+        e.start();
+        const bool queued = ok && w.queue_video_export("hdr10");
+        const QString master = QDir(a.out).filePath(name + ".mp4");
+        bool passed = false;
+        if (queued) {
+            wait_for([&] { return !w.video_queues().running(); }, 3600000);
+            QFile side(master + ".json");
+            if (side.open(QIODevice::ReadOnly)) {
+                const auto doc = QJsonDocument::fromJson(side.readAll()).object();
+                passed = doc["qc"].toObject()["passed"].toBool();
+                o["max_cll"] = doc["max_cll"];
+                o["max_fall"] = doc["max_fall"];
+            }
+        }
+        o["queued"] = queued;
+        o["master"] = master;
+        o["qc_passed"] = passed;
+        o["export_s"] = double(e.elapsed()) / 1000.0;
+        step("movie", o, ok && queued && passed && QFile::exists(master));
+    }
     report["total_s"] = double(total.elapsed()) / 1000.0;
     return finish();
 }

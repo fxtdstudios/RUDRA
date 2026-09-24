@@ -1,5 +1,7 @@
 #include "main_window.hpp"
 
+#include "rudra/video/ffmpeg_check.hpp"
+
 #include <QActionGroup>
 #include <QApplication>
 #include <QDialog>
@@ -167,6 +169,9 @@ MainWindow::MainWindow(bool with_viewer) {
 }
 
 MainWindow::~MainWindow() {
+    queues_->finished = nullptr;
+    queues_->stop();      // a running export is left interrupted, as Ctrl+C leaves it
+    queues_.reset();
     if (model_worker_.joinable()) model_worker_.join();   // a package still loading
     master_job_.reset();   // cancels and waits: it uses the backend
     play_.stop();
@@ -715,22 +720,32 @@ void MainWindow::open_source(const QString& preset, bool folder) {
     QString path = preset;
     if (path.isEmpty())
         path = folder ? QFileDialog::getExistingDirectory(this, "Open a folder of SDR frames")
-                      : QFileDialog::getOpenFileName(this, "Open an SDR still", {},
-                                                     "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)");
+                      : QFileDialog::getOpenFileName(this, "Open an SDR still or movie", {},
+                                                     "Stills and movies (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp "
+                                                     "*.mov *.mp4 *.mxf *.mkv *.avi *.m2ts *.ts *.webm *.m4v)");
     if (path.isEmpty()) return;
     std::vector<std::filesystem::path> frames;
-    if (QFileInfo(path).isDir()) {
+    std::optional<FrameSequence> video;
+    const std::string suffix = QFileInfo(path).suffix().toLower().prepend('.').toStdString();
+    const bool movie = QFileInfo(path).isFile() &&
+                       std::find(video_suffixes().begin(), video_suffixes().end(), suffix) != video_suffixes().end();
+    if (QFileInfo(path).isDir() || movie) {
+        // A folder of frames, or a movie read a frame at a time as the Studio reads it.
         auto seq = open_sequence(path.toStdString());
         if (!seq) {
             log(QString::fromStdString(seq.error().message));
             return;
         }
         frames = seq->frames;
+        if (seq->kind == "video") video = std::move(*seq);
     } else {
         frames = {std::filesystem::path(path.toStdString())};
     }
     remember_source(path);
+    shot_video_ = std::move(video);
     start_engine(std::move(frames));
+    if (shot_video_)
+        log(QStringLiteral("opened %1: %2 frames at %3 fps").arg(shot_title()).arg(frame_count()).arg(*shot_video_->fps, 0, 'g', 6));
 #else
     (void)preset;
     (void)folder;
@@ -744,6 +759,7 @@ void MainWindow::close_frames() {
     engine_.reset();
     ++engine_gen_;
     frames_.clear();
+    shot_video_.reset();
     current_ = 0;
     frame_info_.clear();
     current_frame_.reset();
@@ -775,7 +791,9 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     engine_ = std::make_unique<FrameEngine>(
         [files, sizes = source_sizes_, side = preview_max_side_](int i) -> Result<SdrImage> {
 #ifdef RUDRA_HAVE_STILL_DECODE
-            auto d = decode_sdr_file(files[std::size_t(i)]);
+            auto file = ensure_frame_file(files[std::size_t(i)]);   // a movie's frame is extracted on first use
+            if (!file) return file.error();
+            auto d = decode_sdr_file(*file);
             if (!d) return d.error();
             {
                 std::lock_guard lock(sizes->mu);
@@ -843,7 +861,7 @@ void MainWindow::toggle_play() {
 void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     if (f.index != current_) return;   // the engine already dropped stale ones; this is the UI's own check
     waiting_ = false;
-    const QString name = QString::fromStdString(frames_[std::size_t(f.index)].filename().string());
+    const QString name = QString::fromStdString(frame_name(std::size_t(f.index)));
     if (f.error) {
         log(name + ": " + QString::fromStdString(f.error->message));
         return;
@@ -944,15 +962,16 @@ void MainWindow::sync_ui() {
             title->setText("No shot open");
             sub->setText("Drop frames, or open a folder");
         } else {
-            const auto& first = frames_.front();
-            const bool folder = n > 1;
-            title->setText(QString::fromStdString(folder ? first.parent_path().filename().string()
-                                                         : first.filename().string()));
+            title->setText(shot_title());
             QString res;
             if (current_frame_ && current_frame_->header.source_resolution)
                 res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7)) +
                       QStringLiteral(" \u00b7 ");
-            sub->setText(res + QStringLiteral("%1 frame%2 \u00b7 24 fps \u00b7 Rec.709").arg(n).arg(n == 1 ? "" : "s"));
+            const double fps = shot_video_ ? shot_video_->fps.value_or(24.0) : 24.0;
+            sub->setText(res + QStringLiteral("%1 frame%2 \u00b7 %3 fps \u00b7 Rec.709")
+                                   .arg(n)
+                                   .arg(n == 1 ? "" : "s")
+                                   .arg(QString::number(fps, 'g', 5)));
         }
     }
     shot_count_->setText(QString::number(n));
@@ -1260,7 +1279,9 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     if (!prepare) {
 #ifdef RUDRA_HAVE_STILL_DECODE
         prepare = [sources, backend = backend_.get(), mu = backend_mutex_](std::size_t i) -> Result<MasterFrame> {
-            auto d = decode_sdr_file(sources[i]);
+            auto file = ensure_frame_file(sources[i]);
+            if (!file) return file.error();
+            auto d = decode_sdr_file(*file);
             if (!d) return d.error();
             std::lock_guard lock(*mu);
             auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
@@ -1334,7 +1355,7 @@ std::string MainWindow::delivery_text() const {
         if (manifest_) d.checkpoint = manifest_->name;
         d.resolution = current_frame_->header.resolution;
     }
-    if (!frames_.empty()) d.frame = frames_[std::size_t(current_)].filename().string();
+    if (!frames_.empty()) d.frame = frame_name(std::size_t(current_));
     d.aces = session_.container == "aces";
     d.mode = session_.grade.mode;
     d.strength = session_.grade.strength;
@@ -1368,7 +1389,14 @@ void MainWindow::open_paths(const QStringList& paths) {
             else open_source(p, true);
             return;   // one folder is one shot, or one model
         }
-        if (fi.isFile()) files.emplace_back(p.toStdString());
+        if (fi.isFile()) {
+            const std::string suf = fi.suffix().toLower().prepend('.').toStdString();
+            if (std::find(video_suffixes().begin(), video_suffixes().end(), suf) != video_suffixes().end()) {
+                open_source(p);   // a movie is a shot of its own
+                return;
+            }
+            files.emplace_back(p.toStdString());
+        }
     }
     add_files(files);
 }
@@ -1457,6 +1485,14 @@ void MainWindow::save_settings() const {
     if (auto* e = findChild<QLineEdit*>("renderName")) st.setValue("deliver/renderName", e->text());
     if (auto* c = findChild<QComboBox*>("renderMode")) st.setValue("deliver/renderMode", c->currentIndex());
     if (auto* sb = findChild<QSpinBox*>("renderStart")) st.setValue("deliver/renderStart", sb->value());
+    save_queues();
+}
+
+void MainWindow::save_queues() const {
+    QStringList q;
+    for (const auto& e : queues_->entries())
+        q << QString::fromStdString(e.queue.string()) + "\t" + QString::fromStdString(e.title);
+    QSettings().setValue("queue/entries", q);
 }
 
 void MainWindow::restore_settings() {
@@ -1480,6 +1516,15 @@ void MainWindow::restore_settings() {
         cb->setCurrentIndex(st.value("deliver/renderMode").toInt());
     if (auto* sb = findChild<QSpinBox*>("renderStart"); sb && st.contains("deliver/renderStart"))
         sb->setValue(st.value("deliver/renderStart").toInt());
+    {   // the exports queued before: listed again, their state read from their files
+        std::vector<QueueEntry> entries;
+        for (const QString& line : st.value("queue/entries").toStringList()) {
+            const auto parts = line.split('\t');
+            if (parts.size() == 2 && QFileInfo(parts[0]).isFile())
+                entries.push_back({parts[0].toStdString(), parts[1].toStdString()});
+        }
+        queues_->set_entries(std::move(entries));
+    }
     sync_checks();
     sync_ui();
 }
@@ -1575,12 +1620,12 @@ void MainWindow::refresh_library() {
     if (!frames_.empty()) {
         const bool folder = frames_.size() > 1;
         const auto& first = frames_.front();
-        current = QString::fromStdString((folder ? first.parent_path() : first).string());
+        current = QString::fromStdString(shot_video_ ? shot_video_->path.string() : (folder ? first.parent_path() : first).string());
         QString res;
         if (current_frame_ && current_frame_->header.source_resolution)
             res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7)) + " · ";
         const bool hdr = measure_ && measure_->measured.metrics.maxcll > 203.0;
-        add_row(QString::fromStdString(folder ? first.parent_path().filename().string() : first.filename().string()),
+        add_row(shot_title(),
                 res + QStringLiteral("%1 f").arg(frames_.size()), scrub_->count() ? thumb_of_first() : QImage(), true,
                 hdr, {});
         ++rows;
@@ -1649,6 +1694,106 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
 
 void MainWindow::log(const QString& line) {
     if (log_) log_->appendPlainText(line);
+}
+
+}  // namespace rudra::app
+
+// ---------------------------------------------------------------------------
+// Phase 4 step 11: movies and their exports
+// ---------------------------------------------------------------------------
+
+namespace rudra::app {
+
+QString MainWindow::shot_title() const {
+    if (frames_.empty()) return {};
+    if (shot_video_) return QString::fromStdString(shot_video_->path.filename().string());
+    const auto& first = frames_.front();
+    return QString::fromStdString(frames_.size() > 1 ? first.parent_path().filename().string() : first.filename().string());
+}
+
+std::string MainWindow::frame_name(std::size_t i) const {
+    if (shot_video_ && i < std::size_t(shot_video_->count())) return shot_video_->name_of(int(i));
+    return i < frames_.size() ? frames_[i].filename().string() : std::string();
+}
+
+VideoQueueOptions MainWindow::queue_options() const {
+    VideoQueueOptions o;
+    if (backend_choice_) {
+        o.runtime = to_string(backend_choice_->runtime);
+        o.device = backend_choice_->device;
+    }
+    return o;
+}
+
+bool MainWindow::queue_video_export(const QString& format) {
+    auto say = [this](const QString& m) {
+        log(m);
+        if (auto* status = findChild<QLabel*>("renderStatus")) {
+            status->setText(m);
+            status->setVisible(!m.isEmpty());
+        }
+    };
+    if (!shot_video_) {
+        say("Open a movie to export it to HDR10, HLG or ProRes.");
+        return false;
+    }
+    if (!manifest_) {
+        say("Open a model package first.");
+        return false;
+    }
+    const QString dir = findChild<QLineEdit*>("renderDir")->text().trimmed();
+    if (dir.isEmpty()) {
+        say("Choose a render folder first.");
+        return false;
+    }
+    QString name = findChild<QLineEdit*>("renderName")->text().trimmed();
+    if (name.isEmpty()) name = QString::fromStdString(shot_video_->path.stem().string()) + "_" + format;
+    const bool prores = format.startsWith("prores");
+    const std::filesystem::path output =
+        std::filesystem::path(dir.toStdString()) / (name.toStdString() + (prores ? ".mov" : ".mp4"));
+    std::error_code ec;
+    std::filesystem::path sidecar = output;
+    sidecar += ".json";
+    if (std::filesystem::exists(output, ec) || std::filesystem::exists(sidecar, ec)) {
+        say(QString::fromStdString(output.filename().string()) + " is already there; nothing is replaced. Change the name.");
+        return false;
+    }
+    // What this ffmpeg can do, before anything is written.
+    auto caps = probe_ffmpeg();
+    if (!caps) {
+        say(QString::fromStdString(caps.error().message));
+        return false;
+    }
+    const bool can = caps->zscale && (prores ? caps->prores_ks : caps->libx265);
+    if (!can) {
+        say(QString::fromStdString(std::string("This FFmpeg build needs ") + (prores ? "prores_ks" : "libx265") +
+                                   " and zscale support (" + caps->version + ")"));
+        return false;
+    }
+    auto queue = write_export_queue(shot_video_->path, output, manifest_->root / "manifest.json", format.toStdString());
+    if (!queue) {
+        say(QString::fromStdString(queue.error().message));
+        return false;
+    }
+    const QString label = format == "hdr10" ? "HDR10" : format == "hlg" ? "HLG" : "ProRes 422 HQ";
+    const std::string title = shot_title().toStdString() + " \xe2\x86\x92 " + label.toStdString() + ", " + output.filename().string();
+    queues_->run({*queue, title}, queue_options());
+    save_queues();
+    say("Queued " + label + ": " + QString::fromStdString(output.string()));
+    return true;
+}
+
+void MainWindow::resume_queue(const std::filesystem::path& queue) {
+    for (const auto& e : queues_->entries())
+        if (e.queue == queue) {
+            queues_->run(e, queue_options(), true);   // a failed job is tried again, an interrupted one restarts
+            return;
+        }
+}
+
+void MainWindow::forget_queue(const std::filesystem::path& queue) {
+    queues_->forget(queue);
+    save_queues();
 }
 
 }  // namespace rudra::app

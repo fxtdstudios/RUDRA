@@ -32,6 +32,8 @@
 #include "rudra/engine/model_catalog.hpp"
 #include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
+#include "rudra/media/sequence.hpp"
+#include "video_queues.hpp"
 
 class QAction;
 class QLabel;
@@ -99,8 +101,22 @@ public:
     // package used last (on its backend), else the catalog's pick.
     void boot();
     void open_model_manager();
-    // The export sheet (the Pro boards): format, frames, destination, then Master EXR.
+    // The export sheet (the Pro boards): format, frames, destination, then Master
+    // EXR, or for a movie an HDR10, HLG or ProRes export as a queue job.
     void open_export_sheet();
+    // Phase 4 step 11: a movie as a shot, and its exports as queue jobs.
+    bool shot_is_video() const { return shot_video_.has_value(); }
+    const std::optional<FrameSequence>& shot_video() const { return shot_video_; }
+    QString shot_title() const;                  // the movie, the folder or the still
+    std::string frame_name(std::size_t i) const; // what the Frames rail and a master call frame i
+    // HDR10, HLG or ProRes 422 HQ of the movie on screen, to the Deliver tab's
+    // folder and name: checked against this ffmpeg, written as a queue file
+    // (rudra/batch.py's format) and run; false with the reason logged when it cannot be.
+    bool queue_video_export(const QString& format);
+    void open_queue_window();
+    VideoQueues& video_queues() { return *queues_; }
+    void resume_queue(const std::filesystem::path& queue);
+    void forget_queue(const std::filesystem::path& queue);
     void open_first_run();
     // A still, or a folder of frames: both are a sequence to the engine.
     void open_source(const QString& preset = {}, bool folder = false);
@@ -213,7 +229,11 @@ private:
     std::optional<std::pair<QString, bool>> pending_source_;   // a shot asked for while the model loads
     QImage first_thumb_;
     QImage thumb_of_first() const;
-    QPointer<QDialog> export_sheet_;
+    QPointer<QDialog> export_sheet_, queue_window_;
+    std::optional<FrameSequence> shot_video_;
+    std::unique_ptr<VideoQueues> queues_ = std::make_unique<VideoQueues>();
+    VideoQueueOptions queue_options() const;
+    void save_queues() const;
 
     void start_engine(std::vector<std::filesystem::path> frames, int at = 0);
     struct LoadedModel;

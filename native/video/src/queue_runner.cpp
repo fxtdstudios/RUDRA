@@ -13,6 +13,9 @@ namespace fs = std::filesystem;
 
 Result<ModelManifest> package_for_checkpoint(const fs::path& checkpoint, const std::optional<fs::path>& explicit_package,
                                              const std::vector<fs::path>& roots) {
+    // The app's own queues name the package itself (its manifest.json): the
+    // app has the package, not always the .pt it was exported from.
+    if (checkpoint.filename() == "manifest.json" && !explicit_package) return read_manifest(checkpoint.parent_path());
     auto sha = sha256_file(checkpoint);
     if (!sha) return make_error(ErrorCode::NotFound, "[Errno 2] No such file or directory: '" + checkpoint.string() + "'");
     if (explicit_package) {

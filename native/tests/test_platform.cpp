@@ -26,6 +26,13 @@ TEST(Xxh64, ReferenceVectors) {
     EXPECT_EQ(xxh64(bytes(long_input), 7), 0xb1e10f6c5294cd6bULL);   // exercises the 32-byte stripes
 }
 
+TEST(Sha1, Fips180Vectors) {
+    EXPECT_EQ(sha1_hex(bytes("")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    EXPECT_EQ(sha1_hex(bytes("abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    EXPECT_EQ(sha1_hex(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
+              "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+}
+
 TEST(Sha256, Fips180Vectors) {
     EXPECT_EQ(sha256_hex(bytes("")), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     EXPECT_EQ(sha256_hex(bytes("abc")), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");

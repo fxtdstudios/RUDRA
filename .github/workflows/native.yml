@@ -83,8 +83,8 @@ jobs:
         # so only the Python's verdicts (video/index.json) must not move.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
+          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
       - name: Configure
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
@@ -115,7 +115,7 @@ jobs:
         # against what the Python on this runner computes.
         run: |
           python tools/emit_golden.py
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API

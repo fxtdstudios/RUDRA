@@ -21,7 +21,8 @@ namespace rudra {
 
 // The package exported from `checkpoint`: `explicit_package` when given (and
 // it must match), else the first under `roots` (each root and its immediate
-// folders) whose manifest names the checkpoint's SHA-256.
+// folders) whose manifest names the checkpoint's SHA-256. A checkpoint that is
+// a package's manifest.json (the app's queues) is that package.
 Result<ModelManifest> package_for_checkpoint(const std::filesystem::path& checkpoint,
                                              const std::optional<std::filesystem::path>& explicit_package,
                                              const std::vector<std::filesystem::path>& roots);

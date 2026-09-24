@@ -8,7 +8,7 @@
 //   RUDRA --theme-check out.json      the fonts, weights and style as resolved here
 //   RUDRA --grab out.png [...]        the window as drawn, then quit
 //   RUDRA --tab grade|deliver ...     open on that inspector tab
-//   RUDRA --workflow-check report.json --package P --frames DIR [--backend libtorch/cuda] [--out DIR]
+//   RUDRA --workflow-check report.json --package P --frames DIR [--backend libtorch/cuda] [--out DIR] [--movie CLIP]
 //                                     the Studio workflow, scripted, in this window (Phase 3 step 12)
 
 #include <QApplication>
@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
         wa.frames = value("--frames");
         wa.backend = value("--backend");
         wa.out = value("--out", QDir::temp().filePath("rudra-workflow-masters"));
+        wa.movie = value("--movie");
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::temp().filePath("rudra-workflow-settings"));
         QSettings().clear();

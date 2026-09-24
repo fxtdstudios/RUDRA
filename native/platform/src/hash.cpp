@@ -196,4 +196,37 @@ const char* to_string(ErrorCode code) noexcept {
     return "unknown";
 }
 
+std::string sha1_hex(std::span<const std::byte> data) {
+    std::uint32_t h[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+    std::vector<std::uint8_t> m(data.size());
+    for (std::size_t i = 0; i < data.size(); ++i) m[i] = static_cast<std::uint8_t>(data[i]);
+    const std::uint64_t bits = static_cast<std::uint64_t>(m.size()) * 8;
+    m.push_back(0x80);
+    while (m.size() % 64 != 56) m.push_back(0);
+    for (int i = 7; i >= 0; --i) m.push_back(static_cast<std::uint8_t>(bits >> (8 * i)));
+    auto rol = [](std::uint32_t x, int n) { return (x << n) | (x >> (32 - n)); };
+    for (std::size_t off = 0; off < m.size(); off += 64) {
+        std::uint32_t w[80];
+        for (int i = 0; i < 16; ++i)
+            w[i] = (std::uint32_t(m[off + 4 * i]) << 24) | (std::uint32_t(m[off + 4 * i + 1]) << 16) |
+                   (std::uint32_t(m[off + 4 * i + 2]) << 8) | std::uint32_t(m[off + 4 * i + 3]);
+        for (int i = 16; i < 80; ++i) w[i] = rol(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1);
+        std::uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
+        for (int i = 0; i < 80; ++i) {
+            std::uint32_t f, k;
+            if (i < 20) f = (b & c) | (~b & d), k = 0x5A827999u;
+            else if (i < 40) f = b ^ c ^ d, k = 0x6ED9EBA1u;
+            else if (i < 60) f = (b & c) | (b & d) | (c & d), k = 0x8F1BBCDCu;
+            else f = b ^ c ^ d, k = 0xCA62C1D6u;
+            const std::uint32_t t = rol(a, 5) + f + e + k + w[i];
+            e = d, d = c, c = rol(b, 30), b = a, a = t;
+        }
+        h[0] += a, h[1] += b, h[2] += c, h[3] += d, h[4] += e;
+    }
+    std::uint8_t out[20];
+    for (int i = 0; i < 5; ++i)
+        for (int j = 0; j < 4; ++j) out[4 * i + j] = static_cast<std::uint8_t>(h[i] >> (24 - 8 * j));
+    return to_hex(out);
+}
+
 }  // namespace rudra

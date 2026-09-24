@@ -204,12 +204,12 @@
     {
       "name": "video_upper",
       "raw": "<root>/clip.MOV",
-      "video": true
+      "error": "ffprobe found no video frames in clip.MOV"
     },
     {
       "name": "video",
       "raw": "<root>/clip.mp4",
-      "video": true
+      "error": "ffprobe found no video frames in clip.mp4"
     }
   ]
 }

@@ -6,9 +6,10 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp workflow_check.cpp workflow_check.hpp theme.cpp theme.hpp)
+add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp model_dialogs.cpp model_dialogs.hpp export_sheet.cpp export_sheet.hpp video_queues.cpp video_queues.hpp queue_window.cpp queue_window.hpp workflow_check.cpp workflow_check.hpp theme.cpp theme.hpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets rudra::rudra_engine rudra::rudra_infer)
+target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets rudra::rudra_engine rudra::rudra_infer rudra::rudra_video
+                      PRIVATE nlohmann_json::nlohmann_json)
 if(TARGET rudra_render_gpu)
   target_link_libraries(rudra_app_ui PUBLIC rudra::rudra_render_gpu)
   target_compile_definitions(rudra_app_ui PUBLIC RUDRA_APP_VIEWER)

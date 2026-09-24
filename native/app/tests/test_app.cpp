@@ -35,6 +35,11 @@
 #include <QTest>
 #include <QTreeWidget>
 
+#include "export_sheet.hpp"
+#include "queue_window.hpp"
+#include "rudra/deliver/queue.hpp"
+#include "rudra/platform/process.hpp"
+
 #include <cstdio>
 #include <functional>
 #include <QTextDocumentFragment>
@@ -389,8 +394,9 @@ TEST(AppLayout, ShownAndHiddenAsThePageIsInEveryState) {
                     shown = shown || win.shown(q);
                 }
             EXPECT_TRUE(any) << state << ": no label " << want.toStdString();
-            if (page == "Region EV" || page == "Waveform" || page == "Histogram" || page == "Vectorscope")
+            if (page == "Region EV" || page == "Waveform" || page == "Histogram" || page == "Vectorscope") {
                 EXPECT_EQ(shown, l["shown"].get<bool>()) << state << ": " << page;
+            }
         }
         std::vector<std::pair<std::string, bool>> nwant, ngot;
         for (const auto& l : snap["notes"]) nwant.emplace_back(l["text"], l["shown"]);
@@ -400,7 +406,7 @@ TEST(AppLayout, ShownAndHiddenAsThePageIsInEveryState) {
         ASSERT_EQ(ngot.size(), nwant.size()) << state;
         for (std::size_t i = 0; i < ngot.size(); ++i) {
             EXPECT_EQ(ngot[i].second, nwant[i].second) << state << ": note " << i;
-            if (i < 2) EXPECT_EQ(ngot[i].first, nwant[i].first) << state << ": note " << i;   // the Deliver note is the board's
+            if (i < 2) { EXPECT_EQ(ngot[i].first, nwant[i].first) << state << ": note " << i; }   // the Deliver note is the board's
         }
     }
 }
@@ -530,7 +536,7 @@ TEST(AppLayout, TheFrameIsTheProBoards) {
         // The compare bar sits in the middle of the surround when the badges
         // leave it room, and between them always.
         const auto hud = box("hud"), hdr = box("hdrBadge"), cll = box("cllBadgeWrap");
-        if (!rails) EXPECT_LE(std::abs((hud[0] + hud[2] / 2) - (tools[0] + tools[2] / 2)), 2) << state;
+        if (!rails) { EXPECT_LE(std::abs((hud[0] + hud[2] / 2) - (tools[0] + tools[2] / 2)), 2) << state; }
         EXPECT_GE(hud[0], hdr[0] + hdr[2]) << state;
         EXPECT_LE(hud[0] + hud[2], cll[0]) << state;
     }
@@ -1254,7 +1260,7 @@ bool use(app::MainWindow& w, const std::filesystem::path& p, QString* why = null
     return result.value_or(false);
 }
 
-QString text_of(app::MainWindow& w, const char* id) {
+QString text_of(QWidget& w, const char* id) {
     auto* l = w.findChild<QLabel*>(id);
     return l ? l->text() : QString("<no %1>").arg(id);
 }
@@ -1708,6 +1714,118 @@ TEST(AppWorkflow, TheScriptedWorkflowPassesAndReportsEveryStep) {
     EXPECT_EQ(q->checkpoint, "beta");
     EXPECT_EQ(q->recovery_mode, "highlights");
     EXPECT_NEAR(q->strength, 1.2, 1e-12);
+}
+#endif
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Phase 4 step 11: a movie is a shot, read a frame at a time; its exports go to
+// the queue as batch.py queues, shown in the queue window to their end.
+namespace {
+std::filesystem::path movie(const char* clip) { return std::filesystem::path(RUDRA_GOLDEN_DIR) / "video" / "clips" / clip; }
+bool have_ffmpeg() { return rudra::find_executable("ffmpeg") && rudra::find_executable("ffprobe"); }
+}  // namespace
+
+TEST(AppVideo, AMovieOpensAsAShotAndScrubs) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "movie");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    // A drop of a movie opens it as its own shot.
+    drop(w, {QString::fromStdString(movie("bars_709.mp4").string())});
+    ASSERT_TRUE(w.shot_is_video());
+    EXPECT_EQ(w.frame_count(), 6u);
+    EXPECT_EQ(w.shot_title(), "bars_709.mp4");
+    EXPECT_EQ(w.frame_name(0), "bars_709_000001");
+    EXPECT_EQ(w.frame_name(5), "bars_709_000006");
+    EXPECT_TRUE(last_log(w).startsWith("opened bars_709.mp4: 6 frames at 23.976"));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.width() == 64; }));
+    EXPECT_EQ(text_of(w, "shotTitle"), "bars_709.mp4");
+    EXPECT_TRUE(text_of(w, "shotSub").contains("6 frames") && text_of(w, "shotSub").contains("23.976 fps")) << text_of(w, "shotSub").toStdString();
+    // Scrub to the last frame: extracted on demand, delivered as itself.
+    w.run("last");
+    ASSERT_TRUE(wait_for([&] { return w.current_index() == 5 && std::filesystem::is_regular_file(w.frames()[5]); }));
+    EXPECT_EQ(w.frames()[5].filename(), "000005.png");   // the Studio's cache name
+    // A folder after it: no longer a movie.
+    w.open_source(QString::fromStdString(decode_dir().string()));
+    EXPECT_FALSE(w.shot_is_video());
+    EXPECT_EQ(w.frame_name(0), w.frames()[0].filename().string());
+}
+
+TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
+    if (!have_ffmpeg()) GTEST_SKIP() << "ffmpeg and ffprobe are not on PATH";
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "export-movie");
+    ASSERT_TRUE(use(w, m->root / "beta"));
+    const auto out = fresh_dir("export-movie-out");
+    std::filesystem::create_directories(out);
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(out.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("sh010");
+    // Stills: the video tiles are shown, not offered.
+    w.add_files({decode_dir() / "png8_rgb.png"});
+    w.open_export_sheet();
+    auto* sheet = static_cast<app::ExportSheet*>(w.findChild<QDialog*>("exportSheet"));
+    ASSERT_NE(sheet, nullptr);
+    EXPECT_FALSE(sheet->findChild<QWidget*>("hdr10")->isEnabled());
+    sheet->pick("hdr10");
+    EXPECT_EQ(sheet->picked(), "exr-aces");
+    sheet->close();
+    // A movie: the tiles are live, the sheet says what the file will be.
+    w.open_source(QString::fromStdString(movie("h264_709_audio.mp4").string()));
+    ASSERT_TRUE(w.shot_is_video());
+    w.open_export_sheet();
+    EXPECT_TRUE(sheet->findChild<QWidget*>("hdr10")->isEnabled());
+    sheet->pick("hdr10");
+    EXPECT_EQ(sheet->picked(), "hdr10");
+    EXPECT_EQ(text_of(*sheet, "exportFrames"), "All 6, as a movie with its audio");
+    EXPECT_TRUE(text_of(*sheet, "exportDest").endsWith("sh010.mp4"));
+    EXPECT_EQ(text_of(*sheet, "exportSignal"), "PQ · Rec.2020 · HEVC 10-bit · HDR10 metadata");
+    sheet->export_now();
+    // The queue file, in batch.py's format, beside the master to be.
+    const auto queue = out / "sh010.hdr10.queue.json";
+    ASSERT_TRUE(std::filesystem::exists(queue));
+    {
+        std::ifstream in(queue);
+        const json q = json::parse(in);
+        EXPECT_EQ(q["version"], 1);
+        EXPECT_EQ(std::filesystem::path(q["defaults"]["checkpoint"].get<std::string>()).filename(), "manifest.json");
+        EXPECT_EQ(q["jobs"][0]["options"]["format"], "hdr10");
+        EXPECT_EQ(std::filesystem::path(q["jobs"][0]["output"].get<std::string>()), out / "sh010.mp4");
+        EXPECT_TRUE(rudra::load_queue(queue).ok());   // what the Python and the native runner both read
+    }
+    auto* qw = w.findChild<QDialog*>("queueWindow");
+    ASSERT_NE(qw, nullptr);
+    EXPECT_TRUE(qw->isVisible());
+    // The fakes cannot run a package, so the job fails; the window says why and offers Resume.
+    ASSERT_TRUE(wait_for([&] { return !w.video_queues().running() && app::read_queue_state(queue).status == "failed"; }));
+    static_cast<app::QueueWindow*>(qw)->refresh();
+    auto* row = qw->findChild<QWidget*>("queueRow");
+    ASSERT_NE(row, nullptr);
+    EXPECT_TRUE(row->findChild<QLabel*>("queueStatus")->text().startsWith("Failed: ")) << row->findChild<QLabel*>("queueStatus")->text().toStdString();
+    EXPECT_TRUE(row->findChild<QPushButton*>("queueResume")->isVisibleTo(qw));
+    EXPECT_FALSE(row->findChild<QPushButton*>("queueStop")->isVisibleTo(qw));
+    // The same name again: refused, nothing written (the first queue stays the only one).
+    EXPECT_TRUE(w.queue_video_export("hdr10"));   // no master yet, so a second queue is allowed ...
+    EXPECT_TRUE(std::filesystem::exists(out / "sh010.hdr10 2.queue.json"));   // ... under its own name
+    ASSERT_TRUE(wait_for([&] { return !w.video_queues().running(); }));
+    { std::ofstream(out / "sh010.mp4") << "x"; }
+    EXPECT_FALSE(w.queue_video_export("hdr10"));
+    EXPECT_TRUE(last_log(w).contains("already there"));
+    // Kept between runs.
+    w.save_settings();
+    app::MainWindow w2(false);
+    w2.restore_settings();
+    EXPECT_EQ(w2.video_queues().entries().size(), 2u);
+    // The words a row gives each state.
+    app::QueueJobState st;
+    st.status = "running", st.phase = "inference", st.frames_done = 12, st.frames_total = 240;
+    EXPECT_EQ(app::QueueWindow::describe(st, false, true), "Reconstructing, frame 12 of 240");
+    st.status = "interrupted";
+    EXPECT_EQ(app::QueueWindow::describe(st, false, false), "Stopped; Resume starts this clip again");
+    st.status = "complete";
+    EXPECT_EQ(app::QueueWindow::describe(st, false, false), "Complete, QC passed");
+    QSettings().clear();
 }
 #endif
 

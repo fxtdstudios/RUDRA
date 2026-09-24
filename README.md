@@ -490,7 +490,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   mid-clip finishes on the other
 - [x] ffmpeg capability probe and self-test (`rudra-native ffmpeg-check`): what the build lacks, in words, and a
   16-frame HDR10 export through it, cached per build
-- [ ] The app: movies open, export tiles live, a queue window
+- [x] The app: movies open and scrub as shots, the HDR10, HLG and ProRes tiles export through the queue, a queue
+  window with Stop and Resume; the app's HDR10 master byte-identical to `rudra video`'s
 - [ ] The Windows review
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
