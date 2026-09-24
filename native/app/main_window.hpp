@@ -311,6 +311,7 @@ private:
     ModelHooks hooks_;
     bool loading_model_ = false;
     std::thread model_worker_;
+    std::thread stats_worker_;   // the measurement off the UI thread; joined, never left running
     std::optional<BackendChoice> backend_choice_;
     QPointer<QDialog> manager_, first_run_, sheet_;
     QMenu* recent_menu_ = nullptr;

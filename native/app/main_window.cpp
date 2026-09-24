@@ -173,6 +173,7 @@ MainWindow::~MainWindow() {
     queues_->stop();      // a running export is left interrupted, as Ctrl+C leaves it
     queues_.reset();
     if (model_worker_.joinable()) model_worker_.join();   // a package still loading
+    if (stats_worker_.joinable()) stats_worker_.join();   // a measurement in flight uses the frame
     master_job_.reset();   // cancels and waits: it uses the backend
     play_.stop();
     engine_.reset();   // joins the worker before the backend goes
@@ -1068,7 +1069,10 @@ void MainWindow::run_stats() {
     auto frame = current_frame_;
     const CompositeParams params = session_.composite_params();
     QPointer<MainWindow> self(this);
-    std::thread([self, frame, params, gen] {
+    // Joined, not detached: a detached measurement outlived its window and, at
+    // exit, the libraries it uses (a destroyed mutex aborts on macOS).
+    if (stats_worker_.joinable()) stats_worker_.join();   // done: stats_running_ was cleared after it posted
+    stats_worker_ = std::thread([self, frame, params, gen] {
         auto m = std::make_shared<const FrameMeasure>(
             measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, frame->baseline.get()));
         QMetaObject::invokeMethod(qApp, [self, m, gen] {
@@ -1080,7 +1084,7 @@ void MainWindow::run_stats() {
                 self->run_stats();
             }
         });
-    }).detach();
+    });
 }
 
 void MainWindow::measure_now() {
