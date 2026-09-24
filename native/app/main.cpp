@@ -305,9 +305,18 @@ private:
         auto files = frames_;
         engine_ = std::make_unique<rudra::FrameEngine>(
             [files](int i) -> rudra::Result<rudra::SdrImage> {
+#ifdef RUDRA_HAVE_STILL_DECODE
                 auto d = rudra::decode_sdr_file(files[std::size_t(i)]);
                 if (!d) return d.error();
                 return std::move(d->rgb);
+#else
+                // A build without media's still decode (no OpenCV) opens no
+                // frames; the viewer and the rest of the shell still work.
+                (void)files;
+                (void)i;
+                return rudra::make_error(rudra::ErrorCode::Unsupported,
+                                         "This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
+#endif
             },
             [backend](const rudra::SdrImage& sdr) {
                 // One untiled pass, as the Studio's preview.

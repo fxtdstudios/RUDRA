@@ -173,9 +173,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
+        # The app too: the viewer build without still decode is the one the
+        # Windows gate script makes, and it must compile on every OS.
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON -DRUDRA_BUILD_APP=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |
