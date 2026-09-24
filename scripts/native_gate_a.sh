@@ -16,7 +16,8 @@
 # LibTorch is this Python's pip torch (headers and libraries, no TorchConfig).
 # ONNX Runtime is the official release archive, fetched into tmp/native_deps
 # (Core ML is built into the macOS one). If the Python given has no torch, a
-# venv with torch, onnx, onnxruntime and numpy is made in tmp/native_deps.
+# venv with torch, onnx, onnxruntime, numpy and opencv-python-headless (the
+# export imports cv2) is made in tmp/native_deps.
 # Nothing is installed system-wide. Needs CMake 3.24+, Ninja or Make, a C++20
 # compiler (Xcode CLT on macOS), python3 and curl. OpenCV is not needed.
 set -euo pipefail
@@ -47,14 +48,14 @@ esac
 
 # ---------------------------------------------------------------------------
 say "Python and torch"
-if ! "$PY" -c "import torch, onnx, onnxruntime, numpy" 2>/dev/null; then
+if ! "$PY" -c "import torch, onnx, onnxruntime, numpy, cv2" 2>/dev/null; then
   VENV=$DEPS/venv_gate_a
   if [ ! -x "$VENV/bin/python" ]; then
     echo "no torch/onnx/onnxruntime in $PY: making $VENV"
     "$PY" -m venv "$VENV"
   fi
   "$VENV/bin/python" -m pip install --quiet --upgrade pip
-  "$VENV/bin/python" -m pip install --quiet torch onnx onnxruntime numpy
+  "$VENV/bin/python" -m pip install --quiet torch onnx onnxruntime numpy opencv-python-headless
   PY=$VENV/bin/python
 fi
 { read -r TORCH_VERSION; read -r TORCH_ROOT; read -r CUDA_AVAIL; read -r MPS_AVAIL; read -r ABI; } < <("$PY" - <<'PY'

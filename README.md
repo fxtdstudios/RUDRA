@@ -382,120 +382,29 @@ The browser Studio and the Python CLI stay as they are and remain the
 reference every native module is tested against; the state before that work
 is tagged `webui-v1`.
 
-Progress: Phase 0 closed 23 Sep 2026, GO for Phase 1 on Windows; the Mac runs are open.
-- [x] Model package export: `tools/export_model.py` (TorchScript bit-exact
-  with eager; ONNX within tolerance)
-- [x] `native/` skeleton: layered CMake targets, core types, baseline, tiling,
-  LibTorch and ONNX Runtime backends, `rudra-native diff`, Qt shell, CI
-- [x] Gate A on CPU: LibTorch bit-exact through the native tiler, ONNX Runtime
-  within tolerance, on the package's golden frames
-- [x] Composite in C++ ([`docs/composite.spec.md`](docs/composite.spec.md)):
-  recovery modes, strength, preserve, Region EV, anchor, chroma carry, AP0,
-  each stage against the Python it ports
-- [x] Measurements in C++: MaxRGB stats, MaxCLL/MaxFALL, the Studio QC numbers
-- [x] Gate B probe: `rudra-hdr-probe` on QRhi, with `scripts/NATIVE_GATE_B.ps1`
-  (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
-- [x] Gate A on Windows GPUs: LibTorch CUDA (true fp32) and ONNX Runtime
-  DirectML pass on an RTX 4080 SUPER (`scripts/NATIVE_GATE_A.ps1`)
-- [x] Gate A script for macOS and Linux: `scripts/native_gate_a.sh` (pip torch,
-  the ONNX Runtime release archive, no OpenCV); passes on Linux CPU
-- [ ] Gate A on the 429 bench frames, MPS and Core ML
-- [x] Gate B on Windows: D3D12 scRGB and HDR10 carry 1 000 and 2 000 nits to
-  the swapchain on an HDR display
-- [ ] Gate B on an XDR Mac (Metal EDR)
-- [x] Composite shader in GLSL 440 on QRhi, read back against the C++
-  composite (`rudra-gpu-parity`): passes on D3D12, D3D11, Vulkan and OpenGL
-  (RTX 4080 SUPER, fp16 within 1 half-float ulp)
-- [ ] GPU composite parity on Metal
-- [x] Budgets recorded: composite 0.11 ms at 1080p and 0.51 ms at 4K,
-  inference 150 to 172 ms at 1080p fp32
-- [x] Phase 0 go/no-go: GO on Windows, macOS on its three runs (`STATUS.md`)
+Done:
+- [x] Model package export: TorchScript and ONNX, checked against the Python
+- [x] C++ core: composite, measurements, grade controls, HDR10/HLG, metadata
+  sidecars and EXR/ACES/OCIO writers, each matching the Python it ports
+- [x] Inference through LibTorch (CUDA) and ONNX Runtime (DirectML) on Windows GPUs
+- [x] HDR output on Windows: Direct3D 12 scRGB and HDR10 on an HDR display
+- [x] GPU composite on Direct3D 12, Direct3D 11, Vulkan and OpenGL
+- [x] Stills, masters, QC, queues and sequences with no Python installed
+- [x] The viewer: HDR swapchain, fit, zoom, pan, wipe, scopes, guides, frame cache
+- [x] The Qt UI: the Studio's layout, actions, panels, undo, Deliver tab and
+  checkpoint manager
+- [x] Video delivery: HDR10, HLG and ProRes masters with audio, QC before
+  publishing, video jobs in a resumable queue
+- [x] The whole workflow scripted, passing on Linux
 
-Next, Phase 1 (librudra, 15 days; plan in
-[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 14):
-- [x] One golden harness across every emitter (`tools/emit_golden.py`), re-run in CI
-- [x] Still decode (PNG, JPEG, TIFF, BMP, WebP) bit-exact with `rudra/decode.py`
-- [x] Grade controls, HDR10/HLG, metadata sidecars, EXR/ACES/OCIO writers:
-  sidecars, EXRs and the OCIO config byte-identical with the Python
-- [x] `rudra-native master`: a Studio-identical master EXR with no Python
-  (within 1 half-float ulp, same header and sidecar, on both runtimes)
-- [x] QC, queue, sequence open: same report text, byte-identical queue state
-  resumable from either side, same frame order and messages
-- [ ] CI green on three OSes
-
-Then Phase 2 (the QRhi viewer, 20 days; plan in
-[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 15):
-- [x] The browser Studio as oracle: `ui/compositor.js` and `ui/app.js` run
-  unmodified in headless Chromium; its composite matches `composite.cpp`
-- [x] Display pass (image, false colour, difference, wipe) on the CPU, specified in
-  [`docs/view.spec.md`](docs/view.spec.md): the browser's canvas to within one code
-- [ ] The display pass in GLSL 440 on every backend (D3D12, D3D11, Vulkan and OpenGL pass; Metal open)
-- [x] HDR output from the display pass: scRGB, HDR10, EDR, from the source primaries
-  (the glass check moves to the viewer window)
-- [x] GPU reductions and the probe equal to the browser's, bit for bit
-- [x] Sample, measurements and scopes (waveform, histogram, vectorscope) equal to the browser's, bit for bit
-- [x] The viewer in the Qt shell: its own HDR swapchain, fit, 1:1, zoom about the
-  cursor, pan, wipe and hold-to-flip, placed exactly as the Studio places it
-- [x] The frame path: decode and inference on the engine's own thread, generations and
-  cancellation, read-ahead and a frame cache; a fast scrub never shows a stale frame
-- [x] Guides: action and title safe, centre cross, aspect masks, one screen pixel wide at any zoom
-- [ ] Every backend, budgets recorded
-
-Then Phase 3 (the Qt UI, 15 days; plan in
-[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 16): the full
-Studio workflow with no Python installed, every number and file matching the Studio's.
-- [x] The look: the Pro-direction boards (unified toolbar, sidebar library, compare bar, inspector cards,
-  filmstrip with a clipping lane, welcome and export sheet), the sheet generated from `app/theme/pro.css`,
-  every grey neutral (a test), Geist embedded (OFL)
-- [x] Previews at the Studio's 1600 on the long side, masters at full size
-- [x] Actions: the page's 33 actions with its menus, labels, keys and check states, checked
-  against the page and in the app's real menubar (offscreen Qt tests)
-- [x] Session model with undo, the page's `params()` byte for byte (251 states of the page itself,
-  driven headless by real DOM events)
-- [x] Main window: the page's layout, words and states as widgets, the frame within 1 px of the
-  page's at 1600 x 1000 (and a Studio fix: the pipeline bar was a 26 px square, now the full-width foot)
-- [x] Scope widgets: the page's waveform and histogram SVG element for element, painted as a browser
-  paints it, and the vectorscope in its ring (rasters held to the page's own screenshots)
-- [x] Reconstruct and Grade panels with the Region EV editor: every one of the page's 251 recorded
-  gestures made on the widgets reaches its `params()`, undo and panel words
-- [x] Probe and frame measurements: the page's read-outs word for word, measured on the app's own
-  thread from the chain Phase 2 held to the browser, the probe at the pixel under the pointer
-- [x] Deliver tab: a master EXR of the frame or the sequence as a background job with progress and a
-  stop, the Studio server's render plan and refusals exactly, nothing ever replaced
-- [x] Checkpoint manager and first run: packages found as the Studio server finds checkpoints, switched mid-session
-  with the session kept, each checked against its goldens on first use; the first run shows the HDR card on the display
-  and says what that display can show
-- [x] The rest of the page: the copies (the page's clipboard bytes), the sheets, drop to open, Open recent, and the
-  window, rails, tab, container and Render fields kept between runs
-- [x] The whole workflow scripted (`RUDRA --workflow-check`, its masters held to the CLI's): passes on Linux on 240 frames
-- [ ] The same on Windows with no Python on the PATH, and by hand on the HDR display (`scripts/NATIVE_PHASE3_EXIT.ps1`)
-
-Then Phase 4 (video delivery, 12 days; plan in
-[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 17): a movie in, an HDR10, HLG
-or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe run as programs as the Python runs them.
-- [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 25 clip and argument cases
-  (HDR, alpha, interlace, rotation, anamorphic, odd sizes, variable timing, RGB, colour tags and overrides)
-- [x] Decode on a pipe, bit for bit: the Python's decoder command, and every frame equal to the one `read_frame` returned
-- [x] The video predictor with the shadow smoother: the same cuts and weights as eager PyTorch and every HDR pixel
-  within 2.7e-6 of it, whole frames and tiles, on LibTorch and ONNX Runtime
-- [x] Mastering and the PNG spool: MaxCLL, frame averages, ceilings and HLG codes identical to the Python's, PQ codes
-  within one of 65535 (numpy's SIMD power is not correctly rounded)
-- [x] Encode and publish, argument for argument: the Python's command on ten runs over the five profiles, the
-  Python's spool encoding with it, nothing ever replaced
-- [x] QC and the alpha check: the Python's verdict and words on 14 checks of good and broken masters, each
-  passing record byte for byte
-- [x] `rudra-native video` end to end: the report key for key, HDR10 and HLG masters byte-identical to the Python's
-  on LibTorch and ONNX Runtime, ProRes 4444 within codec noise
-- [x] Frames to video (`encode_sequence`, `rudra-native deliver`): the Python's command, codes within one of 65535,
-  tags checked where each format keeps them, the report byte for byte
-- [x] Video jobs in the queue, resumable from either side (`rudra-native batch run`): a queue either side stopped
-  mid-clip finishes on the other
-- [x] ffmpeg capability probe and self-test (`rudra-native ffmpeg-check`): what the build lacks, in words, and a
-  16-frame HDR10 export through it, cached per build
-- [x] The app: movies open and scrub as shots, the HDR10, HLG and ProRes tiles export through the queue, a queue
-  window with Stop and Resume; the app's HDR10 master byte-identical to `rudra video`'s
-- [x] The review scripted (`scripts/NATIVE_PHASE4_EXIT.ps1`), passing on Linux
-- [ ] The same on Windows, and by hand on the HDR display
+Still to do:
+- [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
+  EDR), GPU composite and display pass on Metal
+- [ ] Model checks on the full bench set
+- [ ] CI green on Windows, macOS and Linux
+- [ ] Performance budgets recorded on every GPU backend
+- [ ] The workflow and video review on Windows with no Python, and by hand on an
+  HDR display
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
@@ -516,7 +425,7 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 | [`docs/CORPUS.md`](docs/CORPUS.md) | what a training set has to contain |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout, how it is checked, and the decisions behind it |
 | [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) | the native desktop Studio: architecture, phases, acceptance |
-| [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) | the native app design: layers, types, threading, patterns, numerics, first ten days |
+| [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) | the native app design: layers, types, threading, patterns, numerics |
 | [`docs/composite.spec.md`](docs/composite.spec.md) | the composite, master chain and measurements as a spec: every stage, precision and tolerance |
 | [`native/README.md`](native/README.md) | building the native app, the model package, what is done and what is not |
 | [`STATUS.md`](STATUS.md) | what is finished, what is open, and the next steps in order |

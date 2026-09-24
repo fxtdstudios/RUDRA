@@ -40,9 +40,12 @@ fi
 
 echo "== build rudra-hdr-probe"
 GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
-cmake -S native -B build/native_gate_b ${GEN[@]+"${GEN[@]}"} -DCMAKE_BUILD_TYPE=Release \
+# Qt6_DIR, not only the prefix path: a Homebrew or distro Qt 6 elsewhere on the
+# machine (brew's opencv pulls one in) has no Shader Tools, and a cache from an
+# earlier configure keeps whichever Qt it found first. --fresh drops that cache.
+cmake --fresh -S native -B build/native_gate_b ${GEN[@]+"${GEN[@]}"} -DCMAKE_BUILD_TYPE=Release \
   -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
-  -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" >/dev/null
+  -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" -DQt6_DIR="$PWD/$QT_ROOT/lib/cmake/Qt6" >/dev/null
 cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check --parallel
 EXE=build/native_gate_b/render/probe/rudra-hdr-probe
 PARITY=build/native_gate_b/render/probe/rudra-gpu-parity
