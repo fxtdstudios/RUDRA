@@ -680,9 +680,17 @@ instead of 80), so the check window was being scrolled or clicked while it
 ran. The check now ignores input (`ViewerWindow::set_input_enabled`) and
 records the viewport it saw. With that, the 03:17 run passes on D3D11,
 Vulkan and OpenGL within 1 code. On D3D12 the check wrote no report: it hit
-the old 30 s limit. The limit is now 90 s, and a stalled run writes a
-`TIMEOUT` report naming the case it stopped at and whether the window was
-ever exposed, so the next run shows where D3D12 stalls.
+the old 30 s limit. With a 90 s limit it stops at the eleventh case (wipe 0.37
+at 2x) after ten passes, the window exposed and the event loop alive: the
+grab was asked for and no frame followed. The viewer now counts update
+requests, presented frames and failed `beginFrame` calls, the check asks
+again for a frame once a second while a grab waits (`nudges`, per case in the
+report), and a `TIMEOUT` report carries the counters (`stall`), so the next
+run says whether D3D12 drops the update request or refuses the frame.
+Found on the way: on Vulkan the window's surface outlived the
+`QVulkanInstance` it was made from, and the check crashed on exit after
+writing its report (lavapipe, exit 139); the viewer now destroys its platform
+window before the instance goes.
 
 Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws
 into a texture that the widget backing store composites, and that path is SDR

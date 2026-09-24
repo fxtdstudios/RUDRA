@@ -133,6 +133,9 @@ int main(int argc, char** argv) {
     QJsonObject report;
     bool pass = true;
     int step = 0;
+    // A grab whose frame never comes is asked for again once a second; the
+    // report counts it, so a backend that drops update requests shows up.
+    int nudges = 0, total_nudges = 0;
 
     ViewerFrame frame;
     NetworkLinearImage cpu_model, cpu_base;
@@ -187,6 +190,7 @@ int main(int argc, char** argv) {
     bool no_hdr = false;
     auto finish = [&] {
         report["cases"] = rows;
+        report["nudges"] = total_nudges;
         report["verdict"] = no_hdr ? "NO-HDR" : pass ? "PASS" : "FAIL";
         const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);
         if (cli.isSet(report_opt)) {
@@ -322,6 +326,8 @@ int main(int argc, char** argv) {
                         {"viewport", QJsonArray{win.viewport().scale ? *win.viewport().scale : 0.0, win.viewport().pan_x,
                                                 win.viewport().pan_y}},
                         {"first_mismatches", samples}};
+        row["nudges"] = nudges;
+        nudges = 0;
         rows.append(row);
         if (!ok && cli.isSet(dump_opt)) {
             const QString dir = cli.value(dump_opt);
@@ -375,6 +381,16 @@ int main(int argc, char** argv) {
         QTimer::singleShot(50, [&] { win.grab(check_parity); });
     };
 
+    QTimer nudge;
+    nudge.setInterval(1000);
+    QObject::connect(&nudge, &QTimer::timeout, [&] {
+        if (!win.status().grab_waiting) return;
+        ++nudges;
+        ++total_nudges;
+        win.requestUpdate();
+    });
+    nudge.start();
+
     win.show();
     win.raise();
     QTimer::singleShot(300, [&] { next(); });   // exposed and a few frames presented
@@ -383,12 +399,19 @@ int main(int argc, char** argv) {
         const ViewerStatus s = win.status();
         out << "rudra-viewer-check: timed out at case " << step << " (exposed " << (win.isExposed() ? "yes" : "no")
             << ", swapchain " << QString::fromStdString(s.swapchain) << ", backend "
-            << QString::fromStdString(s.backend) << ")\n";
+            << QString::fromStdString(s.backend) << "; " << s.frames << " frames, " << s.begin_failures
+            << " failed beginFrame (last " << s.last_begin << "), grab " << (s.grab_pending ? "in flight" : s.grab_waiting ? "waiting for a frame" : "idle")
+            << ", " << total_nudges << " nudges)\n";
         report["cases"] = rows;
         report["verdict"] = "TIMEOUT";
         report["timed_out_at_case"] = step;
         report["exposed"] = win.isExposed();
         report["backend"] = QString::fromStdString(s.backend);
+        report["stall"] = QJsonObject{
+            {"updates", double(s.updates)}, {"frames", double(s.frames)},
+            {"begin_failures", double(s.begin_failures)}, {"last_begin", s.last_begin},
+            {"grab_waiting", s.grab_waiting}, {"grab_pending", s.grab_pending},
+            {"nudges", total_nudges}, {"nudges_this_case", nudges}};
         if (cli.isSet(report_opt)) {
             QFile f(cli.value(report_opt));
             if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(report).toJson());

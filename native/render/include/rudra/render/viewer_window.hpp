@@ -38,6 +38,13 @@ struct ViewerStatus {
     int zoom_percent = 100;          // in device pixels: 100 is one frame pixel per screen pixel
     bool has_frame = false;
     bool wiping = false;
+    // Frame accounting, for the check tools: where a stalled run stopped.
+    long long updates = 0;           // UpdateRequest and expose events seen
+    long long frames = 0;            // frames presented
+    long long begin_failures = 0;    // beginFrame results other than success
+    int last_begin = 0;              // the last QRhi::FrameOpResult
+    bool grab_waiting = false;       // a grab asked for and not yet read back
+    bool grab_pending = false;       // its readback is in flight
 };
 
 // One frame on the GPU: the SDR the network saw, its fields, and the

@@ -165,6 +165,8 @@ struct ViewerWindow::Impl {
     std::function<void(const Grab&)> grab_cb;
     QRhiReadbackResult grab_rb;
     bool grab_pending = false, grab_y_up = false;
+    long long updates = 0, frames = 0, begin_failures = 0;
+    int last_begin = 0;
 
     ViewSize viewer_size() const { return {double(w->width()), double(w->height())}; }
     ViewSize frame_view_size() const {
@@ -415,12 +417,15 @@ struct ViewerWindow::Impl {
         if (!has_swapchain) return;
         if (sc->currentPixelSize() != sc->surfacePixelSize()) resize_swapchain();
         if (!has_swapchain) return;
+        ++updates;
         QRhi::FrameOpResult r = rhi->beginFrame(sc.get());
         if (r == QRhi::FrameOpSwapChainOutOfDate) {
             resize_swapchain();
             if (!has_swapchain) return;
             r = rhi->beginFrame(sc.get());
         }
+        last_begin = int(r);
+        if (r != QRhi::FrameOpSuccess) ++begin_failures;
         if (r == QRhi::FrameOpDeviceLost) {
             recover_device();
             return;
@@ -528,6 +533,7 @@ struct ViewerWindow::Impl {
         }
         cb->endPass(after);
         rhi->endFrame(sc.get());
+        ++frames;
         // With frames in flight (D3D12, Vulkan, Metal) a readback completes
         // only when its frame slot comes round again, so a grab would report
         // an older frame, or never. Wait for it here: grabs are for tests and
@@ -629,6 +635,12 @@ struct ViewerWindow::Impl {
         s.device_pixel_ratio = w->devicePixelRatio();
         s.has_frame = has_frame;
         s.wiping = view.wipe >= 0.0;
+        s.updates = updates;
+        s.frames = frames;
+        s.begin_failures = begin_failures;
+        s.last_begin = last_begin;
+        s.grab_waiting = bool(grab_cb);
+        s.grab_pending = grab_pending;
         return s;
     }
 
@@ -659,7 +671,13 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     setSurfaceType(surface_for(d_->api));
 }
 
-ViewerWindow::~ViewerWindow() { d_->release_all(); }
+ViewerWindow::~ViewerWindow() {
+    d_->release_all();
+    // The platform window's Vulkan surface is destroyed with the window; the
+    // instance it was made from is ours and goes with d_, so the surface goes
+    // first. Without this ~QWindow destroys it against a freed instance.
+    destroy();
+}
 
 void ViewerWindow::set_frame(ViewerFrame frame) {
     d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, frame.scalars.curve_params);
