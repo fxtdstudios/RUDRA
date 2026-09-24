@@ -6,8 +6,9 @@
 #   FRAMES=0 scripts/native_gate_b.sh      # keep the window open and look (Esc quits)
 #
 # Qt 6.8 (with Qt Shader Tools) is fetched into tmp/native_deps/Qt with
-# aqtinstall; nothing is installed system-wide. Needs CMake 3.24+, Ninja or
-# Make, a C++20 compiler (Xcode CLT on macOS) and python3.
+# aqtinstall, run from a venv in tmp/native_deps; nothing is installed
+# system-wide. Needs CMake 3.24+, Ninja or Make, a C++20 compiler (Xcode CLT
+# on macOS) and python3.
 #
 # PASS means the swapchain carried the 1 000-nit patch at least a stop above
 # SDR white. On a Mac, run it on the XDR panel (or an HDR display with "High
@@ -30,8 +31,11 @@ QT_ROOT="$DEPS/Qt/$QT_VERSION/$QT_DIR"
 
 if [ ! -x "$QT_ROOT/bin/qsb" ]; then
   echo "== Qt $QT_VERSION ($ARCH, qtshadertools) into $DEPS/Qt"
-  "$PY" -m pip install --quiet --upgrade aqtinstall
-  "$PY" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
+  # A venv of its own: brew's and Debian's Pythons refuse system-wide pip (PEP 668).
+  VENV=$DEPS/venv_tools
+  [ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
+  "$VENV/bin/python" -m pip install --quiet --upgrade aqtinstall
+  "$VENV/bin/python" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
 fi
 
 echo "== build rudra-hdr-probe"
