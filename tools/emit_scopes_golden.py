@@ -114,7 +114,8 @@ CASES = [
 ]
 
 RUN = r"""
-(c) => {
+(json) => {
+  const c = JSON.parse(json);
   const S = window.__studio;
   const m = c.m === null ? null : {maxcll: c.m.maxcll === null ? NaN : c.m.maxcll};
   S.drawScopes(c.s, m);
@@ -168,7 +169,8 @@ def main() -> int:
         page.evaluate("document.fonts.ready")
         page.wait_for_function("document.fonts.check('8px \"IBM Plex Mono\"')")
         for name, s, m in CASES:
-            drawn = page.evaluate(RUN, {"s": s, "m": m})
+            # As JSON text: Playwright hands a Python 0.0 over as -0.
+            drawn = page.evaluate(RUN, json.dumps({"s": s, "m": m}))
             page.wait_for_timeout(30)
             for part in ("wave", "hist"):
                 el = page.locator("#" + part)

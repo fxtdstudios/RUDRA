@@ -617,6 +617,152 @@ TEST(AppPanels, EveryGestureOnTheWidgetsGivesThePagesState) {
     }
 }
 
+// ---- steps 7 and 8: the probe, the Frame panel and the bars, wired --------
+
+namespace {
+
+// A small frame with clipped highlights, the masks on them, and a residual
+// that lifts them: enough for every read-out to have something to say.
+void synthetic_frame(app::MainWindow& w) {
+    const int W = 96, H = 64;
+    PlanarBuffer sdr(3, H, W), residual(3, H, W), hi(1, H, W), sh(1, H, W);
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const std::size_t i = std::size_t(y) * W + std::size_t(x);
+            const float v = std::min(1.0f, float(x) / float(W - 16));
+            for (int c = 0; c < 3; ++c) {
+                sdr.plane(c)[i] = std::clamp(v * (c == 0 ? 1.0f : c == 1 ? 0.9f : 0.75f), 0.0f, 1.0f);
+                residual.plane(c)[i] = v >= 0.99f ? 0.35f : 0.0f;
+            }
+            hi.plane(0)[i] = v >= 0.99f ? 1.0f : 0.0f;
+            sh.plane(0)[i] = x < 4 ? 1.0f : 0.0f;
+        }
+    FrameScalars scalars;
+    scalars.shadow_weight = 0.87f;
+    FrameHeader header;
+    header.source_resolution = header.resolution = "96x64";
+    header.elapsed_s = 0.25;
+    w.present_frame(SdrImage(std::move(sdr)), Fields{std::move(residual), std::move(hi), std::move(sh)}, scalars,
+                    ModelConstants{16.0f, 4.0f, -1.0f}, header);
+}
+
+std::vector<std::vector<std::string>> rows_of(QWidget* ms) {
+    std::vector<std::vector<std::string>> out;
+    for (QWidget* r : ms->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (r->property("role").toString() != "ro") continue;
+        std::vector<std::string> row;
+        for (QLabel* l : r->findChildren<QLabel*>()) row.push_back(l->text().toStdString());
+        row.push_back(r->findChildren<QLabel*>()[1]->property("state").toString().toStdString());
+        out.push_back(row);
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST(AppMeasure, TheFramePanelAndBarsShowTheMeasurement) {
+    app::MainWindow w(false);
+    w.resize(1600, 1000);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    EXPECT_FALSE(w.action("remeasure")->isEnabled());
+    synthetic_frame(w);
+    w.measure_now();
+    const FrameMeasure* m = w.measurement();
+    ASSERT_NE(m, nullptr);
+    const MetricsText want = metrics_text(m->frame_metrics(), [] {
+        FrameHeader h;
+        h.source_resolution = h.resolution = "96x64";
+        h.elapsed_s = 0.25;
+        return h;
+    }(), m->coverage.clipped_pct);
+    auto expect_rows = [](const std::vector<std::vector<std::string>>& got, const std::vector<MetricRow>& rows) {
+        ASSERT_EQ(got.size(), rows.size());
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            EXPECT_EQ(got[i][0], rows[i].k);
+            EXPECT_EQ(got[i][1], rows[i].v) << rows[i].k;
+            EXPECT_EQ(got[i][2], rows[i].u);
+            EXPECT_EQ(got[i][3], rows[i].warn ? "warn" : "") << rows[i].k;
+        }
+    };
+    expect_rows(rows_of(w.findChild<QWidget*>("measA")), want.a);
+    expect_rows(rows_of(w.findChild<QWidget*>("measB")), want.b);
+    EXPECT_EQ(w.findChild<QLabel*>("statusMask")->text().toStdString(), want.status_mask);
+    EXPECT_EQ(w.findChild<QLabel*>("statusTime")->text().toStdString(), want.status_time);
+    EXPECT_EQ(w.findChild<QLabel*>("srcInfo")->text().toStdString(), want.src_info);
+    EXPECT_GT(m->coverage.clipped_pct, 0.0);
+    EXPECT_GT(m->measured.metrics.maxcll, 203.0);
+    // The clip bar: red for the clipped share, amber after it for the mask.
+    auto* bar = find<app::ClipBar>(w, "clipBar");
+    ASSERT_TRUE(bar->isVisible());
+    EXPECT_NEAR(bar->lost()->width(), bar->width() * std::min(100.0, m->coverage.clipped_pct) / 100.0, 1.0);
+    EXPECT_EQ(bar->acted()->x(), bar->lost()->width());
+    // The scopes are drawn from it.
+    EXPECT_TRUE(find<app::ScopePlot>(w, "wave")->has_data());
+    EXPECT_TRUE(find<app::ScopePlot>(w, "hist")->has_data());
+    // The pipeline bar: MaxCLL over the view peak warns, a peak above it does not.
+    EXPECT_TRUE(w.findChild<QLabel*>("pipeWarn")->isVisible());
+    EXPECT_EQ(w.findChild<QLabel*>("pipeWarn")->text().toStdString(),
+              pipe_text("aces", 203.0, m->measured.metrics.maxcll, std::nullopt).warn);
+    w.session().peak_input(5.0);
+    EXPECT_EQ(w.findChild<QLabel*>("viewTransform")->text().toStdString(), "exposure + clip \u00b7 6,496 nits");
+    EXPECT_FALSE(w.findChild<QLabel*>("pipeWarn")->isVisible());
+    w.run("container-linear");
+    EXPECT_EQ(w.findChild<QLabel*>("pipeMaster")->text().toStdString(), "linear Rec.2020 EXR, half");
+    // A grade change measures again, on its own thread, after the grade settles.
+    const double before = m->measured.metrics.peak_nits;
+    w.run("mode-off");
+    // (By value: the new measurement may well sit where the old one was freed.)
+    for (int i = 0; i < 500 && !(w.measurement()->measured.metrics.peak_nits < before - 1.0); ++i) QTest::qWait(10);
+    ASSERT_LT(w.measurement()->measured.metrics.peak_nits, before - 1.0) << "no new measurement within 5 s";
+    EXPECT_EQ(rows_of(w.findChild<QWidget*>("measA"))[2][1],
+              metrics_text(w.measurement()->frame_metrics(), std::nullopt, 0).a[2].v);   // Peak, redrawn
+}
+
+TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
+    app::MainWindow w(false);
+    w.resize(1600, 1000);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    synthetic_frame(w);
+    w.measure_now();
+    const FrameMeasure* m = w.measurement();
+    for (const auto& at : std::vector<std::pair<double, double>>{{90.4, 10.9}, {2.0, 60.0}, {40.5, 30.5}}) {
+        const auto probe = m->probe_at(at.first, at.second);
+        ASSERT_TRUE(probe.has_value());
+        w.probe_pixel(at, w.mapToGlobal(QPoint(500, 400)));
+        const ProbePanelText t = probe_panel(probe);
+        EXPECT_EQ(w.findChild<QLabel*>("probeXY")->text().toStdString(), t.xy);
+        EXPECT_EQ(w.findChild<QLabel*>("probeNits")->text().toStdString(), t.nits);
+        EXPECT_EQ(w.findChild<QLabel*>("probeNits")->property("state").toString(), "");
+        EXPECT_TRUE(w.findChild<QLabel*>("probeNitsUnit")->isVisibleTo(&w));
+        EXPECT_EQ(w.findChild<QLabel*>("probeDelta")->text().toStdString(), t.delta);
+        EXPECT_EQ(w.findChild<QLabel*>("probeSrc")->text().toStdString(), t.src);
+        EXPECT_EQ(w.findChild<QLabel*>("probeSrc")->property("state").toString().toStdString(), t.src_class);
+        EXPECT_EQ(w.findChild<QLabel*>("probeBase")->text().toStdString(), t.base);
+        EXPECT_EQ(w.findChild<QLabel*>("probeModel")->text().toStdString(), t.model);
+        EXPECT_EQ(w.findChild<QLabel*>("probeModel")->property("state").toString().toStdString(), t.model_class);
+        EXPECT_EQ(w.findChild<QLabel*>("probeMask")->text().toStdString(), t.mask);
+        // The floating box: the page's rows, beside the pointer.
+        ASSERT_TRUE(w.probe_box()->isVisible());
+        const auto rows = probe_box(*probe);
+        const auto labels = w.probe_box()->findChildren<QLabel*>();
+        ASSERT_EQ(labels.size(), qsizetype(rows.size() * 2));
+        for (std::size_t r = 0; r < rows.size(); ++r) {
+            EXPECT_EQ(labels[qsizetype(r * 2)]->text().toStdString(), rows[r].k);
+            EXPECT_EQ(labels[qsizetype(r * 2 + 1)]->text().toStdString(), rows[r].v);
+        }
+    }
+    // The clipped corner reads as clipped.
+    w.probe_pixel(std::pair{95.0, 0.0}, w.mapToGlobal(QPoint(500, 400)));
+    EXPECT_EQ(w.findChild<QLabel*>("probeSrc")->property("state").toString(), "clip");
+    // Off the frame, or the probe put away: idle, no box.
+    w.probe_pixel(std::nullopt);
+    EXPECT_EQ(w.findChild<QLabel*>("probeNits")->property("state").toString(), "idle");
+    EXPECT_EQ(w.findChild<QLabel*>("probeDelta")->text().toStdString(), "pick a pixel with Probe, or hold Alt");
+    EXPECT_FALSE(w.probe_box()->isVisible());
+}
+
 // ---- step 5: the scope widgets against the page's own rasters -------------
 
 namespace {

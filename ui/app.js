@@ -1602,12 +1602,14 @@
       $("viewer").classList.toggle("probing", state.probeOn);
       if (!state.probeOn) { showProbe(null); }
     });
+    /* Probe mode, or Alt held: the readout says "pick a pixel with Probe, or
+       hold Alt", and until 24 Sep 2026 only the first half was true. */
     $("plate").addEventListener("pointermove", function (e) {
-      if (!state.probeOn || state.panning || state.wipeDragging) { return; }
+      if (!(state.probeOn || e.altKey) || state.panning || state.wipeDragging) { return; }
       showProbe(probeAt(e.clientX, e.clientY), e.clientX, e.clientY);
     });
     $("plate").addEventListener("pointerleave", function () {
-      if (state.probeOn) { showProbe(null); }
+      showProbe(null);
     });
 
     /* zoom and pan. Scroll zooms about the cursor, middle-drag pans -- the

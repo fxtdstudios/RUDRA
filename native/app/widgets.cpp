@@ -178,6 +178,36 @@ void ScrubBar::mouseMoveEvent(QMouseEvent* e) {
         seek(std::clamp(e->position().x() / width(), 0.0, 1.0));
 }
 
+ClipBar::ClipBar(QWidget* parent) : QWidget(parent) {
+    setObjectName("clipBar");
+    setAttribute(Qt::WA_StyledBackground, true);
+    setFixedHeight(5);
+    i_ = new QWidget(this);
+    i_->setObjectName("clipLost");
+    i_->setAttribute(Qt::WA_StyledBackground, true);
+    u_ = new QWidget(this);
+    u_->setObjectName("clipActed");
+    u_->setAttribute(Qt::WA_StyledBackground, true);
+    place();
+}
+
+void ClipBar::set(double clipped_pct, double mask_pct) {
+    // paintClipBar's CSS: i width min(100, clipped) %, u from there,
+    // max(0, min(100 - clipped, mask)) % wide.
+    i_w_ = std::min(100.0, clipped_pct);
+    u_l_ = i_w_;
+    u_w_ = std::max(0.0, std::min(100.0 - clipped_pct, mask_pct));
+    place();
+}
+
+void ClipBar::resizeEvent(QResizeEvent*) { place(); }
+
+void ClipBar::place() {
+    const double w = width();
+    i_->setGeometry(0, 0, int(std::lround(w * i_w_ / 100.0)), height());
+    u_->setGeometry(int(std::lround(w * u_l_ / 100.0)), 0, int(std::lround(w * u_w_ / 100.0)), height());
+}
+
 IconButton::IconButton(const QString& id, Glyph g, const QString& title, QWidget* parent)
     : QToolButton(parent), glyph_(g) {
     setObjectName(id);

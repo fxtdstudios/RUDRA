@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "rudra/core/composite.hpp"
@@ -83,6 +84,16 @@ public:
 
     ViewerStatus status() const;
     void on_status(std::function<void(const ViewerStatus&)> cb);
+
+    // The pointer over the picture, in frame pixels (fractional; nullopt off
+    // the frame or out of the window), with the window position and whether
+    // Alt is held: the probe reads the frame there.
+    struct Hover {
+        std::optional<double> x, y;
+        QPointF window;
+        bool alt = false;
+    };
+    void on_hover(std::function<void(const Hover&)> cb);
 
     // Off: mouse, wheel and keys do nothing (the check tools, so a wheel or a
     // click that lands on the window while it runs cannot move the picture).

@@ -712,7 +712,7 @@
     "pipe": {
      "tag": "div",
      "shown": true,
-     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewexposure + clip · 203 nits ▸ masterACES 2065-1 EXR, half — —",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -736,7 +736,7 @@
     "viewTransform": {
      "tag": "b",
      "shown": true,
-     "text": "PQ · Rec.2020",
+     "text": "exposure + clip · 203 nits",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -1729,7 +1729,7 @@
     "pipe": {
      "tag": "div",
      "shown": true,
-     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewexposure + clip · 203 nits ▸ masterACES 2065-1 EXR, half — —",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -1753,7 +1753,7 @@
     "viewTransform": {
      "tag": "b",
      "shown": true,
-     "text": "PQ · Rec.2020",
+     "text": "exposure + clip · 203 nits",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -2746,7 +2746,7 @@
     "pipe": {
      "tag": "div",
      "shown": true,
-     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewexposure + clip · 203 nits ▸ masterACES 2065-1 EXR, half — —",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -2770,7 +2770,7 @@
     "viewTransform": {
      "tag": "b",
      "shown": true,
-     "text": "PQ · Rec.2020",
+     "text": "exposure + clip · 203 nits",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -3763,7 +3763,7 @@
     "pipe": {
      "tag": "div",
      "shown": true,
-     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewexposure + clip · 203 nits ▸ masterACES 2065-1 EXR, half — —",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -3787,7 +3787,7 @@
     "viewTransform": {
      "tag": "b",
      "shown": true,
-     "text": "PQ · Rec.2020",
+     "text": "exposure + clip · 203 nits",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -4780,7 +4780,7 @@
     "pipe": {
      "tag": "div",
      "shown": true,
-     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewexposure + clip · 203 nits ▸ masterACES 2065-1 EXR, half — —",
      "buttons": null,
      "on": false,
      "disabled": false
@@ -4804,7 +4804,7 @@
     "viewTransform": {
      "tag": "b",
      "shown": true,
-     "text": "PQ · Rec.2020",
+     "text": "exposure + clip · 203 nits",
      "buttons": null,
      "on": false,
      "disabled": false

@@ -124,6 +124,20 @@ TEST(JsFormat, ToFixedIsJavaScripts) {
     EXPECT_EQ(js_to_fixed(0.000001, 2), "0.00");
     EXPECT_EQ(js_to_fixed(1e21, 2), "1e+21");
     EXPECT_EQ(js_round(-2.5), -2.0);   // Math.round: halves toward +infinity
+    // fmt (toLocaleString) rounds the shortest decimal form, toFixed the exact value.
+    EXPECT_EQ(js_to_fixed(99.9995, 3), "99.999");
+    EXPECT_EQ(js_fmt(99.9995, 3), "100.000");
+    EXPECT_EQ(js_to_fixed(1.0005, 3), "1.000");
+    EXPECT_EQ(js_fmt(1.0005, 3), "1.001");
+    EXPECT_EQ(js_fmt(1148.3414126469534, 0), "1,148");
+    EXPECT_EQ(js_fmt(1234567.891, 2), "1,234,567.89");
+    EXPECT_EQ(js_fmt(0.05, 2), "0.05");
+    EXPECT_EQ(js_fmt(1e-7, 2), "0.00");
+    EXPECT_EQ(js_fmt(-0.0, 2), "-0.00");   // Intl keeps the sign of -0
+    EXPECT_EQ(js_signed(-0.64, 2), "\u22120.64");
+    EXPECT_EQ(js_signed(0.0, 2), "+0.00");
+    EXPECT_EQ(nits_label(2000), "2k");
+    EXPECT_EQ(nits_label(0.05), "0.05");
     EXPECT_EQ(js_round(2.5), 3.0);
 }
 

@@ -25,6 +25,7 @@
 #include "rudra/core/half.hpp"
 #include "rudra/core/scopes.hpp"
 #include "rudra/core/view.hpp"
+#include "rudra/engine/measure.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/platform/npy.hpp"
 
@@ -444,6 +445,63 @@ TEST(Viewer, SampleMeasurementsAndScopesEqualTheBrowsers) {
                 }
                 EXPECT_EQ(worst, 0) << what << " vectorscope, " << off << " values differ";
             }
+        }
+    }
+}
+
+// ---- Phase 3 step 8: the frame measured end to end, as the app measures it --
+//
+// engine/measure runs the whole chain from the frame the page received (its
+// SDR, its fields) with each case's grade. The masks and the clip are the
+// page's to the bit; the composite is the CPU one, which agrees with the
+// browser's GPU composite within the bound above, so the measurements do to
+// the same order.
+TEST(Viewer, MeasureFrameIsThePagesComputeStats) {
+    for (const auto& frame : index_json().at("frames")) {
+        const std::string name = frame.at("name").get<std::string>();
+        const Packet p = unpack(frame);
+        const NetworkLinearImage base = corrected_baseline(p.sdr, p.model.corpus_ev, p.scalars.curve_params);
+        for (const auto& c : frame.at("cases")) {
+            if (!c.contains("metrics")) continue;
+            const std::string what = name + " " + c.at("name").get<std::string>();
+            const json& prm = c.at("params");
+            CompositeParams cp;
+            cp.mode = mode_of(prm.at("mode").get<std::string>());
+            cp.strength = prm.at("strength").get<float>();
+            cp.preserve_outside = prm.at("preserve").get<bool>();
+            cp.regions = bands(prm.contains("regions") ? prm.at("regions") : index_json().at("default_regions"));
+            const FrameMeasure fm = measure_frame(p.sdr, p.fields, p.scalars, p.model, cp, &base);
+            EXPECT_EQ(fm.coverage.highlight_pct, frame.at("mask_pct").at("highlight").get<double>()) << what;
+            EXPECT_EQ(fm.coverage.shadow_pct, frame.at("mask_pct").at("shadow").get<double>()) << what;
+            EXPECT_EQ(fm.coverage.clipped_pct, frame.at("mask_pct").at("clipped").get<double>()) << what;
+            const json& m = c.at("metrics");
+            const ViewerMetrics& g = fm.measured.metrics;
+            // MaxCLL and MaxFALL are ceilings of the exact reductions: a unit either way.
+            EXPECT_NEAR(g.maxcll, m.at("maxcll").get<double>(), 1.0) << what;
+            EXPECT_NEAR(g.maxfall, m.at("maxfall").get<double>(), 1.0) << what;
+            for (const auto& [key, v] : std::vector<std::pair<const char*, double>>{
+                     {"peak_nits", g.peak_nits}, {"baseline_peak_nits", g.baseline_peak_nits},
+                     {"p99_nits", g.p99_nits}, {"median_nits", g.median_nits}}) {
+                const double w = num(m.at(key));
+                EXPECT_NEAR(v, w, 5e-5 * kPeakNits + 2e-3 * std::abs(w)) << what << " " << key;
+            }
+            for (const auto& [key, v] : std::vector<std::pair<const char*, double>>{
+                     {"above_diffuse_white_pct", g.above_diffuse_white_pct},
+                     {"above_1000_nits_pct", g.above_1000_nits_pct}, {"departure_rms_stops", g.departure_rms_stops}}) {
+                EXPECT_NEAR(v, num(m.at(key)), 0.05) << what << " " << key;
+            }
+            // The probe reads the full-resolution composite at a pixel.
+            const auto probe = fm.probe_at(p.w / 2 + 0.7, p.h / 3 + 0.2);
+            ASSERT_TRUE(probe.has_value()) << what;
+            EXPECT_EQ(probe->x, p.w / 2);
+            EXPECT_EQ(probe->y, p.h / 3);
+            EXPECT_FALSE(fm.probe_at(-0.5, 0).has_value());
+            EXPECT_FALSE(fm.probe_at(p.w, 0).has_value());
+            const std::size_t i = std::size_t(probe->y) * std::size_t(p.w) + std::size_t(probe->x);
+            EXPECT_EQ(*probe->hi_mask, p.fields.highlight.plane(0)[i]);
+            ASSERT_TRUE(probe->sdr.has_value());
+            EXPECT_EQ((*probe->sdr)[0], int(std::lround(p.sdr.buffer().plane(0)[i] * 255.0f)));
+            EXPECT_EQ(fm.vector_rgba.size(), std::size_t(kVectorSize) * kVectorSize * 4);
         }
     }
 }

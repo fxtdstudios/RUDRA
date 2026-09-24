@@ -454,7 +454,8 @@ Studio workflow with no Python installed, every number and file matching the Stu
   paints it, and the vectorscope in its ring (rasters held to the page's own screenshots)
 - [x] Reconstruct and Grade panels with the Region EV editor: every one of the page's 251 recorded
   gestures made on the widgets reaches its `params()`, undo and panel words
-- [ ] Probe, measurements
+- [x] Probe and frame measurements: the page's read-outs word for word, measured on the app's own
+  thread from the chain Phase 2 held to the browser, the probe at the pixel under the pointer
 - [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
 - [ ] The whole workflow on Windows with no Python on the machine
 

@@ -99,7 +99,7 @@ TEST(Theme, GreysAreNeutralAndHuesAreNamed) {
         EXPECT_TRUE(neutral(normalise(t.at(name)))) << "--" << name << " " << t.at(name);
     // The only hues: the named ones, each meaning something, and the two
     // the page's controls use (the ink on an active control, the slider key).
-    std::set<std::string> hues = {"#dceaf5", "#a2b8c7"};
+    std::set<std::string> hues = {"#dceaf5", "#a2b8c7", "#6b5436"};   // + the clip bar's amber (.clipbar u)
     for (const char* name : {"accent", "accent-dim", "accent-line", "gold", "ok", "warn", "bad"})
         hues.insert(normalise(t.at(name)));
     for (const auto& c : colours_in(qss())) {
@@ -118,9 +118,12 @@ TEST(Theme, SurroundIsNeutral) {
     for (auto it = std::sregex_iterator(s.begin(), s.end(), bg); it != std::sregex_iterator(); ++it, ++n) {
         const std::string c = normalise((*it)[1].str());
         // Besides the greys: the selection and active states, the slider key,
-        // and the model lamp in the menubar (--ok, the page's .lamp).
+        // the model lamp in the menubar (--ok, the page's .lamp), and the clip
+        // bar under the frame stats (--bad for what the SDR lost, the amber
+        // #6b5436 for where the network acted: .clipbar i and u).
         const bool allowed = neutral(c) || c == normalise(t.at("accent-dim")) || c == normalise(t.at("accent")) ||
-                             c == "#a2b8c7" || c == normalise(t.at("ok"));
+                             c == "#a2b8c7" || c == normalise(t.at("ok")) || c == normalise(t.at("bad")) ||
+                             c == "#6b5436";
         EXPECT_TRUE(allowed) << "background " << c;
     }
     EXPECT_GT(n, 20);

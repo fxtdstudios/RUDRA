@@ -69,15 +69,45 @@ double js_round(double v) { return std::floor(v + 0.5); }
 
 std::string js_fmt(double v, int digits) {
     if (!std::isfinite(v)) return "\u2014";
-    std::string f = js_to_fixed(v, digits);   // the same exact rounding, halves away from zero
-    const bool neg = !f.empty() && f[0] == '-';
-    if (neg) f.erase(0, 1);
-    const auto dot = f.find('.');
-    std::string whole = f.substr(0, dot), rest = dot == std::string::npos ? "" : f.substr(dot);
-    for (int i = int(whole.size()) - 3; i > 0; i -= 3) whole.insert(std::size_t(i), ",");
-    // en-US prints no sign on a value that rounds to zero ("-0.00" is "-0.00" in
-    // toLocaleString too, so keep it as toFixed has it).
-    return (neg ? "-" : "") + whole + rest;
+    // Intl.NumberFormat rounds the number's shortest decimal form (the digits
+    // String(x) prints), halves away from zero: 99.9995 to three places is
+    // 100.000, where toFixed, on the exact binary value 99.99949..., says 99.999.
+    const bool neg = std::signbit(v);
+    char buf[64];
+    const auto r = std::to_chars(buf, buf + sizeof buf, std::abs(v), std::chars_format::scientific);
+    std::string sci(buf, r.ptr);
+    const auto e = sci.find('e');
+    const int exp = std::atoi(sci.c_str() + e + 1);
+    std::string d;
+    for (std::size_t i = 0; i < e; ++i)
+        if (sci[i] != '.') d += sci[i];
+    // d is the digits of v = 0.d * 10^(exp + 1); line them up as whole.frac.
+    std::string whole, frac;
+    const int point = exp + 1;
+    if (point <= 0) {
+        whole = "0";
+        frac = std::string(std::size_t(-point), '0') + d;
+    } else if (point >= int(d.size())) {
+        whole = d + std::string(std::size_t(point - int(d.size())), '0');
+    } else {
+        whole = d.substr(0, std::size_t(point));
+        frac = d.substr(std::size_t(point));
+    }
+    if (int(frac.size()) < digits + 1) frac += std::string(std::size_t(digits + 1 - int(frac.size())), '0');
+    std::string keep = whole + frac.substr(0, std::size_t(digits));
+    if (frac[std::size_t(digits)] >= '5') {
+        int i = int(keep.size()) - 1;
+        while (i >= 0 && keep[std::size_t(i)] == '9') keep[std::size_t(i--)] = '0';
+        if (i < 0) keep.insert(keep.begin(), '1');
+        else ++keep[std::size_t(i)];
+    }
+    const std::size_t int_len = keep.size() - std::size_t(digits);
+    std::string w = keep.substr(0, int_len);
+    while (w.size() > 1 && w[0] == '0') w.erase(0, 1);
+    for (int i = int(w.size()) - 3; i > 0; i -= 3) w.insert(std::size_t(i), ",");
+    std::string out = w;
+    if (digits > 0) out += "." + keep.substr(int_len);
+    return (neg ? "-" : "") + out;
 }
 
 std::string js_signed(double v, int digits) {

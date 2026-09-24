@@ -29,7 +29,8 @@ UI = REPO / "ui"
 OUT = REPO / "native" / "tests" / "golden" / "session"
 
 HOOK = ("window.__studio = {state: state, params: params, snapshot: snapshot, ACTIONS: ACTIONS, "
-        "displayNits: displayNits, drawScopes: drawScopes, drawVector: drawVector, timecode: timecode};\n")
+        "displayNits: displayNits, drawScopes: drawScopes, drawVector: drawVector, timecode: timecode, "
+        "showProbe: showProbe, showMetrics: showMetrics, updatePipe: updatePipe, paintClipBar: paintClipBar};\n")
 
 # Gestures: ["mode", m] clicks the mode button; ["preserve"] clicks the check;
 # ["strength", v] and ["peak", v] drag a slider to v; ["region", i, [dx...], shift]

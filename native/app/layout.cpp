@@ -284,6 +284,10 @@ QWidget* MainWindow::build_centre(bool with_viewer) {
     probe_btn_->setObjectName("probeBtn");
     probe_btn_->setCheckable(true);
     probe_btn_->setToolTip("Read one pixel: baseline, RUDRA, and whether the SDR clipped there");
+    connect(probe_btn_, &QPushButton::clicked, this, [this](bool on) {
+        probe_on_ = on;
+        if (!on) probe_pixel(std::nullopt);
+    });
     guide_btn_ = new QPushButton("Guides", tools);
     guide_btn_->setObjectName("guideBtn");
     guide_btn_->setCheckable(true);
@@ -546,10 +550,13 @@ QWidget* MainWindow::build_right_rail() {
         column(ms)->setContentsMargins(9, 2, 9, 2);
         fv->addWidget(ms);
     }
-    auto* clip = styled("clipBar", "clipbar");
-    clip->setFixedHeight(5);
-    clip->hide();
-    fv->addWidget(clip);
+    clip_bar_ = new ClipBar(stats);
+    clip_bar_->hide();   // until a frame is measured
+    auto* clip_wrap = new QWidget(stats);
+    auto* cw = column(clip_wrap);
+    cw->setContentsMargins(9, 2, 9, 9);
+    cw->addWidget(clip_bar_);
+    fv->addWidget(clip_wrap);
     v->addWidget(stats);
 
     // ── render ──
@@ -641,7 +648,7 @@ QWidget* MainWindow::build_pipe() {
     arrow();
     seg("working", "pipeWorking", "scene-linear \u00b7 203 nits = 1.0");
     arrow();
-    view_transform_ = seg("view", "viewTransform", "PQ \u00b7 Rec.2020");
+    view_transform_ = seg("view", "viewTransform", "exposure + clip \u00b7 203 nits");
     arrow();
     seg("master", "pipeMaster", "ACES 2065-1 EXR, half");
     h->addStretch(1);

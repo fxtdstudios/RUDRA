@@ -75,6 +75,24 @@ private:
     double pos_ = 0.0;
 };
 
+// The clip bar under the frame stats (paintClipBar): red for what the SDR
+// lost, amber after it for where the network acted, as widths of the bar.
+class ClipBar : public QWidget {
+public:
+    explicit ClipBar(QWidget* parent = nullptr);
+    void set(double clipped_pct, double mask_pct);
+    QWidget* lost() const { return i_; }
+    QWidget* acted() const { return u_; }
+
+protected:
+    void resizeEvent(class QResizeEvent* e) override;
+
+private:
+    void place();
+    QWidget *i_ = nullptr, *u_ = nullptr;
+    double i_w_ = 0, u_l_ = 0, u_w_ = 0;
+};
+
 // The icon rail's buttons and the transport's, drawn as the page's SVGs are.
 class IconButton : public QToolButton {
 public:

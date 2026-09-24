@@ -212,3 +212,15 @@ QLabel[role="region-ev"] { font-family: "var(--mono-family)"; font-size: 11px; c
 QLabel[role="region-ev"]:hover { background: var(--raise); color: var(--ink); }
 QLabel[role="region-ev"][live="true"] { color: var(--ok); }
 QLabel[role="region-u"] { font-family: "var(--mono-family)"; font-size: 10px; color: var(--ink-3); }
+
+/* ── the frame stats rows, the clip bar, the probe box ─────────────── */
+QWidget[role="ro"] { background: transparent; }
+QLabel[role="value"][state="hi"] { color: var(--gold); }
+QLabel[role="value"][state="bad"] { color: var(--bad); }
+QWidget#clipBar { background: #242424; border-radius: 1px; }
+QWidget#clipLost { background: var(--bad); }
+QWidget#clipActed { background: #6b5436; }
+QFrame#probeBox { background: var(--panel-2); border: 1px solid var(--line); }
+QFrame#probeBox QLabel { background: transparent; font-family: "var(--mono-family)"; font-size: 11px; }
+QLabel#probeSrc[state="clip"] { color: var(--bad); }
+QLabel#probeModel[state="hi"] { color: var(--gold); }

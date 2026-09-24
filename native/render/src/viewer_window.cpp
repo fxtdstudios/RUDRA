@@ -162,6 +162,21 @@ struct ViewerWindow::Impl {
     std::string peak_from = "swapchain";   // swapchain, DXGI, or placeholder (unknown)
 
     std::function<void(const ViewerStatus&)> status_cb;
+    std::function<void(const ViewerWindow::Hover&)> hover_cb;
+    void hover(const QPointF& at, bool alt) {
+        if (!hover_cb) return;
+        ViewerWindow::Hover h;
+        h.window = at;
+        h.alt = alt;
+        const PlacedRect r = placed();
+        const ViewSize f = frame_view_size();
+        if (has_frame && r.width > 0 && r.height > 0 && at.x() >= r.left && at.y() >= r.top &&
+            at.x() < r.left + r.width && at.y() < r.top + r.height) {
+            h.x = (at.x() - r.left) / r.width * f.width;
+            h.y = (at.y() - r.top) / r.height * f.height;
+        }
+        hover_cb(h);
+    }
     std::function<void(const Grab&)> grab_cb;
     QRhiReadbackResult grab_rb;
     bool grab_pending = false, grab_y_up = false;
@@ -780,6 +795,9 @@ bool ViewerWindow::event(QEvent* e) {
                 QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
                 d_->release_swapchain();
             break;
+        case QEvent::Leave:
+            if (d_->hover_cb) d_->hover_cb(Hover{});
+            break;
         case QEvent::Resize:
             // Fit follows the window; a zoom keeps its scale and pan.
             d_->notify();
@@ -824,8 +842,11 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
     d_->changed_view();
 }
 
+void ViewerWindow::on_hover(std::function<void(const Hover&)> cb) { d_->hover_cb = std::move(cb); }
+
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
     if (!d_->input) return;
+    if (!d_->panning && !d_->wipe_dragging) d_->hover(e->position(), e->modifiers() & Qt::AltModifier);
     if (d_->panning) {
         d_->viewport.pan_x = d_->pan_x0 + (e->position().x() - d_->pan_from.x());
         d_->viewport.pan_y = d_->pan_y0 + (e->position().y() - d_->pan_from.y());

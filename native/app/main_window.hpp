@@ -21,6 +21,7 @@
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
+#include "rudra/engine/measure.hpp"
 #include "rudra/engine/session.hpp"
 
 class QAction;
@@ -84,6 +85,17 @@ public:
     void show_scopes(const ScopeData& s, std::optional<double> maxcll, const std::vector<std::uint8_t>& vector_rgba);
     void clear_scopes();
 
+    // A frame to show and measure (the engine's, or a test's): the viewer
+    // gets it now, the measurements follow on their own thread.
+    void present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model, FrameHeader header);
+    // Measure the frame on screen now, on this thread (the tests).
+    void measure_now();
+    const FrameMeasure* measurement() const { return measure_.get(); }
+    // The probe at a frame pixel, as a hover with Probe on shows it; nullopt
+    // clears it. `global` places the floating box.
+    void probe_pixel(std::optional<std::pair<double, double>> px, QPoint global = {});
+    QWidget* probe_box() const { return probe_box_; }
+
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
     const Session& session() const { return session_; }
@@ -117,6 +129,11 @@ private:
     void toggle_play();
     void frame_ready(const ReadyFrame& f, const ModelConstants& model);
     void show_status();
+    void schedule_stats();
+    void run_stats();
+    void apply_measure(std::shared_ptr<const FrameMeasure> m);
+    void update_pipe();
+    void fill_rows(QWidget* ms, const std::vector<MetricRow>& rows);
 
     std::map<std::string, QAction*, std::less<>> actions_;
     std::map<std::string, std::function<void()>, std::less<>> handlers_;
@@ -146,6 +163,23 @@ private:
     QLineEdit* seq_path_ = nullptr;
     QPlainTextEdit* log_ = nullptr;
     std::vector<QWidget*> notes_;
+    // The frame on screen and its measurements (computeStats).
+    struct Current {
+        SdrImage sdr;
+        Fields fields;
+        FrameScalars scalars;
+        ModelConstants model;
+        std::shared_ptr<const NetworkLinearImage> baseline;
+        FrameHeader header;
+    };
+    std::shared_ptr<const Current> current_frame_;
+    std::shared_ptr<const FrameMeasure> measure_;
+    QTimer stats_timer_;
+    int stats_gen_ = 0;
+    bool stats_running_ = false, stats_again_ = false;
+    class ClipBar* clip_bar_ = nullptr;
+    QWidget* probe_box_ = nullptr;
+    bool probe_on_ = false;
     Session session_;
     QTimer play_;
     int current_ = 0;

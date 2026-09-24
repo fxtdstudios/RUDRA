@@ -12,7 +12,9 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
+#include <QFrame>
 #include <QKeyEvent>
+#include <QLayout>
 #include <QLocale>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -30,7 +32,10 @@
 #include <cctype>
 #include <cmath>
 #include <optional>
+#include <thread>
 
+#include "rudra/core/baseline.hpp"
+#include "rudra/core/readouts.hpp"
 #include "rudra/engine/actions.hpp"
 #include "rudra/engine/frame_engine.hpp"
 #include "rudra/infer/backend.hpp"
@@ -125,6 +130,37 @@ MainWindow::MainWindow(bool with_viewer) {
     sync_checks();
     sync_ui();
     refresh_enabled();
+    update_pipe();
+
+    // The trailing edge of the page's scheduleStats: measure 90 ms after the
+    // grade last moved, on another thread; the picture never waits for it.
+    stats_timer_.setSingleShot(true);
+    stats_timer_.setInterval(90);
+    connect(&stats_timer_, &QTimer::timeout, this, [this] { run_stats(); });
+
+    // The floating probe box (#probeBox): it follows the cursor over the viewer,
+    // a window of its own so it can sit over the viewer's swapchain.
+    probe_box_ = new QFrame(this, Qt::ToolTip | Qt::FramelessWindowHint);
+    probe_box_->setObjectName("probeBox");
+    probe_box_->setAttribute(Qt::WA_ShowWithoutActivating);
+    probe_box_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    auto* pbl = new QGridLayout(probe_box_);
+    pbl->setContentsMargins(8, 6, 8, 6);
+    pbl->setHorizontalSpacing(10);
+    pbl->setVerticalSpacing(1);
+    probe_box_->hide();
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        viewer_->on_hover([this](const ViewerWindow::Hover& h) {
+            if (!(probe_on_ || h.alt) || !h.x) {
+                probe_pixel(std::nullopt);
+                return;
+            }
+            QWidget* host = findChild<QWidget*>("viewerHost");
+            probe_pixel(std::pair{*h.x, *h.y}, host ? host->mapToGlobal(h.window.toPoint()) : QPoint());
+        });
+    }
+#endif
 
     QStringList runtimes;
     for (auto r : compiled_runtimes()) runtimes << to_string(r);
@@ -201,8 +237,12 @@ void MainWindow::bind_handlers() {
     h["view-difference"] = [this] { session_.set_view_layer(2); };
 
     // Waiting on later steps of Phase 3: off, and they say why.
-    for (const char* id : {"copy-metrics", "copy-scopes", "remeasure", "copy-delivery"})
-        pending_[id] = "Measurements arrive with Phase 3 step 8.";
+    for (const char* id : {"copy-metrics", "copy-scopes", "copy-delivery"})
+        pending_[id] = "Copying arrives with Phase 3 step 11.";
+    h["remeasure"] = [this] {
+        measure_now();
+        log("re-measured");
+    };
     pending_["master"] = "Master arrives with Phase 3 step 9.";
 
 #ifdef RUDRA_APP_VIEWER
@@ -313,7 +353,7 @@ void MainWindow::refresh_enabled() {
             case EnableRule::CanUndo: on = session_.undo_depth() > 0; break;
             case EnableRule::CanRedo: on = session_.redo_depth() > 0; break;
             case EnableRule::HasMetrics:
-            case EnableRule::HasScopes: on = false; break;
+            case EnableRule::HasScopes: on = measure_ != nullptr; break;
         }
         a->setEnabled(on && why.isEmpty());
         a->setToolTip(why);
@@ -385,7 +425,8 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
-    (void)what;   // only the viewer needs to know which part changed
+    if (what & Session::Grade) schedule_stats();
+    if (what & (Session::Peak | Session::Delivery)) update_pipe();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
@@ -479,6 +520,13 @@ void MainWindow::close_frames() {
     frames_.clear();
     current_ = 0;
     frame_info_.clear();
+    current_frame_.reset();
+    measure_.reset();
+    ++stats_gen_;
+    clear_scopes();
+    clip_bar_->hide();
+    probe_pixel(std::nullopt);
+    update_pipe();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) viewer_->clear_frame();
 #endif
@@ -557,14 +605,13 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
         log(name + ": " + QString::fromStdString(f.error->message));
         return;
     }
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_) {
-        viewer_->set_frame({*f.sdr, f.fields->fields, f.fields->scalars, model});
-        viewer_->set_composite(session_.composite_params());
-    }
-#else
-    (void)model;
-#endif
+    FrameHeader header;
+    const QString res = QStringLiteral("%1x%2").arg(f.sdr->width()).arg(f.sdr->height());
+    header.source_resolution = header.resolution = res.toStdString();
+    header.tiled = false;   // the preview is one untiled pass, as the Studio's
+    if (!f.from_cache) header.elapsed_s = f.infer_ms / 1000.0;
+    else if (current_frame_ && current_frame_->header.elapsed_s) header.elapsed_s = current_frame_->header.elapsed_s;
+    present_frame(*f.sdr, f.fields->fields, f.fields->scalars, model, header);
     const auto st = engine_->stats();
     frame_info_ = QStringLiteral("%1  %2/%3  ·  %4")
                       .arg(name)
@@ -696,6 +743,179 @@ void MainWindow::clear_scopes() {
     wave_->clear();
     hist_->clear();
     vector_->clear();
+}
+
+void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars, ModelConstants model,
+                               FrameHeader header) {
+    auto cur = std::make_shared<Current>();
+    cur->baseline = std::make_shared<const NetworkLinearImage>(
+        corrected_baseline(sdr, model.corpus_ev, scalars.curve_params));
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        viewer_->set_frame({sdr, fields, scalars, model});
+        viewer_->set_composite(session_.composite_params());
+    }
+#endif
+    cur->sdr = std::move(sdr);
+    cur->fields = std::move(fields);
+    cur->scalars = std::move(scalars);
+    cur->model = model;
+    cur->header = std::move(header);
+    current_frame_ = std::move(cur);
+    run_stats();   // adopt(): computeStats at once for a new frame
+}
+
+void MainWindow::schedule_stats() {
+    if (current_frame_) stats_timer_.start();
+}
+
+void MainWindow::run_stats() {
+    if (!current_frame_) return;
+    if (stats_running_) {   // the page's statsPending: once more when this one is done
+        stats_again_ = true;
+        return;
+    }
+    stats_running_ = true;
+    const int gen = ++stats_gen_;
+    auto frame = current_frame_;
+    const CompositeParams params = session_.composite_params();
+    QPointer<MainWindow> self(this);
+    std::thread([self, frame, params, gen] {
+        auto m = std::make_shared<const FrameMeasure>(
+            measure_frame(frame->sdr, frame->fields, frame->scalars, frame->model, params, frame->baseline.get()));
+        QMetaObject::invokeMethod(qApp, [self, m, gen] {
+            if (!self) return;
+            self->stats_running_ = false;
+            if (gen == self->stats_gen_) self->apply_measure(m);
+            if (self->stats_again_) {
+                self->stats_again_ = false;
+                self->run_stats();
+            }
+        });
+    }).detach();
+}
+
+void MainWindow::measure_now() {
+    if (!current_frame_) return;
+    const auto& f = *current_frame_;
+    ++stats_gen_;   // anything in flight is now stale
+    apply_measure(std::make_shared<const FrameMeasure>(
+        measure_frame(f.sdr, f.fields, f.scalars, f.model, session_.composite_params(), f.baseline.get())));
+}
+
+void MainWindow::fill_rows(QWidget* ms, const std::vector<MetricRow>& rows) {
+    auto* v = ms->layout();
+    while (QLayoutItem* it = v->takeAt(0)) {
+        delete it->widget();
+        delete it;
+    }
+    for (const auto& r : rows) {
+        auto* row = new QWidget(ms);
+        row->setProperty("role", "ro");
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 2, 0, 2);
+        h->setSpacing(3);
+        auto* k = new QLabel(QString::fromStdString(r.k), row);
+        k->setProperty("role", "key");
+        auto* val = new QLabel(QString::fromStdString(r.v), row);
+        val->setProperty("role", "value");
+        if (r.warn) val->setProperty("state", "warn");
+        val->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        auto* u = new QLabel(QString::fromStdString(r.u), row);
+        u->setProperty("role", "unit");
+        h->addWidget(k);
+        h->addStretch(1);
+        h->addWidget(val);
+        h->addWidget(u);
+        v->addWidget(row);
+    }
+}
+
+void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m) {
+    measure_ = std::move(m);
+    const auto& f = *measure_;
+    const MetricsText t = metrics_text(f.frame_metrics(), current_frame_ ? std::optional(current_frame_->header)
+                                                                          : std::nullopt,
+                                       f.coverage.clipped_pct);
+    fill_rows(findChild<QWidget*>("measA"), t.a);
+    fill_rows(findChild<QWidget*>("measB"), t.b);
+    findChild<QLabel*>("statusMask")->setText(QString::fromStdString(t.status_mask));
+    findChild<QLabel*>("statusTime")->setText(QString::fromStdString(t.status_time));
+    src_info_->setText(QString::fromStdString(t.src_info));
+    clip_bar_->set(f.coverage.clipped_pct, f.coverage.highlight_pct);
+    clip_bar_->show();
+    show_scopes(f.measured.scopes, f.measured.metrics.maxcll, f.vector_rgba);
+    update_pipe();
+    refresh_enabled();
+}
+
+void MainWindow::update_pipe() {
+    std::optional<double> maxcll;
+    if (measure_) maxcll = measure_->measured.metrics.maxcll;
+    const PipeText t = pipe_text(session_.container, session_.display_nits(), maxcll,
+                                 current_frame_ ? std::optional(current_frame_->header) : std::nullopt);
+    findChild<QLabel*>("pipeIn")->setText(QString::fromStdString(t.in));
+    findChild<QLabel*>("pipeWorking")->setText(QString::fromStdString(t.working));
+    view_transform_->setText(QString::fromStdString(t.view));
+    findChild<QLabel*>("pipeMaster")->setText(QString::fromStdString(t.master));
+    auto* warn = findChild<QLabel*>("pipeWarn");
+    warn->setText(QString::fromStdString(t.warn));
+    warn->setVisible(t.warn_shown);
+}
+
+void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint global) {
+    std::optional<ProbeInput> p;
+    if (px && measure_) p = measure_->probe_at(px->first, px->second);
+    const ProbePanelText t = probe_panel(p);
+    auto set = [this](const char* id, const std::string& text, const char* state) {
+        auto* l = findChild<QLabel*>(id);
+        l->setText(QString::fromStdString(text));
+        if (l->property("state").toString() != state) {
+            l->setProperty("state", state);
+            l->style()->unpolish(l);
+            l->style()->polish(l);
+        }
+    };
+    set("probeXY", t.xy, "");
+    set("probeNits", t.nits, t.idle ? "idle" : "");
+    findChild<QLabel*>("probeNitsUnit")->setVisible(!t.idle);
+    set("probeDelta", t.delta, t.delta_class.find("idle") != std::string::npos ? "idle" : "");
+    set("probeSrc", t.src, t.src_class.c_str());
+    set("probeBase", t.base, "");
+    set("probeModel", t.model, t.model_class.c_str());
+    set("probeMask", t.mask, "");
+    // The floating box.
+    if (!p) {
+        probe_box_->hide();
+        return;
+    }
+    auto* grid = static_cast<QGridLayout*>(probe_box_->layout());
+    while (QLayoutItem* it = grid->takeAt(0)) {
+        delete it->widget();
+        delete it;
+    }
+    int r = 0;
+    for (const auto& row : rudra::probe_box(*p)) {
+        auto* k = new QLabel(QString::fromStdString(row.k), probe_box_);
+        k->setProperty("role", "key");
+        auto* v = new QLabel(QString::fromStdString(row.v), probe_box_);
+        v->setProperty("role", "value");
+        if (!row.cls.empty()) v->setProperty("state", QString::fromStdString(row.cls));
+        grid->addWidget(k, r, 0);
+        grid->addWidget(v, r, 1);
+        ++r;
+    }
+    probe_box_->adjustSize();
+    // showProbe's placing: 16 px right of and below the cursor, flipped to the
+    // other side at the viewer's edges, at least 4 px in.
+    QWidget* area = viewer_stack_;
+    const QPoint origin = area->mapToGlobal(QPoint(0, 0));
+    const int bw = std::max(196, probe_box_->width()), bh = probe_box_->height();
+    int lx = global.x() - origin.x() + 16, ly = global.y() - origin.y() + 16;
+    if (lx + bw > area->width()) lx = global.x() - origin.x() - bw - 16;
+    if (ly + bh > area->height()) ly = global.y() - origin.y() - bh - 16;
+    probe_box_->move(origin + QPoint(std::max(4, lx), std::max(4, ly)));
+    probe_box_->show();
 }
 
 void MainWindow::log(const QString& line) {
