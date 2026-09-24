@@ -787,3 +787,43 @@ The one structural change: step 9 moves the master pipeline, which is in
 `cli/master.cpp` today, into a library the app can call. It goes to
 `deliver/` (the stages are core and deliver already), and the CLI keeps only
 argument parsing, so the layer rule stays as it is.
+
+---
+
+## 17. Phase 4: video delivery, the next twelve working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): a movie in, an HDR10, HLG or
+ProRes master out, with its audio, checked before it is published and never
+replacing anything; the same queue as `rudra batch`, resumable from either
+side. Same rules as the phases before: the Python is the oracle
+(`rudra/video.py` convert_video, `rudra/delivery/video.py` encode_sequence,
+`rudra/delivery/profiles.py`, `rudra/batch.py`), each step ports one part and
+holds it to goldens the Python writes, and a step is done when its test
+passes.
+
+**One decision up front.** The plan named libav linked in-process for decode.
+The Python drives the ffmpeg and ffprobe programs as subprocesses, for decode
+(zscale into rgb48 on a pipe), encode (a 16-bit PNG spool into libx265 or
+prores_ks) and QC (ffprobe's JSON); x265 is GPL, and a subprocess keeps it out
+of the app. The native port does the same: the same programs with the same
+arguments give the same bytes, which is what makes the Python an exact
+oracle. In-process libav stays for the viewer's random access into long
+movies, a later step, and is not needed for delivery.
+
+| # | Step | Oracle | Done when | Days |
+|---|---|---|---|---|
+| 1 | Probe and the input contract: find ffmpeg and ffprobe, read ffprobe's JSON, the clock (`timing`: CFR, continuous timestamps) and `input_contract` (HDR, alpha, interlace, rotation, anamorphic, odd sizes, colour tags or explicit overrides) with every refusal | `rudra/video.py` probe, timing, input_contract, has_alpha | the same contract, clock and messages on a set of small clips the emitter makes with ffmpeg | 1 |
+| 2 | Decode: ffmpeg into 16-bit RGB (and RGBA) on a pipe through `decoder_filter`, frame by frame, a truncated or extra frame refused | convert_video's decode loop | frames equal the Python's decoded arrays, bit for bit | 1 |
+| 3 | The video predictor: canonicalise the SDR, convert primaries to Rec.2020, the shadow smoother with its cut detector, residual scale, tiles blended as the Python blends them | `Predictor.predict`, `ShadowSmoother` | HDR frames within the package's tolerance of eager PyTorch on the clips; the same cuts and weights | 1.5 |
+| 4 | Mastering and the spool: `encode_master` for HDR10, HLG and ProRes (PQ), MaxCLL and MaxFALL per frame, the 16-bit PNG spool (alpha carried), disk space checks | `delivery/profiles.py`, the spool writer | the same code values and the same PNG bytes | 1 |
+| 5 | Encode and publish: the ffmpeg command, argument for argument, for all five presets; staged beside the output and renamed into place; nothing replaced | `encode_command` | the same argv; outputs decode | 1 |
+| 6 | QC: `quality_check` (codec, pixel format, tags, frame count, every timestamp, HDR10 SEI and its values, HLG without static metadata, ProRes tag, duration, audio count, rate, channels, offsets, a complete decode) and `check_alpha` | `quality_check`, `check_alpha` | the same pass or the same errors on good and broken files | 1 |
+| 7 | `rudra-native video`: convert_video end to end, the sidecar report key for key | `convert_video` | on three clips (HDR10 with audio, HLG, ProRes 4444 with alpha) the published file passes QC and decodes to the Python's frames; the report's keys and values match | 1 |
+| 8 | Frames to video: `encode_sequence` (a finished HDR sequence to HDR10, HLG or ProRes) | `rudra/delivery/video.py` | the same argv, QC and tags | 1 |
+| 9 | The queue runs video jobs: `run_queue` with its locks, digests, retry and resume | `rudra/batch.py` | a three-clip queue killed mid-clip resumes to the Python's final state; each side resumes the other's queue | 1 |
+| 10 | ffmpeg on the machine: capability probe (encoders, zscale) and a 16-frame HDR10 self-test per ffmpeg binary, cached by its hash | the probe in convert_video | a missing encoder or a broken build is reported before any work | 0.5 |
+| 11 | The app: a movie opens as a shot (frames decoded on demand), the export sheet's HDR10, HLG and ProRes tiles go live as queue jobs, a queue window with progress and resume | the Pro export board | a movie scrubs, grades and exports from the window | 1.5 |
+| 12 | Review: the scripted and by-hand pass on Windows (an ffmpeg with libx265 and zscale beside the app), `STATUS.md` | | a clip with audio in, an HDR10 master out that passes QC, from the app and from the queue | 0.5 |
+
+Order: 1 to 7 in order (each needs the one before), 8 and 10 any time after 5,
+9 after 7, 11 after 9, 12 last.
