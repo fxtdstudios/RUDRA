@@ -36,6 +36,36 @@ inline double np_pairwise_sum(std::span<const double> a) noexcept {
     return np_pairwise_sum(a.first(n2)) + np_pairwise_sum(a.subspan(n2));
 }
 
+// The same pairwise sum over float32 with float32 accumulators, as numpy adds
+// a float32 array; and its mean, the float32 sum divided by the count in
+// float32 (numpy 2's _mean: ret.dtype.type(ret / rcount)).
+inline float np_pairwise_sum(std::span<const float> a) noexcept {
+    const std::size_t n = a.size();
+    if (n < 8) {
+        float r = 0.0f;
+        for (float v : a) r += v;
+        return r;
+    }
+    if (n <= 128) {
+        float r[8];
+        for (int j = 0; j < 8; ++j) r[j] = a[std::size_t(j)];
+        std::size_t i = 8;
+        for (; i < n - (n % 8); i += 8)
+            for (int j = 0; j < 8; ++j) r[j] += a[i + std::size_t(j)];
+        float res = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]));
+        for (; i < n; ++i) res += a[i];
+        return res;
+    }
+    std::size_t n2 = n / 2;
+    n2 -= n2 % 8;
+    return np_pairwise_sum(a.first(n2)) + np_pairwise_sum(a.subspan(n2));
+}
+
+inline float np_mean(std::span<const float> a) noexcept {
+    if (a.empty()) return std::numeric_limits<float>::quiet_NaN();
+    return np_pairwise_sum(a) / static_cast<float>(a.size());
+}
+
 inline double np_mean(std::span<const double> a) noexcept {
     if (a.empty()) return std::numeric_limits<double>::quiet_NaN();
     return np_pairwise_sum(a) / static_cast<double>(a.size());

@@ -12,6 +12,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "rudra/core/numeric.hpp"
 #include "rudra/core/video_predict.hpp"
 #include "rudra/media/video_decode.hpp"
 #include "rudra/platform/npy.hpp"
@@ -130,4 +131,21 @@ TEST(VideoPredict, CanonicalisationRefusesUnknownEncodings) {
     auto lim = canonicalize_sdr(PlanarBuffer(3, 1, 1, 16.0f / 255.0f), "srgb", "limited");
     ASSERT_TRUE(lim.ok());
     EXPECT_EQ(lim->span()[0], 0.0f);
+}
+
+// Step 4: maxrgb.mean() of a float32 frame, numpy's pairwise float32 sum.
+TEST(VideoMaster, Float32MeanIsNumpys) {
+    std::ifstream f(fs::path(RUDRA_GOLDEN_DIR) / "video_master" / "index.json");
+    std::stringstream ss;
+    ss << f.rdbuf();
+    const json idx = json::parse(ss.str());
+    for (const auto& m : idx["means"]) {
+        const std::size_t n = m["n"].get<std::size_t>();
+        std::vector<float> a(n);
+        for (std::size_t i = 0; i < n; ++i)
+            a[i] = static_cast<float>(static_cast<double>((std::uint64_t(i) * 2654435761ull) % (1ull << 32)) /
+                                      4294967296.0 * 1000.0);
+        EXPECT_EQ(static_cast<double>(np_mean(std::span<const float>(a))), m["mean"].get<double>()) << n;
+        EXPECT_EQ(static_cast<double>(*std::max_element(a.begin(), a.end())), m["max"].get<double>()) << n;
+    }
 }

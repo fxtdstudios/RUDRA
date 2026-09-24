@@ -4,7 +4,7 @@
 # ffmpeg as programs, as the Python does.
 set(_media_sources src/sequence.cpp src/video_probe.cpp src/video_decode.cpp)
 if(RUDRA_WITH_OPENCV)
-  list(APPEND _media_sources src/still.cpp)
+  list(APPEND _media_sources src/still.cpp src/png16.cpp)
 endif()
 rudra_library(rudra_media SOURCES ${_media_sources})
 target_link_libraries(rudra_media PUBLIC rudra::rudra_core PRIVATE nlohmann_json::nlohmann_json)

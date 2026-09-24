@@ -7,7 +7,7 @@ target_compile_definitions(rudra_tests PRIVATE RUDRA_GOLDEN_DIR="${CMAKE_CURRENT
 add_dependencies(rudra_tests rudra_theme)   # test_theme reads the generated sheet
 rudra_warnings(rudra_tests)
 if(RUDRA_WITH_OPENCV)
-  target_sources(rudra_tests PRIVATE test_decode.cpp)
+  target_sources(rudra_tests PRIVATE test_decode.cpp test_video_master.cpp)
 endif()
 
 include(GoogleTest)

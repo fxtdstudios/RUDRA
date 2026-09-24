@@ -476,7 +476,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
 - [x] Decode on a pipe, bit for bit: the Python's decoder command, and every frame equal to the one `read_frame` returned
 - [x] The video predictor with the shadow smoother: the same cuts and weights as eager PyTorch and every HDR pixel
   within 2.7e-6 of it, whole frames and tiles, on LibTorch and ONNX Runtime
-- [ ] Mastering and the PNG spool
+- [x] Mastering and the PNG spool: MaxCLL, frame averages, ceilings and HLG codes identical to the Python's, PQ codes
+  within one of 65535 (numpy's SIMD power is not correctly rounded)
 - [ ] Encode and publish, argument for argument
 - [ ] QC and the alpha check
 - [ ] `rudra-native video` end to end
