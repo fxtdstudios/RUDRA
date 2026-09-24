@@ -36,7 +36,7 @@ fi
 
 echo "== build rudra-hdr-probe"
 GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
-cmake -S native -B build/native_gate_b "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release \
+cmake -S native -B build/native_gate_b ${GEN[@]+"${GEN[@]}"} -DCMAKE_BUILD_TYPE=Release \
   -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
   -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" >/dev/null
 cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check --parallel
@@ -81,7 +81,7 @@ for api in $PARITY_APIS; do
   for mode in parity card; do
     code=0
     extra=(); [ "$mode" = card ] && extra=(--card)
-    outp=$("$VIEWER" --api "$api" "${extra[@]}" --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
+    outp=$("$VIEWER" --api "$api" ${extra[@]+"${extra[@]}"} --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
     printf '%s\n' "$outp" | grep -E "^Viewer window|^Gate B through|patch|=>|FAIL" || true
     case $code in
       0) ;;

@@ -397,6 +397,8 @@ Progress: Phase 0 closed 23 Sep 2026, GO for Phase 1 on Windows; the Mac runs ar
   (Windows) and `scripts/native_gate_b.sh` (macOS, Linux)
 - [x] Gate A on Windows GPUs: LibTorch CUDA (true fp32) and ONNX Runtime
   DirectML pass on an RTX 4080 SUPER (`scripts/NATIVE_GATE_A.ps1`)
+- [x] Gate A script for macOS and Linux: `scripts/native_gate_a.sh` (pip torch,
+  the ONNX Runtime release archive, no OpenCV); passes on Linux CPU
 - [ ] Gate A on the 429 bench frames, MPS and Core ML
 - [x] Gate B on Windows: D3D12 scRGB and HDR10 carry 1 000 and 2 000 nits to
   the swapchain on an HDR display
