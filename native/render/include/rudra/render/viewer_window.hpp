@@ -45,7 +45,6 @@ struct ViewerStatus {
     int last_begin = 0;              // the last QRhi::FrameOpResult
     bool grab_waiting = false;       // a grab asked for and not yet read back
     bool grab_pending = false;       // its readback is in flight
-    long long fallback_frames = 0;   // frames drawn because an update request never came
 };
 
 // One frame on the GPU: the SDR the network saw, its fields, and the

@@ -13,7 +13,6 @@
 #include <QVulkanInstance>
 #endif
 #include <QScreen>
-#include <QTimer>
 
 #ifdef Q_OS_WIN
 #include <dxgi1_6.h>
@@ -116,18 +115,6 @@ std::optional<double> dxgi_peak(const QRect& native_geometry) {
 
 struct ViewerWindow::Impl {
     ViewerWindow* w = nullptr;
-    // Every repaint is asked for with requestUpdate() and, in case the
-    // platform drops it, a timer that draws the frame itself 50 ms later.
-    // On Windows with D3D12 an update requested while a frame is being
-    // delivered can be lost (Gate B, 24 Sep: every case of the window check
-    // waited for a second request), which in the app is a slider move that
-    // never shows. render() stops the timer, so it only fires for a lost one.
-    QTimer update_fallback;
-    long long fallbacks = 0;
-    void schedule() {
-        w->requestUpdate();
-        if (!update_fallback.isActive()) update_fallback.start();
-    }
     GpuApi api = GpuApi::OpenGL;
     bool prefer_hdr = true;
 
@@ -427,7 +414,6 @@ struct ViewerWindow::Impl {
     }
 
     void render() {
-        update_fallback.stop();
         if (!has_swapchain) return;
         if (sc->currentPixelSize() != sc->surfacePixelSize()) resize_swapchain();
         if (!has_swapchain) return;
@@ -445,7 +431,7 @@ struct ViewerWindow::Impl {
             return;
         }
         if (r != QRhi::FrameOpSuccess) {
-            schedule();
+            w->requestUpdate();
             return;
         }
         QRhiCommandBuffer* cb = sc->currentFrameCommandBuffer();
@@ -551,8 +537,12 @@ struct ViewerWindow::Impl {
         // With frames in flight (D3D12, Vulkan, Metal) a readback completes
         // only when its frame slot comes round again, so a grab would report
         // an older frame, or never. Wait for it here: grabs are for tests and
-        // Gate B, never the interactive path.
+        // Gate B, never the interactive path. On D3D12 even that is not
+        // enough: the result is handed over at a later beginFrame (Gate B,
+        // 24 Sep: every window check waited two frames that nothing asked
+        // for), so while a readback is out the viewer keeps drawing.
         if (grab_pending) rhi->finish();
+        if (grab_pending) w->requestUpdate();
     }
 
     void finish_grab() {
@@ -593,7 +583,7 @@ struct ViewerWindow::Impl {
             frame_size = {};
             view_dirty = true;
         }
-        schedule();
+        w->requestUpdate();
     }
 
     void release_all() {
@@ -655,17 +645,16 @@ struct ViewerWindow::Impl {
         s.last_begin = last_begin;
         s.grab_waiting = bool(grab_cb);
         s.grab_pending = grab_pending;
-        s.fallback_frames = fallbacks;
         return s;
     }
 
     void changed_view() {
         view_dirty = true;
-        schedule();
+        w->requestUpdate();
     }
     void moved() {
         notify();
-        schedule();
+        w->requestUpdate();
     }
 };
 
@@ -673,13 +662,6 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     d_->w = this;
     d_->api = resolve(api);
     d_->prefer_hdr = prefer_hdr;
-    d_->update_fallback.setSingleShot(true);
-    d_->update_fallback.setInterval(50);
-    QObject::connect(&d_->update_fallback, &QTimer::timeout, this, [this] {
-        if (!d_->initialized || !isExposed() || size().isEmpty()) return;
-        ++d_->fallbacks;
-        d_->render();
-    });
 #if QT_CONFIG(vulkan)
     if (d_->api == GpuApi::Vulkan) {
         d_->vk = std::make_unique<QVulkanInstance>();
@@ -728,7 +710,7 @@ void ViewerWindow::clear_frame() {
 void ViewerWindow::set_composite(const CompositeParams& params) {
     d_->composite = params;
     d_->composite_dirty = true;
-    d_->schedule();
+    requestUpdate();
 }
 
 void ViewerWindow::set_view(const ViewParams& params) {
@@ -749,7 +731,7 @@ void ViewerWindow::set_viewport(const ViewportState& v) {
 
 void ViewerWindow::set_guides(const GuideOptions& g) {
     d_->guides = g;
-    d_->schedule();
+    requestUpdate();
 }
 
 GuideOptions ViewerWindow::guides() const { return d_->guides; }
@@ -776,7 +758,7 @@ void ViewerWindow::set_input_enabled(bool on) {
 
 void ViewerWindow::grab(std::function<void(const Grab&)> done) {
     d_->grab_cb = std::move(done);
-    d_->schedule();
+    requestUpdate();
 }
 
 void ViewerWindow::exposeEvent(QExposeEvent*) {
@@ -801,7 +783,7 @@ bool ViewerWindow::event(QEvent* e) {
         case QEvent::Resize:
             // Fit follows the window; a zoom keeps its scale and pan.
             d_->notify();
-            d_->schedule();
+            requestUpdate();
             break;
         default: break;
     }

@@ -658,7 +658,7 @@ the SDR fallback), `ViewerBackend` and `OutputPath` in `render/`.
 | 9 | The viewer in the Qt shell: a `QWindow` with its own QRhi swapchain inside the widget tree (`createWindowContainer`), fit, 1:1, zoom about the cursor, pan, wipe drag, view switching with no recomposite, resize, device loss | `fitScale` and `zoomAbout` in `ui/app.js` (goldens of viewport maths) | viewport maths equal to the browser's; a still is judged in the app exactly as in the Studio; Gate B re-run through the real display pass on the PA279CRV (scRGB and HDR10) | 3 | **done** 24 Sep. Linux: `render/viewer_window.cpp` (composite, display and blit on its own swapchain, the HDR format from the display, device loss rebuilt from host copies), `core/viewport.cpp` equal to the Studio's own layout (`tools/emit_viewport_golden.py`); `rudra-viewer-check` reads the swapchain back at fit, 2x and 1:1 within 1 code of `core/view.cpp` at device pixel ratios 1, 1.25, 1.5 and 2. Windows, RTX 4080 SUPER and PA279CRV: Gate B through the real display pass passes on D3D12 and D3D11 scRGB (203 exact, 1 000 and 2 000 clipped at the display's 418 nits) and on Vulkan scRGB (418 from DXGI). The first Windows runs found three things, all fixed: the parity check did not allow for texel ties at a 150 % display scale, and Qt's Vulkan swapchain reports a placeholder 1 000-nit peak, now replaced by the DXGI value on Windows; and on D3D12, D3D11 and Vulkan a swapchain readback completes only when its frame slot comes round again, so each window check compared a case with the one before it (reproduced on lavapipe, now waited for with `QRhi::finish`, and lavapipe Vulkan runs in CI). "Actual pixels" is device 1:1. Three Studio viewport defects fixed on the way (view.spec.md section 10) |
 | 10 | Frame path: decode, an engine inference job with generations and cancellation, field upload, composite, present; stills and sequences (Phase 1 step 10) with fields cached per frame | Phase 1 modules | scrubbing a 240-frame folder never shows a stale frame; latency recorded | 3 | **done** 24 Sep: `engine/frame_engine.cpp`, the InferActor: one worker owns the backend; `show()` bumps the generation, cancels older queued work, queues the frame and 12 after it; results are cached (32 frames, LRU, the frame on screen never evicted) and delivered only while current. A 240-frame scrub faster than inference never delivers another frame's pixels or fields (fakes tagged by value; ThreadSanitizer clean); with the real package on CPU over the 17 decode fixtures, every delivered frame equals a direct decode, the refused float TIFF is reported as itself, the way back is all cache hits. The app opens a still or a folder through it (comma, full stop, Home, End, Space at 24 fps). Latency at 1080p is measured with step 12 |
 | 11 | Guides (new, no Studio oracle): title and action safe, aspect masks, centre cross, specified in `view.spec.md` | the spec | CPU reference test; drawn identically on every backend | 1 | **done** 24 Sep: [`view.spec.md`](view.spec.md) section 11, `core/guides.cpp`, drawn by the blit in device pixels; `rudra-viewer-check` holds the window's readback to the CPU reference with all guides on and a 2.39 and a 4:3 mask, at fit, 2x and 1:1, device pixel ratios 1 and 1.5 (within 1 code); the app's View > Guides (G, Shift+G) |
-| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | **in progress** 24 Sep: the matrix above; `rudra-gpu-parity --bench` times composite plus display per slider move and `rudra-native bench-scopes` the CPU measurements, both run by the gate scripts; 6.6 filled where measured. Waiting on the next Windows gate runs and the Mac |
+| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | **in progress** 24 Sep: the matrix above; `rudra-gpu-parity --bench` times composite plus display per slider move and `rudra-native bench-scopes` the CPU measurements, both run by the gate scripts; 6.6 filled where measured. Windows complete 24 Sep (03:55 run): GPU parity, the display pass, the HDR paths and the window readback pass on D3D12, D3D11, Vulkan and OpenGL, and Gate B through the viewer on D3D12, D3D11 and Vulkan; open: Metal (the Mac runs) and the desktop scopes timing from `NATIVE_GATE_A.ps1` |
 | 13 | Review: Phase 2 exit written into `STATUS.md` | | probe and measurements equal the browser Studio's on every backend | 0.5 | |
 
 Backend matrix for the viewer (step 12), from the gate scripts and CI:
@@ -666,7 +666,7 @@ Backend matrix for the viewer (step 12), from the gate scripts and CI:
 | Backend | Composite (fp32 / fp16) | Display pass (SDR, 7 views) | HDR paths (40 cases) | Reductions | Window readback (fit, 2x, 1:1, guides) | Gate B through the viewer |
 |---|---|---|---|---|---|---|
 | OpenGL, llvmpipe (Linux, CI) | pass | exact | pass (2.8e-5, 1 ulp) | exact | pass at device pixel ratios 1 to 2 | n/a: no HDR swapchain |
-| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | stalled at the 03:17 run (below); re-run | **pass**, scRGB, 203 exact, clipped at 418 |
+| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | **pass** at device pixel ratio 1.5 (the 03:55 run; below) | **pass**, scRGB, 203 exact, clipped at 418 |
 | D3D11, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, as D3D12 |
 | Vulkan, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, the display's 418 nits from DXGI (Qt reports a placeholder 1 000) |
 | Vulkan, lavapipe (Linux, CI) | pass | exact | pass | exact | pass at device pixel ratios 1 and 1.5 | n/a: no HDR swapchain |
@@ -686,13 +686,14 @@ grab was asked for and no frame followed. The viewer now counts update
 requests, presented frames and failed `beginFrame` calls, the check asks
 again for a frame once a second while a grab waits (`nudges`, per case in the
 report), and a `TIMEOUT` report carries the counters (`stall`), so the next
-run says whether D3D12 drops the update request or refuses the frame. It
-drops it: the 03:50 run passes all 18 cases within 1 code, each one after
-exactly two nudges. That is a viewer defect, not a check one (in the app, a
-slider move that never shows), so the viewer now arms a 50 ms timer with
-every update it asks for and draws the frame itself if the request never
-arrives; `fallback_frames` counts those, per case in the report. On Linux it
-never fires.
+run says whether D3D12 drops the update request or refuses the frame. The
+03:50 and 03:55 runs pass all 18 cases within 1 code, each after exactly two
+nudges, and a viewer-side fallback for a lost update request never fired: the
+requests arrive, but D3D12 hands a readback over only at a later
+`beginFrame`, even after `QRhi::finish`, and nothing asked for those frames.
+While a readback is out the viewer now keeps drawing, so a grab lands in the
+frames it takes and no nudge is needed. The interactive path is unaffected
+(it never reads back).
 Found on the way: on Vulkan the window's surface outlived the
 `QVulkanInstance` it was made from, and the check crashed on exit after
 writing its report (lavapipe, exit 139); the viewer now destroys its platform
