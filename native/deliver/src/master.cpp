@@ -73,6 +73,20 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
     return r;
 }
 
+std::string master_request_json(const MasterRequest& q) {
+    nlohmann::json j{{"checkpoint", q.checkpoint},     {"preserve_outside", q.preserve_outside},
+                     {"recovery_mode", q.recovery_mode}, {"strength", q.strength},
+                     {"region_softness_stops", q.region_softness_stops}, {"anchor", q.anchor},
+                     {"anchor_knee", q.anchor_knee},     {"carry_chroma", q.carry_chroma},
+                     {"chroma_knee", q.chroma_knee},     {"source_space", q.source_space},
+                     {"container", q.container}};
+    auto regions = nlohmann::json::array();
+    for (const auto& b : q.regions)
+        regions.push_back({{"label", b.label}, {"low_nits", b.low_nits}, {"high_nits", b.high_nits}, {"ev", b.ev}});
+    j["regions"] = regions;
+    return j.dump();
+}
+
 Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fields& fields,
                                   const FrameScalars& scalars, const ModelConstants& model, const MasterRequest& q,
                                   const std::filesystem::path& out) {

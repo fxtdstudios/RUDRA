@@ -463,7 +463,8 @@ Studio workflow with no Python installed, every number and file matching the Stu
   and says what that display can show
 - [x] The rest of the page: the copies (the page's clipboard bytes), the sheets, drop to open, Open recent, and the
   window, rails, tab, container and Render fields kept between runs
-- [ ] The whole workflow on Windows with no Python on the machine
+- [x] The whole workflow scripted (`RUDRA --workflow-check`, its masters held to the CLI's): passes on Linux on 240 frames
+- [ ] The same on Windows with no Python on the PATH, and by hand on the HDR display (`scripts/NATIVE_PHASE3_EXIT.ps1`)
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

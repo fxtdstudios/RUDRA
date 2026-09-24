@@ -157,6 +157,11 @@ public:
     // `count` stand in for the opened frames and the network (the tests).
     void master(PrepareMasterFrame prepare = {}, std::size_t count = 0);
     bool mastering() const { return master_job_ && master_job_->running(); }
+    // What a master renders with now (the session, the Deliver checks, the model).
+    MasterRequest master_request() const;
+    const SdrImage* frame_sdr() const;
+    const std::vector<std::filesystem::path>& frames() const { return frames_; }
+    ViewerWindow* viewer() const { return viewer_; }
     // The frame on screen (the tests): its fields and which frame it is.
     const Fields* frame_fields() const;
     int current_index() const { return current_; }

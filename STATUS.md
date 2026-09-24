@@ -1,6 +1,6 @@
 # RUDRA — Training & Research Status
 
-> **Updated 23 Sep 2026.** The snapshot below the line dates from 22 Aug and is
+> **Updated 24 Sep 2026.** The snapshot below the line dates from 22 Aug and is
 > still accurate for what it covers. Read this section first: the repository
 > holds **five separate lines of work** that share a name, and "is RUDRA
 > finished?" has a different answer for each.
@@ -12,9 +12,37 @@
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
-> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run |
+> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below) |
 >
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+>
+> **24 Sep 2026, native app: Phase 3, the Qt UI (line F).** RUDRA.exe is the
+> Studio page as a native window: its look generated from `ui/theme.css`, its
+> 33 actions, menus and keys, `params()` and undo byte for byte with the page,
+> its layout, scopes, panels, probe and measurements checked against the page
+> run headless, the Deliver tab's master as a background job (the server's
+> render plan and refusals exactly), a checkpoint manager that finds packages
+> as the server finds checkpoints and switches them mid-session with the
+> grade kept and each package checked against its goldens on first use, a
+> first-run check that shows the HDR card on the display and names its peak,
+> the page's clipboard texts byte for byte, drop to open, Open recent, and
+> settings kept between runs. 138 app and engine tests on Linux.
+>
+> **Phase 3 exit.** Scripted: `RUDRA --workflow-check` opens a package and a
+> folder, scrubs every frame, grades and undoes, compares, probes, measures
+> and masters three frames in the real window; `rudra-native master-compare`
+> holds those masters to the CLI master (the path held to the Studio). On
+> Linux, 240 frames on ONNX Runtime CPU: every step passes, every frame
+> delivered as itself, the graded masters byte-identical to the CLI's. Open:
+>
+> - [ ] Windows, scripted, no Python on the PATH:
+>   `.\scripts\NATIVE_PHASE3_EXIT.ps1 -Frames <a 240-frame folder>`
+> - [ ] Windows, by hand on the PA279CRV (the checklist the script prints):
+>   first-run card and peak; switch packages mid-grade; drop, scrub, play;
+>   grade, undo, redo; wipe, flip, layers; probe against the Frame panel;
+>   master the frame and the sequence, copy the delivery metadata; quit and
+>   reopen (window, rails, tab, Render fields, Open recent)
+> - [ ] Mac: the Phase 0 runs still stand in front of it
 >
 > **24 Sep 2026, native app: Phase 1 (line F).** librudra now does, in C++
 > and against the Python it ports: still decode (bit-exact), grade, HDR10/HLG,

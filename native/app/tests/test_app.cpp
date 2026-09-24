@@ -56,6 +56,8 @@
 
 #include "main_window.hpp"
 #include "model_dialogs.hpp"
+#include "workflow_check.hpp"
+#include "rudra/deliver/master.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
@@ -1603,6 +1605,45 @@ TEST(AppSettings, TheWindowComesBackAsItWasLeft) {
     EXPECT_EQ(w.size().height(), left_at.height());
     QSettings().clear();
 }
+
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// Phase 3 step 12: the scripted workflow runs end to end (with the fakes; the
+// real model and the CLI comparison run in scripts/NATIVE_PHASE3_EXIT.ps1).
+TEST(AppWorkflow, TheScriptedWorkflowPassesAndReportsEveryStep) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "workflow");
+    const auto shot = fresh_dir("workflow-shot");
+    std::filesystem::create_directories(shot);
+    int k = 0;
+    for (const char* f : {"png8_rgb.png", "png16_rgb.png", "bmp24.bmp", "jpeg_q92_420.jpg", "png8_grey.png"})
+        std::filesystem::copy_file(decode_dir() / f, shot / ("f" + std::to_string(k++) + "_" + f));
+    app::WorkflowArgs a;
+    a.report = QString::fromStdString((shot / "report.json").string());
+    a.package = QString::fromStdString((m->root / "beta").string());
+    a.frames = QString::fromStdString(shot.string());
+    a.out = QString::fromStdString((fresh_dir("workflow-out")).string());
+    a.check_every = 1;
+    EXPECT_EQ(app::run_workflow_check(w, a), 0);
+    std::ifstream in(shot / "report.json");
+    const json r = json::parse(in);
+    EXPECT_EQ(r["verdict"], "PASS");
+    for (const char* s : {"model", "open", "scrub", "grade", "compare", "measure", "master"})
+        EXPECT_TRUE(r[s]["ok"].get<bool>()) << s;
+    EXPECT_EQ(r["scrub"]["delivered"], 5);
+    EXPECT_EQ(r["scrub"]["checked_against_decode"], 5);
+    EXPECT_EQ(r["master"]["masters"].size(), 3u);
+    // Each master names the frame, the files and the parameters the CLI takes.
+    const auto& first = r["master"]["masters"][0];
+    EXPECT_TRUE(std::filesystem::exists(first["exr"].get<std::string>()));
+    auto q = master_request_from_json(first["params"].get<std::string>());
+    ASSERT_TRUE(q);
+    EXPECT_EQ(q->checkpoint, "beta");
+    EXPECT_EQ(q->recovery_mode, "highlights");
+    EXPECT_NEAR(q->strength, 1.2, 1e-12);
+}
+#endif
 
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");

@@ -48,6 +48,8 @@ struct MasterResult {
 
 // The request as the Studio's params dict (what the golden index records).
 Result<MasterRequest> master_request_from_json(const std::string& json_text);
+// And back: what `rudra-native master --params` reads for the same master.
+std::string master_request_json(const MasterRequest& q);
 
 // One frame, decoded (`source_bits` its depth) and through the network
 // (fields, scalars), to `out` and its .json beside it.

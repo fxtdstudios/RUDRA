@@ -65,3 +65,30 @@ TEST(RenderPlan, MasterTargetsAreTheStudios) {
         fs::remove_all(root);
     }
 }
+
+TEST(RenderPlan, AMasterRequestSurvivesItsOwnJson) {
+    MasterRequest q;
+    q.checkpoint = "sdr2hdr_shadow_v1";
+    q.preserve_outside = false;
+    q.recovery_mode = "shadows";
+    q.strength = 0.30000000000000004;
+    q.regions = {{"highlights", 400, 2000, 0.5}, {"speculars", 2000, 8000, -1.25}};
+    q.anchor = false;
+    q.carry_chroma = false;
+    q.container = "linear";
+    auto r = master_request_from_json(master_request_json(q));
+    ASSERT_TRUE(r);
+    EXPECT_EQ(r->checkpoint, q.checkpoint);
+    EXPECT_EQ(r->preserve_outside, q.preserve_outside);
+    EXPECT_EQ(r->recovery_mode, q.recovery_mode);
+    EXPECT_EQ(r->strength, q.strength);   // bit for bit
+    ASSERT_EQ(r->regions.size(), 2u);
+    EXPECT_EQ(r->regions[1].label, "speculars");
+    EXPECT_EQ(r->regions[1].ev, -1.25);
+    EXPECT_EQ(r->anchor, false);
+    EXPECT_EQ(r->carry_chroma, false);
+    EXPECT_EQ(r->container, "linear");
+    EXPECT_EQ(r->anchor_knee, q.anchor_knee);
+    EXPECT_EQ(r->chroma_knee, q.chroma_knee);
+    EXPECT_EQ(r->source_space, q.source_space);
+}

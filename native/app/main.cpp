@@ -8,14 +8,19 @@
 //   RUDRA --theme-check out.json      the fonts, weights and style as resolved here
 //   RUDRA --grab out.png [...]        the window as drawn, then quit
 //   RUDRA --tab grade|deliver ...     open on that inspector tab
+//   RUDRA --workflow-check report.json --package P --frames DIR [--backend libtorch/cuda] [--out DIR]
+//                                     the Studio workflow, scripted, in this window (Phase 3 step 12)
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
+#include <QSettings>
 #include <QTimer>
 
 #include <algorithm>
 
 #include "main_window.hpp"
+#include "workflow_check.hpp"
 #include "theme.hpp"
 
 int main(int argc, char** argv) {
@@ -38,6 +43,26 @@ int main(int argc, char** argv) {
     if (const qsizetype i = rest.indexOf("--grab"); i >= 0) {
         grab_to = i + 1 < rest.size() ? rest[i + 1] : QString("rudra-window.png");
         rest.remove(i, std::min<qsizetype>(2, rest.size() - i));
+    }
+    // The scripted workflow: a window of its own settings, shown, driven, closed.
+    if (const qsizetype i = args.indexOf("--workflow-check"); i >= 0) {
+        auto value = [&](const char* flag, const QString& fallback = {}) {
+            const qsizetype k = args.indexOf(flag);
+            return k >= 0 && k + 1 < args.size() ? args[k + 1] : fallback;
+        };
+        rudra::app::WorkflowArgs wa;
+        wa.report = i + 1 < args.size() ? args[i + 1] : QString("rudra-workflow.json");
+        wa.package = value("--package");
+        wa.frames = value("--frames");
+        wa.backend = value("--backend");
+        wa.out = value("--out", QDir::temp().filePath("rudra-workflow-masters"));
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir::temp().filePath("rudra-workflow-settings"));
+        QSettings().clear();
+        QSettings().setValue("firstRun/done", true);
+        rudra::app::MainWindow w;
+        w.show();
+        return rudra::app::run_workflow_check(w, wa);
     }
     rudra::app::MainWindow w;
     w.restore_settings();   // the window, rails, tab, container and Render fields of the last run

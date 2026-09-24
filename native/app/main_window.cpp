@@ -1131,6 +1131,22 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
     probe_box_->show();
 }
 
+MasterRequest MainWindow::master_request() const {
+    // The settings of the moment: params(), the Deliver checks, the container.
+    MasterRequest q;
+    q.checkpoint = manifest_ ? manifest_->name : std::string();
+    q.preserve_outside = session_.grade.preserve;
+    q.recovery_mode = session_.grade.mode;
+    q.strength = session_.grade.strength;
+    for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
+    q.anchor = session_.anchor;
+    q.carry_chroma = session_.carry_chroma;
+    q.container = session_.container;
+    return q;
+}
+
+const SdrImage* MainWindow::frame_sdr() const { return current_frame_ ? &current_frame_->sdr : nullptr; }
+
 void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     auto* status = findChild<QLabel*>("renderStatus");
     auto say = [status](const QString& t) {
@@ -1166,16 +1182,7 @@ void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
     log("Render destination: " + QString::fromStdString(targets->front().string()) +
         (targets->size() > 1 ? " \u2026 " + QString::fromStdString(targets->back().string()) : QString()));
 
-    // The settings of the moment: params(), the Deliver checks, the container.
-    MasterRequest q;
-    q.checkpoint = manifest_ ? manifest_->name : std::string();
-    q.preserve_outside = session_.grade.preserve;
-    q.recovery_mode = session_.grade.mode;
-    q.strength = session_.grade.strength;
-    for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
-    q.anchor = session_.anchor;
-    q.carry_chroma = session_.carry_chroma;
-    q.container = session_.container;
+    const MasterRequest q = master_request();
     const ModelConstants model = manifest_ ? ModelConstants{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev}
                                            : (current_frame_ ? current_frame_->model : ModelConstants{16.0f, 4.0f, -1.0f});
     if (!prepare) {

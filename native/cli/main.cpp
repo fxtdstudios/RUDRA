@@ -6,6 +6,7 @@
 //   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080] [--iters 5]
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
+//   rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]
 //   rudra-native bench-scopes [--iters 7]
 //
 // `diff` is the native half of Gate A (NATIVE_ARCHITECTURE.md 12): it runs the
@@ -209,6 +210,63 @@ std::string read_text(const fs::path& p) {
 // Every golden master from tools/emit_master_golden.py, rendered here and
 // compared: EXR pixels within 1 half-float ulp, every EXR header attribute
 // equal, every sidecar field equal (peak within its 0.1-nit rounding).
+// A UTF-8 path from a JSON string (Windows paths may hold any character).
+fs::path utf8_path(const std::string& s) { return fs::path(std::u8string(s.begin(), s.end())); }
+
+struct MasterDiff {
+    bool ok = false, bytes_equal = false;
+    int worst = 0;
+    std::size_t off = 0, total = 0;
+    std::string header_diff, side_diff;
+};
+
+// A master against a reference: pixels within 1 half ulp, the header's
+// attributes equal, every sidecar key equal (peak_nits within 0.1).
+Result<MasterDiff> diff_master(const fs::path& got_exr, const fs::path& got_side, const fs::path& want_exr,
+                               const fs::path& want_side) {
+    auto got = read_exr(got_exr), want = read_exr(want_exr);
+    if (!got) return got.error();
+    if (!want) return want.error();
+    MasterDiff d;
+    for (std::size_t i = 0; i < want->half_bits.size() && i < got->half_bits.size(); ++i) {
+        const int u = half_ulp(got->half_bits[i], want->half_bits[i]);
+        d.worst = std::max(d.worst, u);
+        d.off += u != 0;
+    }
+    d.total = want->half_bits.size();
+    const bool same_shape = got->half_bits.size() == want->half_bits.size() && !want->half_bits.empty();
+    if (got->attributes.size() != want->attributes.size()) d.header_diff = "attribute count";
+    for (std::size_t i = 0; d.header_diff.empty() && i < want->attributes.size(); ++i)
+        if (got->attributes[i] != want->attributes[i] || got->attribute_types[i] != want->attribute_types[i])
+            d.header_diff = want->attributes[i].first;
+    try {
+        const auto gs = nlohmann::json::parse(read_text(got_side));
+        const auto ws = nlohmann::json::parse(read_text(want_side));
+        for (const auto& [k, v] : ws.items()) {
+            if (!gs.contains(k)) { d.side_diff = k; break; }
+            if (k == "peak_nits") {
+                if (std::abs(gs[k].get<double>() - v.get<double>()) > 0.1 + 1e-9) d.side_diff = k;
+            } else if (gs[k] != v) {
+                d.side_diff = k;
+            }
+            if (!d.side_diff.empty()) break;
+        }
+    } catch (const std::exception& e) {
+        d.side_diff = std::string("unreadable: ") + e.what();
+    }
+    d.bytes_equal = read_text(got_side) == read_text(want_side);
+    d.ok = same_shape && d.worst <= 1 && d.header_diff.empty() && d.side_diff.empty();
+    return d;
+}
+
+void print_diff(const std::string& name, int w, int h, const MasterDiff& d) {
+    std::printf("  %-18s %dx%d  pixels %s (worst %d half ulp, %zu of %zu off)  header %s  sidecar %s%s  => %s\n",
+                name.c_str(), w, h, d.worst <= 1 ? "ok" : "FAIL", d.worst, d.off, d.total,
+                d.header_diff.empty() ? "equal" : ("differs at " + d.header_diff).c_str(),
+                d.side_diff.empty() ? "equal" : ("differs at " + d.side_diff).c_str(),
+                d.bytes_equal ? ", byte-identical" : "", d.ok ? "PASS" : "FAIL");
+}
+
 int cmd_master_check(const fs::path& pkg, const fs::path& dir, const std::string& runtime, Device device) {
     auto m = read_manifest(pkg);
     if (!m) return fail(m.error());
@@ -230,43 +288,50 @@ int cmd_master_check(const fs::path& pkg, const fs::path& dir, const std::string
         const fs::path out = tmp / c.at("exr").get<std::string>();
         auto r = render_master(*m, **b, dir / c.at("image").get<std::string>(), *q, out);
         if (!r) return fail(r.error());
-        auto got = read_exr(out), want = read_exr(dir / c.at("exr").get<std::string>());
-        if (!got || !want) return fail(!got ? got.error() : want.error());
+        auto d = diff_master(out, r->sidecar, dir / c.at("exr").get<std::string>(), dir / c.at("sidecar").get<std::string>());
+        if (!d) return fail(d.error());
+        print_diff(name, r->width, r->height, *d);
+        all = all && d->ok;
+    }
+    std::printf("  => %s\n", all ? "PASS" : "FAIL");
+    return all ? 0 : 1;
+}
 
-        int worst = 0;
-        std::size_t off = 0;
-        for (std::size_t i = 0; i < want->half_bits.size() && i < got->half_bits.size(); ++i) {
-            const int d = half_ulp(got->half_bits[i], want->half_bits[i]);
-            worst = std::max(worst, d);
-            off += d != 0;
-        }
-        const bool same_shape = got->half_bits.size() == want->half_bits.size() && !want->half_bits.empty();
-        std::string header_diff;
-        if (got->attributes.size() != want->attributes.size()) header_diff = "attribute count";
-        for (std::size_t i = 0; header_diff.empty() && i < want->attributes.size(); ++i)
-            if (got->attributes[i] != want->attributes[i] || got->attribute_types[i] != want->attribute_types[i])
-                header_diff = want->attributes[i].first;
-
-        const auto gs = nlohmann::json::parse(read_text(r->sidecar));
-        const auto ws = nlohmann::json::parse(read_text(dir / c.at("sidecar").get<std::string>()));
-        std::string side_diff;
-        for (const auto& [k, v] : ws.items()) {
-            if (!gs.contains(k)) { side_diff = k; break; }
-            if (k == "peak_nits") {
-                if (std::abs(gs[k].get<double>() - v.get<double>()) > 0.1 + 1e-9) side_diff = k;
-            } else if (gs[k] != v) {
-                side_diff = k;
-            }
-            if (!side_diff.empty()) break;
-        }
-        const bool bytes_equal = read_text(r->sidecar) == read_text(dir / c.at("sidecar").get<std::string>());
-        const bool ok = same_shape && worst <= 1 && header_diff.empty() && side_diff.empty();
-        all = all && ok;
-        std::printf("  %-18s %dx%d  pixels %s (worst %d half ulp, %zu of %zu off)  header %s  sidecar %s%s  => %s\n",
-                    name.c_str(), r->width, r->height, worst <= 1 ? "ok" : "FAIL", worst, off, want->half_bits.size(),
-                    header_diff.empty() ? "equal" : ("differs at " + header_diff).c_str(),
-                    side_diff.empty() ? "equal" : ("differs at " + side_diff).c_str(),
-                    bytes_equal ? ", byte-identical" : "", ok ? "PASS" : "FAIL");
+// The app's masters from RUDRA --workflow-check, against this CLI's own
+// master of the same frame with the same parameters (the path master-check
+// holds to the Studio).
+int cmd_master_compare(const fs::path& pkg, const fs::path& report, const std::string& runtime, Device device) {
+    auto m = read_manifest(pkg);
+    if (!m) return fail(m.error());
+    auto b = backend_for(*m, runtime, device);
+    if (!b) return fail(b.error());
+    nlohmann::json rep;
+    try {
+        rep = nlohmann::json::parse(read_text(report));
+    } catch (const std::exception& e) {
+        return fail(make_error(ErrorCode::ParseError, "The workflow report could not be read.", e.what()));
+    }
+    if (!rep.contains("master") || !rep["master"].contains("masters"))
+        return fail(make_error(ErrorCode::NotFound, "The workflow report has no masters.", report.string()));
+    const fs::path tmp = fs::temp_directory_path() / "rudra_master_compare";
+    fs::remove_all(tmp);
+    fs::create_directories(tmp);
+    const auto info = (*b)->info();
+    std::printf("app masters against rudra-native master: %s %s on %s, %zu frames\n", to_string(info.runtime),
+                info.version.c_str(), to_string(info.device), rep["master"]["masters"].size());
+    bool all = !rep["master"]["masters"].empty();
+    int i = 0;
+    for (const auto& c : rep["master"]["masters"]) {
+        auto q = master_request_from_json(c.at("params").get<std::string>());
+        if (!q) return fail(q.error());
+        const fs::path out = tmp / ("cli_" + std::to_string(i++) + ".exr");
+        auto r = render_master(*m, **b, utf8_path(c.at("frame").get<std::string>()), *q, out);
+        if (!r) return fail(r.error());
+        auto d = diff_master(utf8_path(c.at("exr").get<std::string>()), utf8_path(c.at("sidecar").get<std::string>()),
+                             out, r->sidecar);
+        if (!d) return fail(d.error());
+        print_diff(utf8_path(c.at("frame").get<std::string>()).filename().string(), r->width, r->height, *d);
+        all = all && d->ok;
     }
     std::printf("  => %s\n", all ? "PASS" : "FAIL");
     return all ? 0 : 1;
@@ -319,6 +384,7 @@ void usage() {
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH] [--iters N]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
+                 "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
 }
 
@@ -351,7 +417,7 @@ int main(int argc, char** argv) {
         return cmd_diff(pkg, runtime, *d);
     }
 #ifdef RUDRA_HAVE_STILL_DECODE
-    if (args[0] == "master" || args[0] == "master-check") {
+    if (args[0] == "master" || args[0] == "master-check" || args[0] == "master-compare") {
         if (args.size() < 3) { usage(); return 64; }
         std::string runtime = "auto", device = "cpu", out, params;
         for (std::size_t i = 3; i + 1 < args.size(); i += 2) {
@@ -364,6 +430,7 @@ int main(int argc, char** argv) {
         auto d = parse_device(device);
         if (!d) return fail(d.error());
         if (args[0] == "master-check") return cmd_master_check(pkg, args[2], runtime, *d);
+        if (args[0] == "master-compare") return cmd_master_compare(pkg, args[2], runtime, *d);
         if (out.empty()) { usage(); return 64; }
         return cmd_master(pkg, args[2], out, runtime, *d, params);
     }
