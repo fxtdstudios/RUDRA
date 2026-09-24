@@ -492,7 +492,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   16-frame HDR10 export through it, cached per build
 - [x] The app: movies open and scrub as shots, the HDR10, HLG and ProRes tiles export through the queue, a queue
   window with Stop and Resume; the app's HDR10 master byte-identical to `rudra video`'s
-- [ ] The Windows review
+- [x] The review scripted (`scripts/NATIVE_PHASE4_EXIT.ps1`), passing on Linux
+- [ ] The same on Windows, and by hand on the HDR display
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

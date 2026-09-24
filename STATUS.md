@@ -12,9 +12,37 @@
 > | **C. Direct SDR-to-HDR image model** | `rudra/sdr2hdr.py`, v5, RUDRA Studio, the delivery path | **measured and written up** |
 > | **D. Temporal (v02)** | rendered camera-move corpus, clip metric, the oracle gate | **CLOSED.** Exact poses +0.60 JOD, RAFT +0.34, DIS −0.07, against a +0.5 threshold fixed in advance. Nothing a plate can supply clears it; no temporal model trained, and that is the result |
 >
-> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below) |
+> | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below). **Phase 4** (video delivery): steps 1 to 11 done 24 Sep, the exit scripted (`NATIVE_PHASE4_EXIT.ps1`) and passing on Linux; the Windows run is open (below) |
 >
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+>
+> **24 Sep 2026, native app: Phase 4, video delivery (line F).** `rudra video`,
+> `rudra deliver` and `rudra batch run` now exist without Python:
+> `rudra-native video` is convert_video (the same checks and words, decode,
+> predictor with its shadow smoother, mastering, spool, encoder command, QC
+> and report key for key), `rudra-native deliver` is encode_sequence with its
+> tag checks, `rudra-native batch run` runs the same queues, and a queue
+> stopped by either side finishes on the other. The HDR10 and HLG masters are
+> byte-identical to the Python's on LibTorch and ONNX Runtime; ProRes 4444 is
+> within codec noise, because the Python's PQ codes come from numpy's float32
+> power, which is not correctly rounded (one code in 65535, and CPU-dependent).
+> In RUDRA.exe a movie opens and scrubs as a shot and its HDR10, HLG and
+> ProRes exports go through a queue window with Stop and Resume; the app's
+> HDR10 master of a clip is byte-identical to `rudra video`'s. `rudra-native
+> ffmpeg-check` says what the machine's ffmpeg lacks and runs a 16-frame
+> HDR10 export through it, once per build. ffmpeg and ffprobe run as programs,
+> as the Python runs them (x265 stays out of the app). 177 native tests on
+> Linux. Found on the way: x265 3.5 crashes at 48 x 32 with preset slow, in
+> the Python too; two native tests had silently run no cases (a dangling
+> range-for over a temporary), now fixed. Open:
+>
+> - [ ] Windows, scripted, no Python on the PATH:
+>   `.\scripts\NATIVE_PHASE4_EXIT.ps1 -Clip <a movie with audio>` (ffmpeg with
+>   libx265 and zscale on PATH or `-Ffmpeg`)
+> - [ ] Windows, by hand (the checklist the script prints): drop a movie,
+>   scrub, export HDR10 from the sheet and watch the Queue window to Complete,
+>   stop and resume an HLG export, play the master on the HDR display with its
+>   audio, reopen and find the queue as it was
 >
 > **24 Sep 2026, native app: Phase 3, the Qt UI (line F).** RUDRA.exe is the
 > Studio page as a native window: its look generated from `ui/theme.css`, its
