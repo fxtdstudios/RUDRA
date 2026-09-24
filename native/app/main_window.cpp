@@ -290,7 +290,7 @@ void MainWindow::bind_handlers() {
         const std::pair<const char*, double> aspects[] = {{"aspect-none", 0.0}, {"aspect-2.39", 2.39},
                                                           {"aspect-1.85", 1.85}, {"aspect-16:9", 16.0 / 9.0},
                                                           {"aspect-4:3", 4.0 / 3.0}, {"aspect-1:1", 1.0}};
-        for (const auto& [id, r] : aspects) h[id] = guides([r = r](GuideOptions& g) { g.aspect = r; });
+        for (const auto& [id, r] : aspects) h[id] = guides([aspect = r](GuideOptions& g) { g.aspect = aspect; });
     }
 #endif
     for (const auto& a : action_specs()) {

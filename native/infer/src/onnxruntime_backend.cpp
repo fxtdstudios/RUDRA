@@ -33,8 +33,12 @@ namespace {
 Ort::Env& env() {
     // ERROR, not WARNING: ORT warns on every GPU session that it placed shape
     // ops on the CPU, which is by design and not something to act on.
-    static Ort::Env e(ORT_LOGGING_LEVEL_ERROR, "rudra");
-    return e;
+    // Never destroyed: a session can outlive a static Env at exit (the app's
+    // engine, a worker thread), and ONNX Runtime then aborts on its first log
+    // ("Attempt to use DefaultLogger but none has been registered"), as it did
+    // on macOS. The process's exit frees it.
+    static Ort::Env* e = new Ort::Env(ORT_LOGGING_LEVEL_ERROR, "rudra");
+    return *e;
 }
 
 bool has(const std::vector<std::string>& v, const char* name) {
