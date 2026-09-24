@@ -666,11 +666,11 @@ Backend matrix for the viewer (step 12), from the gate scripts and CI:
 | Backend | Composite (fp32 / fp16) | Display pass (SDR, 7 views) | HDR paths (40 cases) | Reductions | Window readback (fit, 2x, 1:1, guides) | Gate B through the viewer |
 |---|---|---|---|---|---|---|
 | OpenGL, llvmpipe (Linux, CI) | pass | exact | pass (2.8e-5, 1 ulp) | exact | pass at device pixel ratios 1 to 2 | n/a: no HDR swapchain |
-| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | scrolled mid-run (below); re-run | **pass**, scRGB, 203 exact, clipped at 418 |
-| D3D11, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | scrolled mid-run (below); re-run | **pass**, scRGB, as D3D12 |
+| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | stalled at the 03:17 run (below); re-run | **pass**, scRGB, 203 exact, clipped at 418 |
+| D3D11, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, as D3D12 |
 | Vulkan, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, the display's 418 nits from DXGI (Qt reports a placeholder 1 000) |
 | Vulkan, lavapipe (Linux, CI) | pass | exact | pass | exact | pass at device pixel ratios 1 and 1.5 | n/a: no HDR swapchain |
-| OpenGL, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | scrolled mid-run (below); re-run | n/a: Qt's OpenGL swapchain is SDR on Windows |
+| OpenGL, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | n/a: Qt's OpenGL swapchain is SDR on Windows |
 | Metal, Apple Silicon | open | open | open | open | open | open (the XDR Mac run) |
 
 The window readback failures on Windows (24 Sep, 03:08 and 03:14 runs) were
@@ -678,7 +678,11 @@ the check, not the viewer: the dumps show the placed rectangle off the
 intended scale and pan in every failing case (1:1 at 75.7 device pixels wide
 instead of 80), so the check window was being scrolled or clicked while it
 ran. The check now ignores input (`ViewerWindow::set_input_enabled`) and
-records the viewport it saw.
+records the viewport it saw. With that, the 03:17 run passes on D3D11,
+Vulkan and OpenGL within 1 code. On D3D12 the check wrote no report: it hit
+the old 30 s limit. The limit is now 90 s, and a stalled run writes a
+`TIMEOUT` report naming the case it stopped at and whether the window was
+ever exposed, so the next run shows where D3D12 stalls.
 
 Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws
 into a texture that the widget backing store composites, and that path is SDR
