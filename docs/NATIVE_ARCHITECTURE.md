@@ -686,7 +686,13 @@ grab was asked for and no frame followed. The viewer now counts update
 requests, presented frames and failed `beginFrame` calls, the check asks
 again for a frame once a second while a grab waits (`nudges`, per case in the
 report), and a `TIMEOUT` report carries the counters (`stall`), so the next
-run says whether D3D12 drops the update request or refuses the frame.
+run says whether D3D12 drops the update request or refuses the frame. It
+drops it: the 03:50 run passes all 18 cases within 1 code, each one after
+exactly two nudges. That is a viewer defect, not a check one (in the app, a
+slider move that never shows), so the viewer now arms a 50 ms timer with
+every update it asks for and draws the frame itself if the request never
+arrives; `fallback_frames` counts those, per case in the report. On Linux it
+never fires.
 Found on the way: on Vulkan the window's surface outlived the
 `QVulkanInstance` it was made from, and the check crashed on exit after
 writing its report (lavapipe, exit 139); the viewer now destroys its platform

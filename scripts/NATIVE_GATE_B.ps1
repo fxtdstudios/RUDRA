@@ -187,7 +187,7 @@ if (Test-Path $Viewer) {
                 $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Backend = $d.backend; Swapchain = $d.swapchain;
                                                   Peak = [math]::Round([double]$d.peak_nits); From = $d.peak_from;
-                                                  DPR = $d.device_pixel_ratio; "max code" = $worst; Nudges = $d.nudges;
+                                                  DPR = $d.device_pixel_ratio; "max code" = $worst; Nudges = $d.nudges; Fallbacks = $d.fallback_frames;
                                                   "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"]; Verdict = $d.verdict }
             } else {
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Verdict = $(if ($code -eq 2) { "n/a" } else { "ERROR" }) }
@@ -211,7 +211,7 @@ if (Test-Path $App) {
     if (Test-Path $json) {
         $d = Get-Content $json -Raw | ConvertFrom-Json
         $w = @(); foreach ($f in $d.weights.PSObject.Properties) { $w += "$($f.Name): $($f.Value -join ' ')" }
-        Write-Host ("style {0}; {1} fonts; {2}" -f $d.style, $d.fonts_loaded.Count, ($w -join "; "))
+        Write-Host ("style {0}; {1} fonts; {2}" -f $d.style, @($d.fonts_loaded).Count, ($w -join "; "))
         foreach ($x in $d.problems) { Write-Host "  problem: $x" -ForegroundColor Yellow }
         $themeOk = [bool]$d.ok
         Write-Host ("  => " + $(if ($themeOk) { "PASS" } else { "FAIL" }))

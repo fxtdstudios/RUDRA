@@ -136,6 +136,7 @@ int main(int argc, char** argv) {
     // A grab whose frame never comes is asked for again once a second; the
     // report counts it, so a backend that drops update requests shows up.
     int nudges = 0, total_nudges = 0;
+    long long fallbacks_before = 0;   // the viewer's own lost-update fallback, per case
 
     ViewerFrame frame;
     NetworkLinearImage cpu_model, cpu_base;
@@ -191,6 +192,7 @@ int main(int argc, char** argv) {
     auto finish = [&] {
         report["cases"] = rows;
         report["nudges"] = total_nudges;
+        report["fallback_frames"] = double(win.status().fallback_frames);
         report["verdict"] = no_hdr ? "NO-HDR" : pass ? "PASS" : "FAIL";
         const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);
         if (cli.isSet(report_opt)) {
@@ -328,6 +330,8 @@ int main(int argc, char** argv) {
                         {"first_mismatches", samples}};
         row["nudges"] = nudges;
         nudges = 0;
+        row["fallback_frames"] = double(s.fallback_frames - fallbacks_before);
+        fallbacks_before = s.fallback_frames;
         rows.append(row);
         if (!ok && cli.isSet(dump_opt)) {
             const QString dir = cli.value(dump_opt);
@@ -411,7 +415,8 @@ int main(int argc, char** argv) {
             {"updates", double(s.updates)}, {"frames", double(s.frames)},
             {"begin_failures", double(s.begin_failures)}, {"last_begin", s.last_begin},
             {"grab_waiting", s.grab_waiting}, {"grab_pending", s.grab_pending},
-            {"nudges", total_nudges}, {"nudges_this_case", nudges}};
+            {"nudges", total_nudges}, {"nudges_this_case", nudges},
+            {"fallback_frames", double(s.fallback_frames)}};
         if (cli.isSet(report_opt)) {
             QFile f(cli.value(report_opt));
             if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(report).toJson());
