@@ -179,7 +179,7 @@ if (Test-Path $Viewer) {
             $text = & $Viewer @vargs 2>&1 | ForEach-Object { "$_" }
             $code = $LASTEXITCODE
             $ErrorActionPreference = $prev
-            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>" } | Write-Host
+            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>|FAIL$" } | Write-Host
             if (Test-Path $json) {
                 $d = Get-Content $json -Raw | ConvertFrom-Json
                 $worst = if ($d.cases) { ($d.cases | Measure-Object -Property max_code -Maximum).Maximum } else { "" }

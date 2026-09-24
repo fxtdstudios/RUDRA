@@ -163,7 +163,7 @@ struct ViewerWindow::Impl {
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const Grab&)> grab_cb;
     QRhiReadbackResult grab_rb;
-    bool grab_pending = false;
+    bool grab_pending = false, grab_y_up = false;
 
     ViewSize viewer_size() const { return {double(w->width()), double(w->height())}; }
     ViewSize frame_view_size() const {
@@ -520,12 +520,18 @@ struct ViewerWindow::Impl {
         if (grab_cb && !grab_pending) {
             grab_pending = true;
             grab_rb = {};
+            grab_y_up = rhi->isYUpInFramebuffer();
             grab_rb.completed = [this] { finish_grab(); };
             after = rhi->nextResourceUpdateBatch();
             after->readBackTexture(QRhiReadbackDescription(), &grab_rb);
         }
         cb->endPass(after);
         rhi->endFrame(sc.get());
+        // With frames in flight (D3D12, Vulkan, Metal) a readback completes
+        // only when its frame slot comes round again, so a grab would report
+        // an older frame, or never. Wait for it here: grabs are for tests and
+        // Gate B, never the interactive path.
+        if (grab_pending) rhi->finish();
     }
 
     void finish_grab() {
@@ -544,7 +550,7 @@ struct ViewerWindow::Impl {
         }
         const int row = g.height > 0 ? int(grab_rb.data.size()) / g.height : 0;
         g.bytes.resize(std::size_t(g.width) * std::size_t(g.height) * std::size_t(g.bytes_per_pixel));
-        const bool y_up = rhi->isYUpInFramebuffer();
+        const bool y_up = grab_y_up;
         for (int y = 0; y < g.height; ++y) {
             const int src = y_up ? g.height - 1 - y : y;
             std::memcpy(g.bytes.data() + std::size_t(y) * std::size_t(g.width) * std::size_t(g.bytes_per_pixel),
@@ -570,6 +576,11 @@ struct ViewerWindow::Impl {
     }
 
     void release_all() {
+        // A readback still in flight completes while the QRhi is torn down:
+        // it must not call back into a half-destroyed viewer.
+        grab_rb.completed = nullptr;
+        grab_cb = nullptr;
+        grab_pending = false;
         blit_pipe.reset();
         composite_pipe.reset();
         display_pipe.reset();

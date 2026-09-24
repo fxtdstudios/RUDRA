@@ -166,7 +166,7 @@ jobs:
           cache: true
       - name: Linux display deps
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1
       - name: Configure
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
@@ -188,3 +188,12 @@ jobs:
       - name: The viewer window through its swapchain (Linux, OpenGL)
         if: runner.os == 'Linux'
         run: xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api gl
+      - name: GPU parity and the viewer window on lavapipe (Linux, Vulkan)
+        # Vulkan has frames in flight, which the OpenGL runs cannot show: a
+        # readback that completes a frame late once made the window check
+        # compare each case with the previous one.
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a build/render/probe/rudra-gpu-parity --api vulkan
+          xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
+          QT_SCALE_FACTOR=1.5 xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
