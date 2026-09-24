@@ -182,7 +182,7 @@ ScopeData build_scopes(const std::vector<float>& luma, int w, int h) {
     const double wanted[5] = {2, 25, 50, 75, 98};
     std::vector<double>* keys[5] = {&out.lo, &out.q1, &out.mid, &out.q3, &out.hi};
     for (int c = 0; c < kColumns; ++c) {
-        const double total = counts[std::size_t(c)] ? double(counts[std::size_t(c)]) : 1.0;
+        const double total = counts[std::size_t(c)] != 0.0 ? double(counts[std::size_t(c)]) : 1.0;
         double acc = 0.0, got[5] = {0, 0, 0, 0, 0};
         int next = 0;
         for (int k = 0; k < kColBins && next < 5; ++k) {
@@ -234,7 +234,7 @@ std::vector<std::uint8_t> vectorscope(const PlanarBuffer& ms) {
     std::vector<std::uint8_t> img(acc.size() * 4, 0);
     const double scale = 1.0 / std::log1p(std::max(peak, 1.0));
     for (std::size_t j = 0; j < acc.size(); ++j) {
-        const double a = acc[j] ? std::pow(std::log1p(acc[j]) * scale, 0.6) : 0.0;
+        const double a = acc[j] != 0.0 ? std::pow(std::log1p(acc[j]) * scale, 0.6) : 0.0;
         img[j * 4] = clamped_u8(158 * a);
         img[j * 4 + 1] = clamped_u8(242 * a);
         img[j * 4 + 2] = clamped_u8(255 * a);

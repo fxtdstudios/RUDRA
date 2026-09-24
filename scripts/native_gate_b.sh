@@ -38,6 +38,13 @@ if [ ! -x "$QT_ROOT/bin/qsb" ]; then
   "$VENV/bin/python" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
 fi
 
+# Qt 6.8's FindWrapOpenGL links -framework AGL, which the macOS 15+ SDKs no
+# longer ship ("ld: framework 'AGL' not found"). Nothing here uses AGL.
+if [ "$HOST" = mac ]; then
+  WRAP_GL="$QT_ROOT/lib/cmake/Qt6/FindWrapOpenGL.cmake"
+  [ -f "$WRAP_GL" ] && sed -i '' '/target_link_libraries.*__opengl_agl_fw_path/d' "$WRAP_GL"
+fi
+
 echo "== build rudra-hdr-probe"
 GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
 # Qt6_DIR, not only the prefix path: a Homebrew or distro Qt 6 elsewhere on the
