@@ -69,6 +69,18 @@ Options:
 | `RUDRA_BUILD_HDR_PROBE` | OFF | `rudra-hdr-probe` and `rudra-gpu-parity` (turns `RUDRA_BUILD_RENDER` on) |
 | `RUDRA_TEST_PACKAGE` | empty | a model package: adds its golden frames to `ctest` |
 
+The app on macOS (Apple silicon) or Linux, with every dependency fetched into
+`tmp/native_deps` (Qt 6.8 with Shader Tools, ONNX Runtime, and OpenCV core,
+imgproc and imgcodecs built from source, so no Homebrew opencv): it builds
+`RUDRA`, `rudra-native` and the app tests, runs the tests offscreen and opens
+the app on the packages in `dist/models`. Movies need `ffmpeg` and `ffprobe`.
+
+```
+scripts/native_app.sh                 # build, test, open
+NO_LAUNCH=1 scripts/native_app.sh     # build and test only
+SKIP_BUILD=1 scripts/native_app.sh    # open the last build
+```
+
 ## Model package
 
 `python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt` writes
@@ -127,7 +139,9 @@ ONNX Runtime CPU and DirectML, taking LibTorch from the Python's own torch (no
 CUDA toolkit needed). `-BenchDir` adds the bench frames. Report in
 `reports/`. Both Windows gate scripts need Visual Studio 2022 or 2026 (or the
 Build Tools) with the C++ tools; `-InstallBuildTools` installs the Build Tools
-with winget when none is found.
+with winget when none is found. `scripts/native_gate_a.sh` is the macOS and
+Linux twin: LibTorch CPU and MPS, ONNX Runtime CPU and Core ML on a Mac
+(CUDA on Linux when the torch sees a GPU).
 
 **Gate B, HDR out.** `rudra-hdr-probe` opens a QRhi window with a test card
 (patches at 100, 203, 400, 600, 1 000 and 2 000 nits and a log ramp to

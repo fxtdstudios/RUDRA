@@ -1,4 +1,5 @@
 #include "rudra/render/viewer_window.hpp"
+#include "rudra/render/gl_format.hpp"
 
 #include <QDropEvent>
 #include <QMimeData>
@@ -202,8 +203,9 @@ struct ViewerWindow::Impl {
     bool init() {
         switch (api) {
             case GpuApi::OpenGL: {
-                fallback.reset(QRhiGles2InitParams::newFallbackSurface());
+                fallback.reset(QRhiGles2InitParams::newFallbackSurface(rhi_gl_format()));
                 QRhiGles2InitParams p;
+                p.format = rhi_gl_format();
                 p.fallbackSurface = fallback.get();
                 p.window = w;
                 rhi.reset(QRhi::create(QRhi::OpenGLES2, &p));
@@ -693,6 +695,9 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     if (d_->api == GpuApi::Vulkan) d_->api = GpuApi::OpenGL;
 #endif
     setSurfaceType(surface_for(d_->api));
+#ifdef __APPLE__
+    if (d_->api == GpuApi::OpenGL) setFormat(rhi_gl_format());
+#endif
 }
 
 ViewerWindow::~ViewerWindow() {

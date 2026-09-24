@@ -14,6 +14,9 @@
   <img src="https://img.shields.io/badge/torch-2.x-ee4c2c">
   <img src="https://img.shields.io/badge/weights-noncommercial-orange">
   <img src="https://github.com/fxtdstudios/RUDRA/actions/workflows/tests.yml/badge.svg">
+  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
+  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="macOS build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20macos-14&label=macOS&logo=apple"></a>
+  <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Linux build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20ubuntu-24.04&label=Linux&logo=linux"></a>
 </p>
 
 ---
