@@ -79,11 +79,13 @@ jobs:
       - name: Every golden, from this Python
         # The viewer golden comes from the browser Studio on SwiftShader, which
         # the Linux runner has; macOS and Windows test against the committed one.
+        # So does fit: OpenCV's INTER_AREA differs in the last bits on arm64
+        # (NEON), and the golden is the x86 Linux one.
         # The video clips are kept once made; ffprobe's JSON may vary by version,
         # so only the Python's verdicts (video/index.json) must not move.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then tools/ci_run.sh "Goldens" python tools/emit_golden.py; else tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then tools/ci_run.sh "Goldens" python tools/emit_golden.py; else tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy fit sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
           tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
       - name: Configure
         shell: bash
@@ -116,7 +118,9 @@ jobs:
         # runner may differ in the last bit) and the C++ tests below then run
         # against what the Python on this runner computes.
         run: |
-          tools/ci_run.sh "Goldens" python tools/emit_golden.py
+          # The browser-made goldens need Playwright, which this job does not install;
+          # its C++ tests use the committed ones.
+          tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy
           tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
@@ -176,7 +180,7 @@ jobs:
           cache: true
       - name: Linux display deps
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1 libvulkan-dev
       - name: Configure
         shell: bash
         # The app too: the viewer build without still decode is the one the
