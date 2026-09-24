@@ -6,8 +6,9 @@
 #   FRAMES=0 scripts/native_gate_b.sh      # keep the window open and look (Esc quits)
 #
 # Qt 6.8 (with Qt Shader Tools) is fetched into tmp/native_deps/Qt with
-# aqtinstall; nothing is installed system-wide. Needs CMake 3.24+, Ninja or
-# Make, a C++20 compiler (Xcode CLT on macOS) and python3.
+# aqtinstall, run from a venv in tmp/native_deps; nothing is installed
+# system-wide. Needs CMake 3.24+, Ninja or Make, a C++20 compiler (Xcode CLT
+# on macOS) and python3.
 #
 # PASS means the swapchain carried the 1 000-nit patch at least a stop above
 # SDR white. On a Mac, run it on the XDR panel (or an HDR display with "High
@@ -30,13 +31,16 @@ QT_ROOT="$DEPS/Qt/$QT_VERSION/$QT_DIR"
 
 if [ ! -x "$QT_ROOT/bin/qsb" ]; then
   echo "== Qt $QT_VERSION ($ARCH, qtshadertools) into $DEPS/Qt"
-  "$PY" -m pip install --quiet --upgrade aqtinstall
-  "$PY" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
+  # A venv of its own: brew's and Debian's Pythons refuse system-wide pip (PEP 668).
+  VENV=$DEPS/venv_tools
+  [ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
+  "$VENV/bin/python" -m pip install --quiet --upgrade aqtinstall
+  "$VENV/bin/python" -m aqt install-qt "$HOST" desktop "$QT_VERSION" "$ARCH" -m qtshadertools -O "$DEPS/Qt"
 fi
 
 echo "== build rudra-hdr-probe"
 GEN=(); command -v ninja >/dev/null && GEN=(-G Ninja)
-cmake -S native -B build/native_gate_b "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release \
+cmake -S native -B build/native_gate_b ${GEN[@]+"${GEN[@]}"} -DCMAKE_BUILD_TYPE=Release \
   -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF -DRUDRA_BUILD_HDR_PROBE=ON \
   -DCMAKE_PREFIX_PATH="$PWD/$QT_ROOT" >/dev/null
 cmake --build build/native_gate_b --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check --parallel
@@ -81,7 +85,7 @@ for api in $PARITY_APIS; do
   for mode in parity card; do
     code=0
     extra=(); [ "$mode" = card ] && extra=(--card)
-    outp=$("$VIEWER" --api "$api" "${extra[@]}" --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
+    outp=$("$VIEWER" --api "$api" ${extra[@]+"${extra[@]}"} --report "reports/native_viewer_${mode}_${api}_${STAMP}.json" 2>&1) || code=$?
     printf '%s\n' "$outp" | grep -E "^Viewer window|^Gate B through|patch|=>|FAIL" || true
     case $code in
       0) ;;

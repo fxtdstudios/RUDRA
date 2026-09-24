@@ -111,7 +111,7 @@
 > **Decision: GO for Phase 1 on Windows.** macOS is GO on condition of three
 > runs on an Apple Silicon Mac with an XDR panel, none of which needs new code:
 > Gate A on MPS and Core ML, Gate B on Metal EDR, the composite parity on
-> Metal (`scripts/native_gate_b.sh`, `rudra-native diff`). Linux ships SDR-out
+> Metal (`scripts/native_gate_a.sh`, `scripts/native_gate_b.sh`). Linux ships SDR-out
 > first; its composite already passes on OpenGL. Still open and not blocking:
 > the 429-frame bench through Gate A (`NATIVE_GATE_A.ps1 -BenchDir`), Tracy,
 > and a reduced-precision inference path. Phase 1 (decode, engine, the viewer
