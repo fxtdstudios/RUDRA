@@ -41,6 +41,7 @@
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
 #include "rudra/core/guides.hpp"
+#include "rudra/core/hdr_card.hpp"
 #include "rudra/core/half.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/view.hpp"
@@ -141,18 +142,11 @@ int main(int argc, char** argv) {
     NetworkLinearImage cpu_model, cpu_base;
     std::vector<std::pair<std::string, ViewParams>> views;
     std::vector<std::pair<std::string, double>> zooms;   // name, scale (0: fit)
-    std::vector<float> card_nits = {10, 100, 203, 600, 1000, 2000};
-    constexpr int kCardW = 1280, kCardH = 720;
+    const std::vector<float> card_nits(kCardNits.begin(), kCardNits.end());   // core/hdr_card, as the wizard shows it
+    constexpr int kCardW = kCardWidth, kCardH = kCardHeight;
 
     if (card) {
-        // Six patches across the top 60 %, surround 18 % grey of 203 nits.
-        PlanarBuffer px(3, kCardH, kCardW, 0.18f * 203.0f / 10000.0f);
-        for (int y = 0; y < int(kCardH * 0.6); ++y)
-            for (int x = 0; x < kCardW; ++x) {
-                const float v = card_nits[std::size_t(x * 6 / kCardW)] / 10000.0f;
-                for (int c = 0; c < 3; ++c) px.at(c, y, x) = v;
-            }
-        const NetworkLinearImage img(std::move(px));
+        const NetworkLinearImage img = hdr_card();
         win.set_composited(img, img);
         ViewParams v;
         v.display_nits = 10000.0;   // the ceiling is the display's own peak

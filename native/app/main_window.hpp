@@ -17,13 +17,19 @@
 #include <string_view>
 #include <vector>
 
+#include <QDialog>
+#include <QPointer>
 #include <QTimer>
+
+#include <thread>
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
 #include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
+#include "rudra/engine/model_catalog.hpp"
+#include "rudra/infer/self_test.hpp"
 #include "rudra/engine/session.hpp"
 
 class QAction;
@@ -61,7 +67,38 @@ public:
     explicit MainWindow(bool viewer = true);
     ~MainWindow() override;
 
+    // A model package from a folder picker (or `preset`): use_model on it.
     void open_package(const QString& preset = {});
+
+    // The checkpoint manager (Phase 3 step 10). The roots searched, the
+    // catalog they give, and a switch that keeps the session: frames, grade,
+    // undo and the frame on screen stay; the new model's fields replace the
+    // old ones when they arrive. Files are verified, the backend opened and,
+    // the first time this package runs on this backend, the goldens checked
+    // (infer/self_test), all off the UI thread; a package that fails keeps
+    // the model in use. `done` gets whether it switched and why not.
+    void set_model_roots(std::vector<std::filesystem::path> roots);   // instead of package_roots() (tests)
+    std::vector<std::filesystem::path> model_roots() const;
+    void add_model_root(const std::filesystem::path& root);              // remembered between runs
+    void rescan_models();
+    const Catalog& catalog() const { return catalog_; }
+    void use_model(const std::filesystem::path& package, std::optional<BackendChoice> choice = std::nullopt,
+                   std::function<void(bool, QString)> done = {});
+    bool loading_model() const { return loading_model_; }
+    std::filesystem::path model_package() const { return manifest_ ? manifest_->root : std::filesystem::path(); }
+    std::optional<BackendChoice> model_backend() const { return backend_choice_; }
+    // Stand-ins for the runtimes (the tests): how a package is opened and tested.
+    struct ModelHooks {
+        std::function<Result<OpenedBackend>(const ModelManifest&, std::optional<BackendChoice>)> open;
+        std::function<Result<SelfTestReport>(const ModelManifest&, InferenceBackend&)> test;
+        bool verify_files = true;
+    };
+    void set_model_hooks(ModelHooks h) { hooks_ = std::move(h); }
+    // What RUDRA does on a bare start: the first-run check once, then the
+    // package used last (on its backend), else the catalog's pick.
+    void boot();
+    void open_model_manager();
+    void open_first_run();
     // A still, or a folder of frames: both are a sequence to the engine.
     void open_source(const QString& preset = {}, bool folder = false);
 
@@ -103,6 +140,10 @@ public:
     // `count` stand in for the opened frames and the network (the tests).
     void master(PrepareMasterFrame prepare = {}, std::size_t count = 0);
     bool mastering() const { return master_job_ && master_job_->running(); }
+    // The frame on screen (the tests): its fields and which frame it is.
+    const Fields* frame_fields() const;
+    int current_index() const { return current_; }
+    std::size_t frame_count() const { return frames_.size(); }
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
@@ -131,7 +172,10 @@ private:
     QWidget* build_pipe();
     void build_menubar_corners();
 
-    void start_engine(std::vector<std::filesystem::path> frames);
+    void start_engine(std::vector<std::filesystem::path> frames, int at = 0);
+    struct LoadedModel;
+    void adopt_model(std::shared_ptr<LoadedModel> loaded, const std::function<void(bool, QString)>& done);
+    void set_model_pills();
     void close_frames();
     void step_to(int i);
     void toggle_play();
@@ -197,10 +241,18 @@ private:
     bool waiting_ = false;
     QString frame_info_;
     QString runtimes_;
+    Catalog catalog_;
+    std::optional<std::vector<std::filesystem::path>> roots_override_;
+    ModelHooks hooks_;
+    bool loading_model_ = false;
+    std::thread model_worker_;
+    std::optional<BackendChoice> backend_choice_;
+    QPointer<QDialog> manager_, first_run_;
     std::unique_ptr<ModelManifest> manifest_;
     std::unique_ptr<InferenceBackend> backend_;   // used only from the engine's worker
     std::vector<std::filesystem::path> frames_;
     std::unique_ptr<FrameEngine> engine_;         // declared after the backend: destroyed first
+    int engine_gen_ = 0;                          // which engine a delivered frame came from
 };
 
 }  // namespace rudra::app

@@ -1,4 +1,4 @@
-add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_delivery.cpp test_qc.cpp test_queue.cpp test_sequence.cpp test_viewer.cpp test_viewport.cpp test_engine.cpp test_theme.cpp test_actions.cpp test_session.cpp test_scope_draw.cpp test_readouts.cpp test_render_plan.cpp test_master_job.cpp)
+add_executable(rudra_tests test_platform.cpp test_core.cpp test_composite.cpp test_delivery.cpp test_qc.cpp test_queue.cpp test_sequence.cpp test_viewer.cpp test_viewport.cpp test_engine.cpp test_theme.cpp test_actions.cpp test_session.cpp test_scope_draw.cpp test_readouts.cpp test_render_plan.cpp test_master_job.cpp test_model_catalog.cpp)
 target_link_libraries(rudra_tests PRIVATE rudra::rudra_core rudra::rudra_deliver rudra::rudra_media rudra::rudra_engine
                       nlohmann_json::nlohmann_json GTest::gtest_main)
 target_compile_definitions(rudra_tests PRIVATE RUDRA_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"

@@ -458,7 +458,10 @@ Studio workflow with no Python installed, every number and file matching the Stu
   thread from the chain Phase 2 held to the browser, the probe at the pixel under the pointer
 - [x] Deliver tab: a master EXR of the frame or the sequence as a background job with progress and a
   stop, the Studio server's render plan and refusals exactly, nothing ever replaced
-- [ ] Checkpoint manager and first run, the remaining sheets
+- [x] Checkpoint manager and first run: packages found as the Studio server finds checkpoints, switched mid-session
+  with the session kept, each checked against its goldens on first use; the first run shows the HDR card on the display
+  and says what that display can show
+- [ ] The remaining sheets, drop to open, recent shots, settings
 - [ ] The whole workflow on Windows with no Python on the machine
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:

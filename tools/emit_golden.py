@@ -12,6 +12,7 @@ tests instead of drifting silently.
 Emitters, in order:
     actions    tools/emit_actions_golden.py    the Studio's menus, actions, keys, shortcut sheet
     core       tools/emit_core_golden.py       baseline, curve, tile weights
+    catalog    tools/emit_catalog_golden.py    the Studio server's model discovery (find_checkpoint, /api/checkpoints)
     composite  tools/emit_composite_golden.py  composite, master chain, measure
     decode     tools/emit_decode_golden.py     still decode fixtures
     delivery   tools/emit_delivery_golden.py   grade, HDR10/HLG, sidecars, EXR/ACES/OCIO
@@ -36,6 +37,7 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 EMITTERS = {
     "actions": "emit_actions_golden.py",
+    "catalog": "emit_catalog_golden.py",
     "core": "emit_core_golden.py",
     "composite": "emit_composite_golden.py",
     "decode": "emit_decode_golden.py",

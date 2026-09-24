@@ -755,6 +755,12 @@ def main(argv: list[str] | None = None) -> int:
     if p["bench"]:
         print(f"  bench: {p['bench']['frames']} frames, {p['bench']['max_abs']}")
     print(f"  written to {args.out / manifest['name']}")
+    # The registry beside the packages: the app's checkpoint manager reads it
+    # as the server reads checkpoints/models.json (titles, notes, the default).
+    registry = REPO / "checkpoints" / "models.json"
+    if registry.is_file() and not (args.out / "models.json").exists():
+        shutil.copyfile(registry, args.out / "models.json")
+        print(f"  registry copied to {args.out / 'models.json'}")
     return 0
 
 

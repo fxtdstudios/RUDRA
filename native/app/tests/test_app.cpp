@@ -25,7 +25,9 @@
 #include <QComboBox>
 #include <QPlainTextEdit>
 #include <QSpinBox>
+#include <QSettings>
 #include <QTest>
+#include <QTreeWidget>
 
 #include <cstdio>
 #include <functional>
@@ -47,6 +49,7 @@
 #include <nlohmann/json.hpp>
 
 #include "main_window.hpp"
+#include "model_dialogs.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
@@ -1073,9 +1076,299 @@ TEST(AppScopes, VectorscopeLooksAsThePageDrawsIt) {
     EXPECT_GE(a.within, 0.985) << a.within * 100 << " % within 8 codes (worst " << a.worst << ")";
 }
 
+
+// ---------------------------------------------------------------------------
+// Phase 3 step 10: the checkpoint manager and the first run
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A backend that answers at once with fields of its own level, so a frame
+// says which model made it.
+class FakeBackend : public InferenceBackend {
+public:
+    FakeBackend(float level, std::shared_ptr<std::atomic<int>> calls) : level_(level), calls_(std::move(calls)) {}
+    BackendInfo info() const override { return {Runtime::OnnxRuntime, Device::Cpu, "fake", "CPUExecutionProvider"}; }
+    Result<FrameScalars> frame_pass(const SdrImage&) override { return FrameScalars{}; }
+    Result<Fields> tile_pass(const SdrImage& tile, const FrameScalars&) override {
+        ++*calls_;
+        const int h = tile.height(), w = tile.width();
+        return Fields{PlanarBuffer(3, h, w, level_), PlanarBuffer(1, h, w, 0.5f), PlanarBuffer(1, h, w, 0.0f)};
+    }
+
+private:
+    float level_;
+    std::shared_ptr<std::atomic<int>> calls_;
+};
+
+void write_manifest(const std::filesystem::path& dir, const std::string& name) {
+    std::filesystem::create_directories(dir);
+    const json tol{{"atol", 1e-5}, {"rtol", 1e-5}};
+    const std::string z(64, '0');
+    const json m{{"contract", "1.0"}, {"name", name}, {"source", {{"file", name + ".pt"}, {"sha256", z}}},
+                 {"exported", "2026-09-24T00:00:00Z"},
+                 {"network", {{"base_channels", 32}, {"corpus_ev", -1.0}, {"log_scale", 16.0}, {"max_hdr", 4.0},
+                              {"heads", {{"residual_gate", false}, {"shadow_gate", true}, {"curve", false}}},
+                              {"curve_params", 1}}},
+                 {"tiling", {{"tile_size", 512}, {"overlap", 64}}},
+                 {"files", {{"torchscript", "model.ts"}, {"onnx_frame", "f.onnx"}, {"onnx_tile", "t.onnx"},
+                            {"golden", "golden/golden.json"}, {"torchscript_sha256", z}, {"onnx_frame_sha256", z},
+                            {"onnx_tile_sha256", name + z.substr(name.size())}}},
+                 {"onnx_inputs", {{"frame", {"sdr"}}, {"tile", {"sdr"}}}},
+                 {"tolerance", {{"torchscript", tol}, {"onnx", tol}}}};
+    std::ofstream(dir / "manifest.json") << m.dump(1);
+}
+
+struct Models {
+    std::filesystem::path root;
+    std::map<std::string, std::shared_ptr<std::atomic<int>>> calls;   // tile passes, by package name
+    std::map<std::string, int> tests;                                 // self-tests run, by package name
+    std::set<std::string> drifting;                                   // these fail their self-test
+};
+
+// Three packages (alpha, beta, gamma) in a models.json root; the window opens
+// them through fakes and runs a fake self-test.
+std::shared_ptr<Models> fake_models(app::MainWindow& w, const std::string& tag) {
+    auto m = std::make_shared<Models>();
+    m->root = fresh_dir("models-" + tag);
+    const std::map<std::string, float> levels{{"alpha", 0.1f}, {"beta", 0.2f}, {"gamma", 0.3f}};
+    for (const auto& [name, level] : levels) {
+        write_manifest(m->root / name, name);
+        m->calls[name] = std::make_shared<std::atomic<int>>(0);
+    }
+    std::ofstream(m->root / "models.json") << json{{"default", "beta.pt"},
+                                                   {"models", {{{"file", "alpha.pt"}, {"kind", "sdr2hdr"}, {"title", "Alpha"}},
+                                                               {{"file", "beta.pt"}, {"kind", "sdr2hdr"}, {"title", "Beta"}},
+                                                               {{"file", "gamma.pt"}, {"kind", "sdr2hdr"}, {"title", "Gamma"}}}}}
+                                                  .dump();
+    app::MainWindow::ModelHooks h;
+    h.verify_files = false;
+    h.open = [m, levels](const ModelManifest& man, std::optional<BackendChoice> c) -> Result<OpenedBackend> {
+        return OpenedBackend{std::make_unique<FakeBackend>(levels.at(man.name), m->calls.at(man.name)),
+                             c.value_or(BackendChoice{Runtime::OnnxRuntime, Device::Cpu})};
+    };
+    h.test = [m](const ModelManifest& man, InferenceBackend& b) -> Result<SelfTestReport> {
+        SelfTestReport r;
+        r.backend = b.info();
+        r.frames = 16;
+        r.stitched = true;
+        r.outputs["residual"].max_abs = m->drifting.count(man.name) ? 0.5 : 1e-6;
+        r.outputs["residual"].excess = m->drifting.count(man.name) ? 0.4 : -1.0;
+        ++m->tests[man.name];
+        return r;
+    };
+    w.set_model_hooks(h);
+    w.set_model_roots({m->root});
+    return m;
+}
+
+bool use(app::MainWindow& w, const std::filesystem::path& p, QString* why = nullptr,
+         std::optional<BackendChoice> c = std::nullopt) {
+    std::optional<bool> result;
+    w.use_model(p, c, [&](bool ok, const QString& y) {
+        result = ok;
+        if (why) *why = y;
+    });
+    EXPECT_TRUE(wait_for([&] { return result.has_value(); }));
+    return result.value_or(false);
+}
+
+QString text_of(app::MainWindow& w, const char* id) {
+    auto* l = w.findChild<QLabel*>(id);
+    return l ? l->text() : QString("<no %1>").arg(id);
+}
+
+}  // namespace
+
+TEST(AppModels, TheCatalogPicksTheRegistrysDefaultAndThePillsSayIt) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "pick");
+    ASSERT_EQ(w.catalog().entries.size(), 3u);
+    ASSERT_TRUE(w.catalog().chosen);
+    EXPECT_EQ(w.catalog().entries[*w.catalog().chosen].package.filename(), "beta");
+    EXPECT_EQ(text_of(w, "ckpt"), "no model");
+    ASSERT_TRUE(use(w, m->root / "beta"));
+    EXPECT_EQ(text_of(w, "ckpt"), "beta");
+    EXPECT_EQ(text_of(w, "device"), "CPU");   // the page's info.gpu for a CPU run
+    EXPECT_EQ(w.findChild<QLabel*>("lamp")->property("state").toString(), "on");
+    const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
+    EXPECT_TRUE(log.contains("self-test passed, 16 golden frames + stitch")) << log.toStdString();
+    EXPECT_TRUE(log.contains("device CPU"));
+    EXPECT_TRUE(log.contains("drop frames — the network runs once each, then the grade is local"));
+    EXPECT_EQ(QSettings().value("model/package").toString().toStdString(), (m->root / "beta").string());
+}
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+TEST(AppModels, SwitchingModelsMidSessionKeepsTheSession) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "switch");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.open_source(QString::fromStdString((std::filesystem::path(RUDRA_GOLDEN_DIR) / "decode").string()));
+    ASSERT_GE(w.frame_count(), 10u);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    w.run("next");
+    w.run("next");
+    ASSERT_TRUE(wait_for([&] { return w.current_index() == 2 && w.frame_fields() &&
+                                      w.frame_fields()->residual.at(0, 0, 0) == 0.1f && *m->calls["alpha"] >= 3; }));
+    // A grade with undo behind it.
+    w.run("strength-up");
+    w.run("mode-shadows");
+    w.run("preserve");
+    const std::string params = w.session().params_json();
+    const auto undo = w.session().undo_depth();
+    ASSERT_GE(undo, 3u);
+
+    ASSERT_TRUE(use(w, m->root / "gamma"));
+    EXPECT_EQ(text_of(w, "ckpt"), "gamma");
+    // The same frames, the same frame, the same grade and undo; the new
+    // model's fields for that frame.
+    EXPECT_GE(w.frame_count(), 10u);
+    EXPECT_EQ(w.current_index(), 2);
+    EXPECT_EQ(w.session().params_json(), params);
+    EXPECT_EQ(w.session().undo_depth(), undo);
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.3f; }));
+    EXPECT_GE(*m->calls["gamma"], 1);
+    // And back: alpha's fields again, from alpha, not a cache of gamma's.
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.at(0, 0, 0) == 0.1f; }));
+    EXPECT_EQ(w.session().params_json(), params);
+}
+#endif
+
+TEST(AppModels, AModelThatDriftsIsRefusedAndTheOneInUseStays) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "drift");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    m->drifting.insert("gamma");
+    QString why;
+    EXPECT_FALSE(use(w, m->root / "gamma", &why));
+    EXPECT_TRUE(why.startsWith("model gamma refused on ONNX Runtime on CPU: self-test FAILED (residual)")) << why.toStdString();
+    EXPECT_EQ(text_of(w, "ckpt"), "alpha");
+    EXPECT_EQ(w.model_package(), m->root / "alpha");
+    // A folder that is not a package says so and changes nothing.
+    EXPECT_FALSE(use(w, m->root, &why));
+    EXPECT_TRUE(why.startsWith("This folder is not a RUDRA model package.")) << why.toStdString();
+    EXPECT_EQ(text_of(w, "ckpt"), "alpha");
+}
+
+TEST(AppModels, TheGoldensRunOncePerPackageAndBackend) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "once");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    ASSERT_TRUE(use(w, m->root / "beta"));
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    EXPECT_EQ(m->tests["alpha"], 1);
+    EXPECT_EQ(m->tests["beta"], 1);
+    // Another backend is another check.
+    ASSERT_TRUE(use(w, m->root / "alpha", nullptr, BackendChoice{Runtime::LibTorch, Device::Cpu}));
+    EXPECT_EQ(m->tests["alpha"], 2);
+    EXPECT_EQ(w.model_backend(), (std::optional<BackendChoice>{BackendChoice{Runtime::LibTorch, Device::Cpu}}));
+}
+
+TEST(AppModels, ABareStartOpensTheLastPackageOnItsBackend) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    {
+        app::MainWindow w(false);
+        auto m = fake_models(w, "boot");
+        w.boot();   // nothing remembered: the registry's default
+        ASSERT_TRUE(wait_for([&] { return !w.loading_model() && !w.model_package().empty(); }));
+        EXPECT_EQ(w.model_package(), m->root / "beta");
+        ASSERT_TRUE(use(w, m->root / "gamma", nullptr, BackendChoice{Runtime::LibTorch, Device::Cpu}));
+    }
+    app::MainWindow w(false);
+    auto m = fake_models(w, "boot2");
+    // The remembered one is from the first window's folder (still there).
+    w.boot();
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && !w.model_package().empty(); }));
+    EXPECT_EQ(w.model_package().filename(), "gamma");
+    EXPECT_EQ(w.model_backend()->key(), "libtorch/cpu");
+    EXPECT_EQ(w.findChild<QDialog*>("firstRun"), nullptr);
+}
+
+TEST(AppModels, NoPackageAnywhereSaysWhereItLooked) {
+    QSettings().clear();
+    QSettings().setValue("firstRun/done", true);
+    app::MainWindow w(false);
+    w.set_model_roots({fresh_dir("empty-a"), fresh_dir("empty-b")});
+    w.boot();
+    EXPECT_EQ(text_of(w, "ckpt"), "no model package found");
+    EXPECT_TRUE(w.findChild<QPlainTextEdit*>("log")->toPlainText().contains(
+        "no model loaded: no model package found in 2 folder(s)"));
+}
+
+TEST(AppModels, TheManagerListsSwitchesAndAddsFolders) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "manager");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.run("models");
+    auto* dlg = find<app::ModelManager>(w, "modelManager");
+    ASSERT_NE(dlg, nullptr);
+    auto* list = dlg->list();
+    ASSERT_EQ(list->topLevelItemCount(), 3);
+    EXPECT_EQ(list->topLevelItem(0)->text(0), "Alpha");
+    EXPECT_EQ(list->topLevelItem(0)->text(3), "in use");
+    EXPECT_EQ(list->topLevelItem(1)->text(3), "opens on a bare start");
+    EXPECT_EQ(list->currentItem(), list->topLevelItem(0));
+    dlg->select(2);
+    EXPECT_EQ(list->currentItem(), list->topLevelItem(2));
+    dlg->use_selected();
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "gamma"; }));
+    EXPECT_EQ(list->topLevelItem(2)->text(3), "in use");
+    EXPECT_TRUE(dlg->findChild<QLabel*>("ckptStatus")->text().startsWith("In use: gamma on ONNX Runtime on CPU"));
+    // A second folder joins the list.
+    const auto more = fresh_dir("models-more");
+    write_manifest(more / "delta", "delta");
+    w.add_model_root(more);
+    dlg->refresh();
+    EXPECT_EQ(list->topLevelItemCount(), 4);
+    EXPECT_EQ(list->topLevelItem(3)->text(0), "delta");
+    // The backend list is every choice this build has, after Automatic.
+    auto* combo = dlg->findChild<QComboBox*>("ckptBackend");
+    EXPECT_EQ(combo->count(), int(backend_choices().size()) + 1);
+}
+
+TEST(AppModels, TheFirstRunReportsTheDisplaysRealPeak) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "first");
+    w.boot();   // first start: the check, nothing loaded behind it
+    auto* fr = find<app::FirstRun>(w, "firstRun");
+    ASSERT_NE(fr, nullptr);
+    EXPECT_TRUE(fr->isVisible());
+    EXPECT_TRUE(w.model_package().empty());
+    EXPECT_EQ(fr->findChild<QLabel*>("frDisplay")->text(), "Display not checked");   // no viewer in the tests
+    // What the card's viewer reports on the PA279CRV through DXGI.
+    fr->set_display(DisplayTarget::scrgb(418.0), "scRGB", "DXGI");
+    EXPECT_EQ(fr->findChild<QLabel*>("frDisplay")->text(), "HDR display, 418 nits");
+    EXPECT_TRUE(fr->findChild<QLabel*>("frDisplayDetail")->text().contains("the 600, 1,000 and 2,000 nit patches clip"));
+    fr->set_display(DisplayTarget::sdr(), "SDR", "swapchain");
+    EXPECT_EQ(fr->findChild<QLabel*>("frDisplay")->text(), "SDR display");
+    EXPECT_TRUE(fr->findChild<QLabel*>("frModel")->text().startsWith("Beta"));
+    fr->test_model();
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && !w.model_package().empty(); }));
+    EXPECT_EQ(fr->findChild<QLabel*>("frModelStatus")->text(), "Ready: beta on ONNX Runtime on CPU");
+    fr->start();
+    EXPECT_TRUE(QSettings().value("firstRun/done").toBool());
+    EXPECT_FALSE(fr->isVisible());
+}
+
 int main(int argc, char** argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
+    // Settings of their own, never the user's.
+    QCoreApplication::setOrganizationName("FXTD Studios (tests)");
+    QCoreApplication::setApplicationName("rudra_app_tests");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                       QString::fromStdString((std::filesystem::temp_directory_path() /
+                                                 ("rudra-app-tests-settings-" + std::to_string(QCoreApplication::applicationPid())))
+                                                    .string()));
     app::ThemeReport theme = app::apply_theme(app);
     g_theme = &theme;
     ::testing::InitGoogleTest(&argc, argv);

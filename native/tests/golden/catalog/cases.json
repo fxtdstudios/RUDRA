@@ -1,0 +1,544 @@
+{
+ "oracle": "ui/server.py find_checkpoint and loadable_models",
+ "cases": [
+  {
+   "name": "repo_default",
+   "training": [],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "shadow_v1.pt",
+    "shadow_s2.pt",
+    "image_v5.pt",
+    "temporal_v1.pt"
+   ],
+   "chosen": {
+    "root": 0,
+    "run": null,
+    "file": "shadow_v1.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_v1.pt",
+     "title": "v5 + shadow gate (shipped)",
+     "note": "the paper's"
+    },
+    {
+     "file": "shadow_s2.pt",
+     "title": "shadow gate, seed 2",
+     "note": "best on PU21"
+    },
+    {
+     "file": "image_v5.pt",
+     "title": "v5 backbone, no gate",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "name": "repo_default_missing",
+   "training": [],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "image_v5.pt",
+    "shadow_s2.pt",
+    "temporal_v1.pt"
+   ],
+   "chosen": {
+    "root": 0,
+    "run": null,
+    "file": "shadow_s2.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_s2.pt",
+     "title": "shadow gate, seed 2",
+     "note": "best on PU21"
+    },
+    {
+     "file": "image_v5.pt",
+     "title": "v5 backbone, no gate",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "name": "repo_only_temporal",
+   "training": [],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "temporal_v1.pt"
+   ],
+   "chosen": null,
+   "default": "shadow_v1.pt",
+   "listed": []
+  },
+  {
+   "name": "repo_unlisted_files",
+   "training": [],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "other.pt",
+    "image_v5.pt"
+   ],
+   "chosen": {
+    "root": 0,
+    "run": null,
+    "file": "image_v5.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "image_v5.pt",
+     "title": "v5 backbone, no gate",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "name": "repo_no_registry",
+   "training": [],
+   "registry": null,
+   "files": [
+    "shadow_v1.pt"
+   ],
+   "chosen": null,
+   "default": null,
+   "listed": []
+  },
+  {
+   "name": "training_newest",
+   "training": [
+    [
+     {
+      "run": "a",
+      "file": "best.pt",
+      "age": 5
+     },
+     {
+      "run": "b",
+      "file": "best.pt",
+      "age": 1
+     },
+     {
+      "run": "c",
+      "file": "best.pt",
+      "age": 3
+     }
+    ]
+   ],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "shadow_v1.pt"
+   ],
+   "chosen": {
+    "root": 0,
+    "run": "b",
+    "file": "best.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_v1.pt",
+     "title": "v5 + shadow gate (shipped)",
+     "note": "the paper's"
+    }
+   ]
+  },
+  {
+   "name": "training_shipped_wins",
+   "training": [
+    [
+     {
+      "run": "a",
+      "file": "best.pt",
+      "age": 1
+     },
+     {
+      "run": "b",
+      "file": "shipped_v7.pt",
+      "age": 9
+     }
+    ]
+   ],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "shadow_v1.pt"
+   ],
+   "chosen": {
+    "root": 0,
+    "run": "b",
+    "file": "shipped_v7.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_v1.pt",
+     "title": "v5 + shadow gate (shipped)",
+     "note": "the paper's"
+    }
+   ]
+  },
+  {
+   "name": "training_newest_shipped",
+   "training": [
+    [
+     {
+      "run": "a",
+      "file": "shipped_x.pt",
+      "age": 4
+     },
+     {
+      "run": "b",
+      "file": "shipped_y.pt",
+      "age": 2
+     },
+     {
+      "run": "c",
+      "file": "best.pt",
+      "age": 0.5
+     }
+    ]
+   ],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [],
+   "chosen": {
+    "root": 0,
+    "run": "b",
+    "file": "shipped_y.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": []
+  },
+  {
+   "name": "training_other_names_ignored",
+   "training": [
+    [
+     {
+      "run": "a",
+      "file": "last.pt",
+      "age": 1
+     }
+    ]
+   ],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "shadow_s2.pt"
+   ],
+   "chosen": {
+    "root": 1,
+    "run": null,
+    "file": "shadow_s2.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_s2.pt",
+     "title": "shadow gate, seed 2",
+     "note": "best on PU21"
+    }
+   ]
+  },
+  {
+   "name": "first_root_with_anything",
+   "training": [
+    [],
+    [
+     {
+      "run": "r",
+      "file": "best.pt",
+      "age": 7
+     }
+    ],
+    [
+     {
+      "run": "s",
+      "file": "best.pt",
+      "age": 1
+     }
+    ]
+   ],
+   "registry": {
+    "default": "shadow_v1.pt",
+    "models": [
+     {
+      "file": "shadow_v1.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 + shadow gate (shipped)",
+      "note": "the paper's"
+     },
+     {
+      "file": "shadow_s2.pt",
+      "kind": "sdr2hdr",
+      "title": "shadow gate, seed 2",
+      "note": "best on PU21"
+     },
+     {
+      "file": "image_v5.pt",
+      "kind": "sdr2hdr",
+      "title": "v5 backbone, no gate",
+      "note": ""
+     },
+     {
+      "file": "temporal_v1.pt",
+      "kind": "temporal",
+      "title": "temporal refiner",
+      "note": "not an SDR2HDRNet"
+     }
+    ]
+   },
+   "files": [
+    "shadow_v1.pt"
+   ],
+   "chosen": {
+    "root": 1,
+    "run": "r",
+    "file": "best.pt"
+   },
+   "default": "shadow_v1.pt",
+   "listed": [
+    {
+     "file": "shadow_v1.pt",
+     "title": "v5 + shadow gate (shipped)",
+     "note": "the paper's"
+    }
+   ]
+  },
+  {
+   "name": "nothing_anywhere",
+   "training": [
+    []
+   ],
+   "registry": null,
+   "files": [],
+   "chosen": null,
+   "default": null,
+   "listed": []
+  }
+ ]
+}

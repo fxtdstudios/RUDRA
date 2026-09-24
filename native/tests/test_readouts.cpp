@@ -158,3 +158,47 @@ TEST(Readouts, ClipBarIsThePages) {
         EXPECT_EQ(t.u_width, page[i]["u_width"].get<std::string>()) << i;
     }
 }
+
+// Phase 3 step 10: the HDR card the first-run wizard shows, and what it says.
+#include "rudra/core/hdr_card.hpp"
+
+TEST(HdrCard, SixPatchesOnGreyAsGateBDrawsThem) {
+    const auto card = hdr_card();
+    const auto& b = card.buffer();
+    ASSERT_EQ(b.width(), kCardWidth);
+    ASSERT_EQ(b.height(), kCardHeight);
+    for (int p = 0; p < 6; ++p) {
+        const int x = (2 * p + 1) * kCardWidth / 12;
+        EXPECT_EQ(card_patch(x, kCardWidth), p);
+        for (int c = 0; c < 3; ++c) EXPECT_EQ(b.at(c, 100, x), kCardNits[std::size_t(p)] / 10000.0f);
+    }
+    EXPECT_EQ(b.at(0, kCardHeight - 1, 5), 0.18f * 203.0f / 10000.0f);
+}
+
+TEST(HdrCard, TheWizardSaysWhatTheDisplayCanShow) {
+    const auto sdr = display_report(DisplayTarget::sdr(), "SDR", "swapchain");
+    EXPECT_FALSE(sdr.hdr);
+    EXPECT_EQ(sdr.headline, "SDR display");
+    EXPECT_NE(sdr.detail.find("simulated on a 203-nit display"), std::string::npos);
+
+    const auto pa = display_report(DisplayTarget::scrgb(418.0), "scRGB", "DXGI");
+    EXPECT_TRUE(pa.hdr);
+    EXPECT_EQ(pa.headline, "HDR display, 418 nits");
+    EXPECT_EQ(pa.detail, "scRGB, peak from DXGI. Each patch shows its own luminance up to 418 nits; the 600, "
+                         "1,000 and 2,000 nit patches clip there, never tone-mapped.");
+
+    const auto xdr = display_report(DisplayTarget::edr(1600.0), "EDR", "swapchain");
+    EXPECT_EQ(xdr.headline, "HDR display, 1,600 nits");
+    EXPECT_NE(xdr.detail.find("the 2,000 nit patches clip"), std::string::npos);
+
+    const auto big = display_report(DisplayTarget::hdr10(4000.0), "HDR10", "swapchain");
+    EXPECT_EQ(big.detail, "HDR10, peak from swapchain. Each patch shows its own luminance up to 4,000 nits.");
+
+    const auto dim = display_report(DisplayTarget::scrgb(300.0), "scRGB", "DXGI");
+    EXPECT_FALSE(dim.hdr);
+    EXPECT_EQ(dim.headline, "HDR display with little headroom, 300 nits");
+
+    const auto ph = display_report(DisplayTarget::scrgb(1000.0), "scRGB", "placeholder");
+    EXPECT_FALSE(ph.hdr);
+    EXPECT_EQ(ph.headline, "HDR display (scRGB), peak unknown");
+}

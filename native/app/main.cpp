@@ -4,7 +4,7 @@
 // (engine/actions, Phase 3 step 2) around the QRhi viewer (render/, ADR-010)
 // and the frame engine. Its look is app/theme.cpp, from ui/theme.css (step 1).
 //
-//   RUDRA [package [still-or-folder]]
+//   RUDRA [package [still-or-folder]]   no package: the first-run check once, then the last or picked one
 //   RUDRA --theme-check out.json      the fonts, weights and style as resolved here
 //   RUDRA --grab out.png [...]        the window as drawn, then quit
 //   RUDRA --tab grade|deliver ...     open on that inspector tab
@@ -44,9 +44,12 @@ int main(int argc, char** argv) {
         w.show_tab(rest[t + 1]);
         rest.remove(t, 2);
     }
-    if (rest.size() > 0) w.open_package(rest[0]);
-    if (rest.size() > 1) w.open_source(rest[1]);
     w.show();
+    // A package named on the command line, else the bare start: the first-run
+    // check once, then the package used last or the catalog's pick (step 10).
+    if (rest.size() > 0) w.open_package(rest[0]);
+    else w.boot();
+    if (rest.size() > 1) w.open_source(rest[1]);
     if (!grab_to.isEmpty()) {
         QTimer::singleShot(800, &w, [&w, grab_to] {
             w.grab().save(grab_to);

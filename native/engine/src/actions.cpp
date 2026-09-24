@@ -59,6 +59,8 @@ const std::vector<ActionSpec> kActions = {
     // a menu, on keys the page leaves free. The view peak is the session's
     // peak slider, as on the page.
     {"open-package", "Open model package…", "", "", O::Native, E::Always, "Ctrl+Shift+O"},
+    {"models", "Model packages…", "", "", O::Native, E::Always, "Ctrl+Shift+M"},
+    {"first-run", "Check the display and the model…", "", "", O::Native, E::Always, ""},
     {"open-folder", "Open folder of frames…", "", "", O::Native, E::Always, "Ctrl+Alt+O"},
     {"quit", "Quit", "", "", O::Native, E::Always, "Ctrl+Q"},
     {"view-image", "Image", "", "view:0", O::Native, E::Always, ""},
@@ -76,7 +78,7 @@ const std::vector<ActionSpec> kActions = {
 };
 
 const std::vector<MenuSpec> kMenus = {
-    {"File", {"open", "open-folder", "open-package", "close", "-", "master", "-", "quit"}},
+    {"File", {"open", "open-folder", "open-package", "models", "close", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip", {"first", "prev", "next", "last", "-", "play"}},
     {"Reconstruct",
@@ -88,7 +90,7 @@ const std::vector<MenuSpec> kMenus = {
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
       "aspect-1:1", "<"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
-    {"Help", {"shortcuts", "about"}},
+    {"Help", {"shortcuts", "about", "first-run"}},
 };
 
 // The keydown handler: the map, then Space, 1 to 4 and W, which it tests on

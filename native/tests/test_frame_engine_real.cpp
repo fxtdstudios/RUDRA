@@ -112,3 +112,56 @@ TEST(FrameEngineReal, ScrubsAFolderOfRealImagesWithoutAStaleFrame) {
     ::testing::Test::RecordProperty("cancelled", std::to_string(st.cancelled));
     EXPECT_GE(st.cache_hits, std::uint64_t(n));   // the way back came from the cache
 }
+
+// Phase 3 step 10: the app's first load of a package. The catalog opens it on
+// the first backend that can, and the goldens pass there; a package whose
+// golden has drifted is refused.
+#include <filesystem>
+#include <fstream>
+
+#include "rudra/engine/model_catalog.hpp"
+#include "rudra/infer/self_test.hpp"
+#include "rudra/platform/npy.hpp"
+
+TEST(ModelSelfTest, TheGoldensPassOnTheBackendTheCatalogOpens) {
+    namespace fs = std::filesystem;
+    const fs::path pkg = RUDRA_TEST_PACKAGE_DIR;
+    const Catalog cat = scan_packages({pkg});
+    ASSERT_EQ(cat.entries.size(), 1u);
+    ASSERT_TRUE(cat.pick());
+    const auto& m = *cat.entries[0].manifest;
+    auto opened = open_backend(m);
+    ASSERT_TRUE(opened) << opened.error().message << " " << opened.error().detail;
+    int calls = 0, last_total = 0;
+    auto r = self_test(m, *opened->backend, [&](int done, int total) {
+        ++calls;
+        EXPECT_LE(done, total);
+        last_total = total;
+    });
+    ASSERT_TRUE(r) << r.error().message;
+    EXPECT_TRUE(r->pass()) << r->summary();
+    EXPECT_GE(r->frames, 8);
+    EXPECT_TRUE(r->stitched);
+    EXPECT_EQ(calls, last_total);
+    EXPECT_EQ(r->summary().rfind("passed, ", 0), 0u) << r->summary();
+
+    // The same package with one golden value moved: refused, and it says which.
+    const fs::path copy = fs::temp_directory_path() / "rudra-selftest-drift";
+    fs::remove_all(copy);
+    fs::copy(pkg, copy, fs::copy_options::recursive);
+    const fs::path victim = copy / "golden" / "clipped_patch.highlight.npy";
+    {
+        // The last float of the array, far past any tolerance.
+        std::fstream f(victim, std::ios::in | std::ios::out | std::ios::binary);
+        f.seekp(-4, std::ios::end);
+        const float big = 7.0f;
+        f.write(reinterpret_cast<const char*>(&big), 4);
+    }
+    auto m2 = read_manifest(copy);
+    ASSERT_TRUE(m2);
+    auto r2 = self_test(*m2, *opened->backend);
+    ASSERT_TRUE(r2);
+    EXPECT_FALSE(r2->pass());
+    EXPECT_NE(r2->summary().find("FAILED (highlight)"), std::string::npos) << r2->summary();
+    fs::remove_all(copy);
+}

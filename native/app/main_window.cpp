@@ -23,10 +23,13 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QSettings>
 #include <QStackedWidget>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include "model_dialogs.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
@@ -62,27 +65,6 @@ QString describe(const ModelManifest& m) {
         .arg(QString::fromStdString(m.name), QString::fromStdString(m.contract), m.has_residual_gate ? "yes" : "no",
              m.has_shadow_gate ? "yes" : "no", m.has_curve ? "yes" : "no")
         .arg(m.corpus_ev, 0, 'f', 1);
-}
-
-// The first backend this build and machine can run, fastest first.
-Result<std::unique_ptr<InferenceBackend>> open_backend(const ModelManifest& m) {
-    const std::vector<std::pair<Runtime, Device>> order = {
-#if defined(_WIN32)
-        {Runtime::LibTorch, Device::Cuda}, {Runtime::OnnxRuntime, Device::DirectML},
-#elif defined(__APPLE__)
-        {Runtime::OnnxRuntime, Device::CoreML}, {Runtime::LibTorch, Device::Mps},
-#else
-        {Runtime::LibTorch, Device::Cuda},
-#endif
-        {Runtime::OnnxRuntime, Device::Cpu}, {Runtime::LibTorch, Device::Cpu},
-    };
-    Error last = make_error(ErrorCode::Unsupported, "This build has no inference runtime.");
-    for (auto [rt, dev] : order) {
-        auto b = rt == Runtime::LibTorch ? make_libtorch_backend(m, dev) : make_onnxruntime_backend(m, dev);
-        if (b) return b;
-        last = b.error();
-    }
-    return last;
 }
 
 // The page's key (KeyboardEvent.key) as a Qt shortcut. Letters without
@@ -173,6 +155,7 @@ MainWindow::MainWindow(bool with_viewer) {
 }
 
 MainWindow::~MainWindow() {
+    if (model_worker_.joinable()) model_worker_.join();   // a package still loading
     master_job_.reset();   // cancels and waits: it uses the backend
     play_.stop();
     engine_.reset();   // joins the worker before the backend goes
@@ -201,6 +184,8 @@ void MainWindow::bind_handlers() {
     h["open"] = [this] { open_source(); };
     h["open-folder"] = [this] { open_source({}, true); };
     h["open-package"] = [this] { open_package(); };
+    h["models"] = [this] { open_model_manager(); };
+    h["first-run"] = [this] { open_first_run(); };
     h["quit"] = [] { QApplication::quit(); };
     h["close"] = [this] { close_frames(); };
     h["first"] = [this] { step_to(0); };
@@ -460,37 +445,197 @@ void MainWindow::session_changed(std::uint32_t what) {
 void MainWindow::open_package(const QString& preset) {
     const QString dir = preset.isEmpty() ? QFileDialog::getExistingDirectory(this, "Open model package") : preset;
     if (dir.isEmpty()) return;
-    auto m = read_manifest(dir.toStdString());
-    if (!m) {
-        log(QString::fromStdString(m.error().message + " " + m.error().detail));
+    use_model(dir.toStdString(), backend_choice_);
+}
+
+// ---------------------------------------------------------------------------
+// The checkpoint manager (step 10)
+// ---------------------------------------------------------------------------
+
+struct MainWindow::LoadedModel {
+    ModelManifest manifest;
+    OpenedBackend opened;
+    std::optional<SelfTestReport> report;   // nullopt: this package passed on this backend before
+    std::optional<Error> error;
+};
+
+namespace {
+
+// The package's bytes (the checkpoint's and every file's hash) and the backend.
+QString verified_key(const ModelManifest& m, const BackendChoice& c) {
+    std::string k = m.source_sha256;
+    for (const auto& [file, sha] : m.file_sha256) k += "|" + sha;
+    return QString::fromStdString(k + "|" + c.key());
+}
+
+}  // namespace
+
+void MainWindow::set_model_roots(std::vector<std::filesystem::path> roots) {
+    roots_override_ = std::move(roots);
+    rescan_models();
+}
+
+std::vector<std::filesystem::path> MainWindow::model_roots() const {
+    if (roots_override_) return *roots_override_;
+    QSettings st;
+    std::vector<std::filesystem::path> extra;
+    for (const auto& r : st.value("model/roots").toStringList()) extra.emplace_back(r.toStdString());
+    const auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+    const QString user = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return package_roots(extra, app_models,
+                         user.isEmpty() ? std::filesystem::path() : std::filesystem::path(user.toStdString()) / "models");
+}
+
+void MainWindow::add_model_root(const std::filesystem::path& root) {
+    if (roots_override_) {
+        if (std::find(roots_override_->begin(), roots_override_->end(), root) == roots_override_->end())
+            roots_override_->push_back(root);
+    } else {
+        QSettings st;
+        QStringList r = st.value("model/roots").toStringList();
+        const QString q = QString::fromStdString(root.string());
+        if (!r.contains(q)) r << q;
+        st.setValue("model/roots", r);
+    }
+    rescan_models();
+}
+
+void MainWindow::rescan_models() { catalog_ = scan_packages(model_roots()); }
+
+void MainWindow::use_model(const std::filesystem::path& package, std::optional<BackendChoice> choice,
+                           std::function<void(bool, QString)> done) {
+    auto refuse = [&](const QString& why) {
+        log(why);
+        if (done) done(false, why);
+    };
+    if (mastering()) return refuse("A render is running: stop it before switching models.");
+    if (loading_model_) return refuse("A model is still loading.");
+    auto m = read_manifest(package);
+    if (!m) return refuse(QString::fromStdString(m.error().message + " " + m.error().detail));
+    // Which pairs of this package and a backend have passed before.
+    QSettings st;
+    const QStringList verified = st.value("model/verified").toStringList();
+    loading_model_ = true;
+    ckpt_->setText(QStringLiteral("loading %1…").arg(QString::fromStdString(m->name)));
+    log("loading " + describe(*m));
+    refresh_enabled();
+    if (model_worker_.joinable()) model_worker_.join();
+    QPointer<MainWindow> self(this);
+    auto hooks = hooks_;
+    model_worker_ = std::thread([self, man = *m, choice, verified, hooks, done]() mutable {
+        auto loaded = std::make_shared<LoadedModel>();
+        loaded->manifest = man;
+        auto run = [&]() -> std::optional<Error> {
+            if (hooks.verify_files)
+                if (auto v = verify_package_files(man); !v) return v.error();
+            auto o = hooks.open ? hooks.open(man, choice) : open_backend(man, choice);
+            if (!o) return o.error();
+            loaded->opened = std::move(*o);
+            if (!verified.contains(verified_key(man, loaded->opened.choice))) {
+                auto r = hooks.test ? hooks.test(man, *loaded->opened.backend) : self_test(man, *loaded->opened.backend);
+                if (!r) return r.error();
+                loaded->report = std::move(*r);
+            }
+            return std::nullopt;
+        };
+        loaded->error = run();
+        QMetaObject::invokeMethod(qApp, [self, loaded, done] {
+            if (self) self->adopt_model(loaded, done);
+        });
+    });
+}
+
+void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::function<void(bool, QString)>& done) {
+    if (model_worker_.joinable()) model_worker_.join();
+    loading_model_ = false;
+    const ModelManifest& m = loaded->manifest;
+    QString why;
+    if (loaded->error) {
+        why = describe(m) + "  ·  " + QString::fromStdString(loaded->error->message) +
+              (loaded->error->detail.empty() ? "" : " " + QString::fromStdString(loaded->error->detail));
+    } else if (loaded->report && !loaded->report->pass()) {
+        why = QStringLiteral("model %1 refused on %2: self-test %3")
+                  .arg(QString::fromStdString(m.name), QString::fromStdString(loaded->opened.choice.label()),
+                       QString::fromStdString(loaded->report->summary()));
+    }
+    if (!why.isEmpty()) {
+        log(why);
+        set_model_pills();   // the model in use, if any, is still in use
+        refresh_enabled();
+        if (done) done(false, why);
         return;
     }
-    auto v = verify_package_files(*m);
-    if (!v) {
-        log(describe(*m) + "  ·  " + QString::fromStdString(v.error().message));
-        return;
+    if (loaded->report) {
+        log("self-test " + QString::fromStdString(loaded->report->summary()));
+        QSettings st;
+        QStringList v = st.value("model/verified").toStringList();
+        v << verified_key(m, loaded->opened.choice);
+        st.setValue("model/verified", v);
     }
-    auto b = open_backend(*m);
-    if (!b) {
-        log(describe(*m) + "  ·  " + QString::fromStdString(b.error().message));
-        return;
-    }
-    // The engine's worker uses the backend: it goes first.
+    // The engine's worker uses the backend: it goes first. The session and
+    // the frames stay; the frame on screen is asked for again.
+    const bool had_frames = !frames_.empty();
     play_.stop();
-    engine_.reset();
-    frames_.clear();
-    manifest_ = std::make_unique<ModelManifest>(*m);
-    backend_ = std::move(*b);
-    const auto info = backend_->info();
-    ckpt_->setText(QString::fromStdString(m->name));
-    device_->setText(QStringLiteral("%1 on %2").arg(to_string(info.runtime), to_string(info.device)));
-    lamp_->setProperty("state", "on");
-    lamp_->style()->unpolish(lamp_);
-    lamp_->style()->polish(lamp_);
-    log("model " + describe(*m));
+    btn_play_->set_glyph(IconButton::Glyph::Play);
+    {
+        std::lock_guard lock(*backend_mutex_);
+        engine_.reset();
+        manifest_ = std::make_unique<ModelManifest>(m);
+        backend_ = std::move(loaded->opened.backend);
+        backend_choice_ = loaded->opened.choice;
+    }
+    QSettings st;
+    st.setValue("model/package", QString::fromStdString(m.root.string()));
+    st.setValue("model/backend", QString::fromStdString(backend_choice_->key()));
+    set_model_pills();
+    log("model " + describe(m));
     log("device " + device_->text());
+    if (had_frames) start_engine(frames_, current_);
+    else log("drop frames — the network runs once each, then the grade is local");
     sync_ui();
     refresh_enabled();
+    if (done) done(true, {});
+}
+
+const Fields* MainWindow::frame_fields() const { return current_frame_ ? &current_frame_->fields : nullptr; }
+
+void MainWindow::set_model_pills() {
+    const bool on = backend_ != nullptr && manifest_ != nullptr;
+    ckpt_->setText(on ? QString::fromStdString(manifest_->name) : QStringLiteral("no model"));
+    if (on) {
+        const auto info = backend_->info();
+        device_->setText(QString::fromStdString(device_pill(info)));
+        device_->setToolTip(QString::fromStdString(backend_choice_ ? backend_choice_->label() : std::string()) + " " +
+                            QString::fromStdString(info.version) + (info.detail.empty() ? "" : " (" + QString::fromStdString(info.detail) + ")"));
+    } else {
+        device_->setText("—");
+    }
+    lamp_->setProperty("state", on ? "on" : "off");
+    lamp_->style()->unpolish(lamp_);
+    lamp_->style()->polish(lamp_);
+}
+
+void MainWindow::boot() {
+    rescan_models();
+    QSettings st;
+    if (!st.value("firstRun/done", false).toBool()) {
+        open_first_run();
+        return;
+    }
+    const std::filesystem::path last = st.value("model/package").toString().toStdString();
+    const auto choice = BackendChoice::from_key(st.value("model/backend").toString().toStdString());
+    std::error_code ec;
+    if (!last.empty() && std::filesystem::is_regular_file(last / "manifest.json", ec)) {
+        use_model(last, choice);
+        return;
+    }
+    if (const auto i = catalog_.pick()) {
+        use_model(catalog_.entries[*i].package, choice);
+        return;
+    }
+    ckpt_->setText("no model package found");
+    log("no model loaded: no model package found in " + QString::number(catalog_.roots.size()) +
+        " folder(s); File > Model packages… adds one");
 }
 
 void MainWindow::open_source(const QString& preset, bool folder) {
@@ -528,6 +673,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
 void MainWindow::close_frames() {
     play_.stop();
     engine_.reset();
+    ++engine_gen_;
     frames_.clear();
     current_ = 0;
     frame_info_.clear();
@@ -546,7 +692,7 @@ void MainWindow::close_frames() {
     show_status();
 }
 
-void MainWindow::start_engine(std::vector<std::filesystem::path> frames) {
+void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at) {
     play_.stop();
     engine_.reset();   // joins the old worker before the new one starts
     frames_ = std::move(frames);
@@ -573,15 +719,18 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames) {
             return infer_frame(*backend, sdr, TileConfig{0, 0});
         });
     QPointer<MainWindow> self(this);
-    engine_->on_ready([self, model](const ReadyFrame& f) {
-        QMetaObject::invokeMethod(qApp, [self, f, model] {
-            if (self) self->frame_ready(f, model);
+    // A frame the engine before this one finished (another model's, or
+    // frames since closed) is not shown.
+    const int gen = ++engine_gen_;
+    engine_->on_ready([self, model, gen](const ReadyFrame& f) {
+        QMetaObject::invokeMethod(qApp, [self, f, model, gen] {
+            if (self && self->engine_gen_ == gen) self->frame_ready(f, model);
         });
     });
     engine_->set_sequence(int(frames_.size()));
     refresh_enabled();
     sync_ui();
-    step_to(0);
+    step_to(at);
 }
 
 void MainWindow::step_to(int i) {

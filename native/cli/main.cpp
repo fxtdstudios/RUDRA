@@ -41,6 +41,7 @@
 #include "rudra/core/scopes.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
+#include "rudra/infer/self_test.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/platform/npy.hpp"
 
@@ -56,41 +57,6 @@ namespace {
 int fail(const Error& e) {
     std::fprintf(stderr, "error [%s]: %s\n  %s\n", to_string(e.code), e.message.c_str(), e.detail.c_str());
     return 2;
-}
-
-Result<SdrImage> load_sdr(const fs::path& file) {
-    auto a = read_npy(file);
-    if (!a) return a.error();
-    if (a->shape.size() != 3 || a->shape[2] != 3)
-        return make_error(ErrorCode::ParseError, "A golden input is not an H x W x 3 image.", file.string());
-    const int h = static_cast<int>(a->shape[0]), w = static_cast<int>(a->shape[1]);
-    PlanarBuffer b(3, h, w);
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-            for (int c = 0; c < 3; ++c)
-                b.at(c, y, x) = a->data[(static_cast<std::size_t>(y) * w + x) * 3 + c];
-    return SdrImage(std::move(b));
-}
-
-struct Stat {
-    double max_abs = 0.0;
-    double excess = -1e300;   // max(|d| - (atol + rtol |ref|)); <= 0 passes
-    void add(double ref, double got, const Tolerance& t) {
-        const double d = std::abs(ref - got);
-        max_abs = std::max(max_abs, d);
-        excess = std::max(excess, d - (t.atol + t.rtol * std::abs(ref)));
-    }
-};
-
-Result<void> compare(const fs::path& file, std::span<const float> got, const Tolerance& tol, Stat& s) {
-    auto a = read_npy(file);
-    if (!a) return a.error();
-    if (static_cast<std::size_t>(a->size()) != got.size())
-        return make_error(ErrorCode::ParityError, "An output has the wrong size.",
-                          file.string() + ": expected " + std::to_string(a->size()) + " values, got " +
-                              std::to_string(got.size()));
-    for (std::size_t i = 0; i < got.size(); ++i) s.add(a->data[i], got[i], tol);
-    return {};
 }
 
 Result<Device> parse_device(const std::string& s) {
@@ -125,15 +91,6 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     if (!m) return fail(m.error());
     if (auto v = verify_package_files(*m); !v) return fail(v.error());
 
-    std::ifstream in(m->root / m->golden);
-    nlohmann::json g;
-    try {
-        in >> g;
-    } catch (const std::exception& e) {
-        return fail(make_error(ErrorCode::ParseError, "The golden index could not be read.", e.what()));
-    }
-    const fs::path gdir = (m->root / m->golden).parent_path();
-
     std::vector<Runtime> runtimes;
     for (auto r : compiled_runtimes())
         if (which == "all" || which == to_string(r)) runtimes.push_back(r);
@@ -144,60 +101,15 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     for (auto rt : runtimes) {
         auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
         if (!backend) return fail(backend.error());
-        const auto info = (*backend)->info();
-        // CPU LibTorch runs eager's own kernels: held to bit-exact-grade 1e-5.
-        // LibTorch on a GPU is true fp32 with the vendor's summation order;
-        // ONNX Runtime is a different graph compiler on any device.
-        const char* tol_key = rt == Runtime::OnnxRuntime ? "onnx" : device == Device::Cpu ? "torchscript" : "gpu_fp32";
-        const Tolerance tol = m->tolerance.at(tol_key);
-        std::map<std::string, Stat> stats;
-        int frames = 0;
-
-        for (const auto& f : g.at("frames")) {
-            auto sdr = load_sdr(gdir / f.at("sdr").at("file").get<std::string>());
-            if (!sdr) return fail(sdr.error());
-            auto r = infer_frame(**backend, *sdr, TileConfig{0, 0});
-            if (!r) return fail(r.error());
-            const float scale = r->scalars.residual_scale, weight = r->scalars.shadow_weight;
-            const std::vector<std::pair<std::string, std::span<const float>>> outs{
-                {"residual_scale", std::span<const float>(&scale, 1)},
-                {"shadow_weight", std::span<const float>(&weight, 1)},
-                {"curve_params", r->scalars.curve_params},
-                {"residual", r->fields.residual.span()},
-                {"highlight", r->fields.highlight.span()},
-                {"shadow", r->fields.shadow.span()}};
-            for (const auto& [key, span] : outs)
-                if (auto c = compare(gdir / f.at(key).at("file").get<std::string>(), span, tol, stats[key]); !c)
-                    return fail(c.error());
-            ++frames;
-        }
-
-        if (g.contains("stitch") && !g.at("stitch").is_null()) {
-            const auto& s = g.at("stitch");
-            auto sdr = load_sdr(gdir / s.at("sdr").at("file").get<std::string>());
-            if (!sdr) return fail(sdr.error());
-            auto r = infer_frame(**backend, *sdr, TileConfig{s.at("tile_size").get<int>(), s.at("overlap").get<int>()});
-            if (!r) return fail(r.error());
-            for (const auto& [key, buf] : std::vector<std::pair<std::string, const PlanarBuffer*>>{
-                     {"stitched residual", &r->fields.residual},
-                     {"stitched highlight", &r->fields.highlight},
-                     {"stitched shadow", &r->fields.shadow}}) {
-                const std::string field = key.substr(key.find(' ') + 1);
-                if (auto c = compare(gdir / s.at(field).at("file").get<std::string>(), buf->span(), tol, stats[key]); !c)
-                    return fail(c.error());
-            }
-        }
-
-        bool pass = true;
-        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n", to_string(info.runtime),
-                    info.version.c_str(), to_string(info.device), info.detail.c_str(), frames, tol.atol, tol.rtol, tol_key);
-        for (const auto& [key, st] : stats) {
-            const bool ok = st.excess <= 0.0;
-            pass = pass && ok;
-            std::printf("  %-20s max |d| %.3e  %s\n", key.c_str(), st.max_abs, ok ? "pass" : "FAIL");
-        }
-        std::printf("  => %s\n\n", pass ? "PASS" : "FAIL");
-        all_pass = all_pass && pass;
+        auto r = self_test(*m, **backend);   // infer/self_test, shared with the app's first load
+        if (!r) return fail(r.error());
+        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n",
+                    to_string(r->backend.runtime), r->backend.version.c_str(), to_string(r->backend.device),
+                    r->backend.detail.c_str(), r->frames, r->tolerance.atol, r->tolerance.rtol, r->tolerance_key.c_str());
+        for (const auto& [key, st] : r->outputs)
+            std::printf("  %-20s max |d| %.3e  %s\n", key.c_str(), st.max_abs, st.pass() ? "pass" : "FAIL");
+        std::printf("  => %s\n\n", r->pass() ? "PASS" : "FAIL");
+        all_pass = all_pass && r->pass();
     }
     return all_pass ? 0 : 1;
 }
