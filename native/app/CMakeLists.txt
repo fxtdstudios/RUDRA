@@ -40,6 +40,7 @@ if(APPLE)
   set(_rudra_icon_sources "${CMAKE_CURRENT_SOURCE_DIR}/icons/rudra.icns")
   set_source_files_properties(${_rudra_icon_sources} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 elseif(WIN32)
+  enable_language(RC)   # the project is CXX only; Ninja builds need RC for the .rc
   configure_file(windows/rudra.rc.in "${CMAKE_CURRENT_BINARY_DIR}/rudra.rc" @ONLY)
   set(_rudra_icon_sources "${CMAKE_CURRENT_BINARY_DIR}/rudra.rc")
 endif()
