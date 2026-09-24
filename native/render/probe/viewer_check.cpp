@@ -30,6 +30,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -119,7 +120,8 @@ int main(int argc, char** argv) {
     QCommandLineOption golden_opt("golden", "viewer golden folder", "dir", RUDRA_VIEWER_GOLDEN_DIR);
     QCommandLineOption report_opt("report", "write a JSON report", "file");
     QCommandLineOption card_opt("card", "Gate B through the viewer's display pass (HDR swapchain)");
-    cli.addOptions({api_opt, golden_opt, report_opt, card_opt});
+    QCommandLineOption dump_opt("dump", "write the grab and the expected picture of every failing case (PPM)", "dir");
+    cli.addOptions({api_opt, golden_opt, report_opt, card_opt, dump_opt});
     cli.process(app);
     QTextStream out(stdout);
     const bool card = cli.isSet(card_opt);
@@ -262,10 +264,15 @@ int main(int argc, char** argv) {
         std::vector<int> cx, cy;
         int worst = 0, surround_off = 0;
         std::size_t off = 0;
+        std::vector<unsigned char> got_img(std::size_t(g.width) * std::size_t(g.height) * 3),
+            want_img(std::size_t(g.width) * std::size_t(g.height) * 3, 0x12);
+        QJsonArray samples;   // the first mismatches, for the report
         for (int y = 0; y < g.height; ++y)
             for (int x = 0; x < g.width; ++x) {
                 const unsigned char* p = g.bytes.data() + (std::size_t(y) * std::size_t(g.width) + std::size_t(x)) * 4;
                 const int rgb[3] = {bgra ? p[2] : p[0], p[1], bgra ? p[0] : p[2]};
+                const std::size_t o3 = (std::size_t(y) * std::size_t(g.width) + std::size_t(x)) * 3;
+                for (int c = 0; c < 3; ++c) got_img[o3 + std::size_t(c)] = (unsigned char)rgb[c];
                 candidates((x + 0.5 - L) / W * fw, fw, cx);
                 candidates((y + 0.5 - T) / H * fh, fh, cy);
                 const GuideSample gs = guide_at(win.guides(), L, T, W, H, x, y);
@@ -280,16 +287,23 @@ int main(int argc, char** argv) {
                             if (cx.size() == 1 && cy.size() == 1) surround_off = std::max(surround_off, d);
                             continue;
                         }
-                        int d = 0;
+                        int d = 0, e3[3];
                         for (int c = 0; c < 3; ++c) {
                             const float v = float(want.rgb[(std::size_t(ty) * std::size_t(fw) + std::size_t(tx)) * 3 + std::size_t(c)]) / 255.0f;
                             const int e = int(std::lround(std::clamp(apply_guides(v, 1.0f, gs), 0.0f, 1.0f) * 255.0f));
+                            e3[c] = e;
                             d = std::max(d, std::abs(rgb[c] - e));
                         }
+                        if (d < best)
+                            for (int c = 0; c < 3; ++c) want_img[o3 + std::size_t(c)] = (unsigned char)e3[c];
                         best = std::min(best, d);
                     }
                 if (surround_ok) best = 0;
                 if (best == 1 << 20) continue;   // only surround candidates: counted above
+                if (best > 1 && samples.size() < 8)
+                    samples.append(QJsonObject{{"x", x}, {"y", y}, {"got", QJsonArray{rgb[0], rgb[1], rgb[2]}},
+                                               {"want", QJsonArray{want_img[o3], want_img[o3 + 1], want_img[o3 + 2]}},
+                                               {"texel", QJsonArray{cx[0], cy[0]}}});
                 worst = std::max(worst, best);
                 off += best != 0;
             }
@@ -297,8 +311,26 @@ int main(int argc, char** argv) {
         pass = pass && ok;
         out << QString("  %1 %2 max %3 code, %4 off, surround %5  %6\n").arg(QString::fromStdString(vname), -14)
                    .arg(QString::fromStdString(zname), -4).arg(worst).arg(off).arg(surround_off).arg(ok ? "pass" : "FAIL");
-        rows.append(QJsonObject{{"case", QString::fromStdString(vname + " " + zname)}, {"max_code", worst},
-                                {"values_off", qint64(off)}, {"surround_off", surround_off}, {"pass", ok}});
+        QJsonObject row{{"case", QString::fromStdString(vname + " " + zname)}, {"max_code", worst},
+                        {"values_off", qint64(off)}, {"surround_off", surround_off}, {"pass", ok},
+                        {"grab", QJsonArray{g.width, g.height}}, {"grab_format", QString::fromStdString(g.format)},
+                        {"window", QJsonArray{win.width(), win.height()}},
+                        {"rect_device", QJsonArray{L, T, W, H}}, {"first_mismatches", samples}};
+        rows.append(row);
+        if (!ok && cli.isSet(dump_opt)) {
+            const QString dir = cli.value(dump_opt);
+            fs::create_directories(dir.toStdString());
+            auto ppm = [&](const std::string& name, const std::vector<unsigned char>& img) {
+                std::ofstream f(fs::path(dir.toStdString()) / name, std::ios::binary);
+                f << "P6\n" << g.width << " " << g.height << "\n255\n";
+                f.write(reinterpret_cast<const char*>(img.data()), std::streamsize(img.size()));
+            };
+            std::string base = vname + "_" + zname;
+            for (char& ch : base)
+                if (!std::isalnum(static_cast<unsigned char>(ch))) ch = '_';
+            ppm(base + "_got.ppm", got_img);
+            ppm(base + "_want.ppm", want_img);
+        }
         ++step;
         next();
     };

@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
     // be written with, RGBA32F against core/view.cpp and RGBA16F within 2 ulp.
     struct HdrRow {
         std::string label;
-        double f32_excess = 0.0, f32_rel = 0.0;
+        double f32_excess = 0.0, f32_rel = 0.0, f32_abs = 0.0;
         int f16_ulp = 0;
         bool ok() const { return f32_excess <= 0.0 && f16_ulp <= kMaxHalfUlp; }
     };
@@ -246,11 +246,20 @@ int main(int argc, char** argv) {
                 }
                 HdrRow r;
                 r.label = name + " " + tname + " " + vname;
+                // PQ codes near black: the GPU's pow on a tiny base is not
+                // correctly rounded, and PQ's exponents amplify it. A twentieth
+                // of a 10-bit code (the swapchain's own step) is the floor there.
+                const bool pq = t.path == OutputPath::Hdr10;
+                constexpr double kPqFloor = 1.0 / 1023.0 / 20.0;
                 for (std::size_t i = 0; i < want.span().size(); ++i) {
                     const double wv = want.span()[i], d = std::abs(double(g32->span()[i]) - wv);
-                    r.f32_excess = std::max(r.f32_excess, d - (1e-5 + kRtol * std::abs(wv)));
+                    const double d16 = std::abs(double(g16->span()[i]) - wv);
+                    const double excess = d - (1e-5 + kRtol * std::abs(wv));
+                    r.f32_excess = std::max(r.f32_excess, pq ? std::min(excess, d - kPqFloor) : excess);
                     r.f32_rel = std::max(r.f32_rel, d / std::max(std::abs(wv), 1e-3));
-                    r.f16_ulp = std::max(r.f16_ulp, half_ulp(g16->span()[i], float(wv)));
+                    r.f32_abs = std::max(r.f32_abs, d);
+                    const int ulp = half_ulp(g16->span()[i], float(wv));
+                    r.f16_ulp = std::max(r.f16_ulp, (pq && d16 <= kPqFloor) ? std::min(ulp, kMaxHalfUlp) : ulp);
                 }
                 hrows.push_back(r);
             }
@@ -326,14 +335,14 @@ int main(int argc, char** argv) {
         if (!r.ok())
             out << QString("  %1 fp32 rel %2  fp16 %3 ulp  FAIL\n").arg(QString::fromStdString(r.label), -44)
                        .arg(r.f32_rel, 0, 'e', 2).arg(r.f16_ulp);
-        jhdr.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"fp32_max_rel", r.f32_rel},
+        jhdr.append(QJsonObject{{"case", QString::fromStdString(r.label)}, {"fp32_max_rel", r.f32_rel}, {"fp32_max_abs", r.f32_abs},
                                 {"fp16_max_ulp", r.f16_ulp}, {"pass", r.ok()}});
     }
     all = all && hdr_ok;
     out << QString("  %1 cases (scRGB, HDR10, EDR P3, EDR 709 x 5 views x %2 frames): fp32 max rel %3, fp16 max %4 ulp  %5\n")
                .arg(hrows.size()).arg(idx.at("frames").size()).arg(worst_hdr_rel, 0, 'e', 2).arg(worst_hdr_ulp)
                .arg(hdr_ok ? "pass" : "FAIL");
-    out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp\n";
+    out << "  bound: fp32 1e-5 + " << kRtol << " |ref|; fp16 " << kMaxHalfUlp << " half ulp; HDR10 codes also pass within 1/20 of a 10-bit step\n";
     out << "Reductions (peak, fp32 sum of max RGB), against core/view.cpp reduce_ladder\n";
     QJsonArray jred;
     for (const auto& r : rrows) {

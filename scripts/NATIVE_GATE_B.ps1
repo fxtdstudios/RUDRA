@@ -174,7 +174,7 @@ if (Test-Path $Viewer) {
         foreach ($mode in @("parity", "card")) {
             $json = Join-Path $Reports "native_viewer_${mode}_${api}_$Stamp.json"
             $vargs = @("--api", $api, "--report", $json)
-            if ($mode -eq "card") { $vargs += "--card" }
+            if ($mode -eq "card") { $vargs += "--card" } else { $vargs += @("--dump", (Join-Path $Reports "native_viewer_dump_${api}_$Stamp")) }
             $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
             $text = & $Viewer @vargs 2>&1 | ForEach-Object { "$_" }
             $code = $LASTEXITCODE
