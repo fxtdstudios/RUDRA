@@ -101,6 +101,8 @@ public:
     void region_move(double x, bool shift);
     void region_release();
     void region_zero(int index);
+    // A press on a row away from its value: selects it (drawRegions' .sel).
+    void select_region(int index);
 
     // The window's keydown and keyup (KeyboardEvent.key). Returns the action
     // it ran, or the one the app must run ("open", "play", "prev" ... which

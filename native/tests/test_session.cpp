@@ -49,7 +49,14 @@ void play(Session& s, const json& op) {
             s.region_move(x, op[3].get<bool>());
         }
         s.region_release();
-    } else if (k == "region0") s.region_zero(op[1].get<int>());
+    } else if (k == "region0") {
+        // A double click: two presses and releases, then the zero.
+        for (int n = 0; n < 2; ++n) {
+            s.region_press(op[1].get<int>(), 100.0);
+            s.region_release();
+        }
+        s.region_zero(op[1].get<int>());
+    }
     else if (k == "act") EXPECT_TRUE(s.run(op[1].get<std::string>())) << op[1];
     else if (k == "key") {
         const std::string key = op[1];
@@ -71,6 +78,11 @@ TEST(Session, EveryScriptStepMatchesThePage) {
             ASSERT_EQ(s.params_json(), st["params"].get<std::string>()) << where;
             EXPECT_EQ(s.undo_depth(), st["undo"].get<std::size_t>()) << where;
             EXPECT_EQ(s.redo_depth(), st["redo"].get<std::size_t>()) << where;
+            // The selected Region EV row (drawRegions' .sel).
+            int sel = -1;
+            for (std::size_t r = 0; r < st["panel"]["regions"].size(); ++r)
+                if (st["panel"]["regions"][r]["sel"].get<bool>()) sel = int(r);
+            EXPECT_EQ(s.region_sel, sel) << where;
             if (st["wipe"].is_null()) {
                 EXPECT_FALSE(s.wipe.has_value()) << where;
             } else {

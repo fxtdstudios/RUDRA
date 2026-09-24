@@ -45,6 +45,7 @@ namespace rudra::app {
 
 class CheckRow;
 class IconButton;
+class RegionEditor;
 class ScopePlot;
 class VectorscopeView;
 class ScrubBar;
@@ -88,6 +89,13 @@ public:
     const Session& session() const { return session_; }
     CompositeParams composite() const { return session_.composite_params(); }
     const std::string& container() const { return session_.container; }
+
+protected:
+    // The keys the page's keydown takes before its map: the wipe nudge,
+    // Escape, and B held to flip (the viewer takes them itself when it has
+    // the focus).
+    void keyPressEvent(class QKeyEvent* e) override;
+    void keyReleaseEvent(class QKeyEvent* e) override;
 
 private:
     void build_menus();
@@ -133,6 +141,7 @@ private:
                *btn_play_ = nullptr, *btn_next_ = nullptr;
     ScrubBar* scrub_ = nullptr;
     ScopePlot *wave_ = nullptr, *hist_ = nullptr;
+    RegionEditor* regions_ = nullptr;
     VectorscopeView* vector_ = nullptr;
     QLineEdit* seq_path_ = nullptr;
     QPlainTextEdit* log_ = nullptr;

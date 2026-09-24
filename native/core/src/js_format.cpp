@@ -67,4 +67,24 @@ std::string js_to_fixed(double v, int digits) {
 
 double js_round(double v) { return std::floor(v + 0.5); }
 
+std::string js_fmt(double v, int digits) {
+    if (!std::isfinite(v)) return "\u2014";
+    std::string f = js_to_fixed(v, digits);   // the same exact rounding, halves away from zero
+    const bool neg = !f.empty() && f[0] == '-';
+    if (neg) f.erase(0, 1);
+    const auto dot = f.find('.');
+    std::string whole = f.substr(0, dot), rest = dot == std::string::npos ? "" : f.substr(dot);
+    for (int i = int(whole.size()) - 3; i > 0; i -= 3) whole.insert(std::size_t(i), ",");
+    // en-US prints no sign on a value that rounds to zero ("-0.00" is "-0.00" in
+    // toLocaleString too, so keep it as toFixed has it).
+    return (neg ? "-" : "") + whole + rest;
+}
+
+std::string js_signed(double v, int digits) {
+    if (!std::isfinite(v)) return "\u2014";
+    return std::string(v >= 0 ? "+" : "\u2212") + js_fmt(std::abs(v), digits);
+}
+
+std::string nits_label(double v) { return v >= 1000 ? js_number(v / 1000) + "k" : js_number(v); }
+
 }  // namespace rudra

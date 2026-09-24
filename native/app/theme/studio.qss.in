@@ -200,3 +200,15 @@ QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QDialog#sheet { background: var(--panel); border: 1px solid var(--line); }
 QDialog#sheet QLabel { background: transparent; }
 QToolTip { background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 3px 5px; }
+
+/* ── the Region EV editor: the page's .region rows ─────────────────── */
+QWidget#regions { background: transparent; }
+QWidget[role="region"] { background: transparent; border-radius: var(--radius); }
+QWidget[role="region"]:hover { background: var(--panel-2); }
+QWidget[role="region"][sel="true"] { background: var(--raise); }
+QWidget[role="region"] QLabel { background: transparent; }
+QLabel[role="region-q"] { font-family: "var(--mono-family)"; font-size: 11px; color: var(--ink-2); }
+QLabel[role="region-ev"] { font-family: "var(--mono-family)"; font-size: 11px; color: var(--ink-3); padding: 1px 3px; border-radius: var(--radius); }
+QLabel[role="region-ev"]:hover { background: var(--raise); color: var(--ink); }
+QLabel[role="region-ev"][live="true"] { color: var(--ok); }
+QLabel[role="region-u"] { font-family: "var(--mono-family)"; font-size: 10px; color: var(--ink-3); }

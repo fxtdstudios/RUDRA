@@ -7,6 +7,7 @@
 //   RUDRA [package [still-or-folder]]
 //   RUDRA --theme-check out.json      the fonts, weights and style as resolved here
 //   RUDRA --grab out.png [...]        the window as drawn, then quit
+//   RUDRA --tab grade|deliver ...     open on that inspector tab
 
 #include <QApplication>
 #include <QFile>
@@ -39,6 +40,10 @@ int main(int argc, char** argv) {
         rest.remove(i, std::min<qsizetype>(2, rest.size() - i));
     }
     rudra::app::MainWindow w;
+    if (const qsizetype t = rest.indexOf("--tab"); t >= 0 && t + 1 < rest.size()) {   // for the review grabs
+        w.show_tab(rest[t + 1]);
+        rest.remove(t, 2);
+    }
     if (rest.size() > 0) w.open_package(rest[0]);
     if (rest.size() > 1) w.open_source(rest[1]);
     w.show();

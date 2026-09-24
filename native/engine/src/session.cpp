@@ -205,6 +205,7 @@ void Session::toggle_carry_chroma() {
 void Session::region_press(int index, double x) {
     if (index < 0 || index >= int(grade.regions.size())) return;
     region_sel = index;
+    notify(Grade);   // the row is selected before the drag begins
     drag_ = index;
     drag_x0_ = x;
     drag_ev0_ = grade.regions[std::size_t(index)].ev;
@@ -233,6 +234,12 @@ void Session::region_zero(int index) {
     if (index < 0 || index >= int(grade.regions.size())) return;
     push_undo();
     grade.regions[std::size_t(index)].ev = 0.0;
+    notify(Grade);
+}
+
+void Session::select_region(int index) {
+    if (index < 0 || index >= int(grade.regions.size())) return;
+    region_sel = index;
     notify(Grade);
 }
 

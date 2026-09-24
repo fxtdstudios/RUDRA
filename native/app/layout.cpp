@@ -24,6 +24,7 @@
 #include <QVBoxLayout>
 
 #include "main_window.hpp"
+#include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
 
@@ -487,9 +488,8 @@ QWidget* MainWindow::build_right_rail() {
     auto* gv = column(grade);
     gv->addWidget(panel_label("Region EV", "3", "regionCount", grade));
     region_count_ = grade->findChild<QLabel*>("regionCount");
-    auto* regions = styled("regions", "regions");
-    column(regions, 4);
-    gv->addWidget(regions);
+    regions_ = new RegionEditor(session_, grade);
+    gv->addWidget(regions_);
     auto* gctl = ctl(grade);
     auto* gcv = column(gctl);
     gcv->setContentsMargins(10, 0, 10, 10);

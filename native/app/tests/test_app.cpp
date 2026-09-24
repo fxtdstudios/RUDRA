@@ -21,6 +21,7 @@
 #include <QSlider>
 #include <QStackedWidget>
 #include <QImage>
+#include <QMouseEvent>
 #include <QTest>
 
 #include <cstdio>
@@ -29,6 +30,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 
 #include <fstream>
@@ -38,6 +40,7 @@
 #include <nlohmann/json.hpp>
 
 #include "main_window.hpp"
+#include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
 #include "rudra/engine/actions.hpp"
@@ -488,6 +491,130 @@ TEST(AppLayout, ShellControlsDoWhatShellJsDoes) {
     w.run("undo");
     EXPECT_EQ(w.findChild<QLabel*>("strengthVal")->text(), "1.00");
     EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text(), "do-no-harm");
+}
+
+// ---- step 6: the panels driven as the page's are, against its golden -------
+
+namespace {
+
+const json& session_golden() {
+    static const json g = [] {
+        std::ifstream f(std::string(RUDRA_GOLDEN_DIR) + "/session/scripts.json");
+        return json::parse(f);
+    }();
+    return g;
+}
+
+void send_mouse(QWidget* target, QEvent::Type type, double x, Qt::KeyboardModifiers mods = Qt::NoModifier) {
+    const QPointF local(x, 5.0);
+    const QPointF global = target->mapToGlobal(local);
+    const Qt::MouseButtons held = type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton;
+    QMouseEvent e(type, local, local, global, Qt::LeftButton, held, mods);
+    QApplication::sendEvent(target, &e);
+}
+
+// One gesture of the golden, made on the window's own widgets.
+void gesture(app::MainWindow& w, const json& op) {
+    const std::string k = op[0];
+    if (k == "start") return;
+    if (k == "mode") {
+        find<app::Seg>(w, "mode")->button(QString::fromStdString(op[1].get<std::string>()))->click();
+    } else if (k == "preserve") {
+        QTest::mouseClick(w.findChild<QWidget*>("preserve"), Qt::LeftButton);
+    } else if (k == "strength" || k == "peak") {
+        auto* s = w.findChild<QSlider*>(QString::fromStdString(k));
+        const double v = std::stod(op[1].get<std::string>());
+        const int n = int(std::lround(v * (k == "strength" ? 20.0 : 2.0)));
+        if (k == "strength") s->setSliderDown(true);   // the pointerdown
+        s->setValue(n);
+        if (k == "strength") s->setSliderDown(false);
+    } else if (k == "region") {
+        auto* ev = find<app::RegionEditor>(w, "regions")->value(op[1].get<int>());
+        double x = 5.0;
+        const auto mods = op[3].get<bool>() ? Qt::ShiftModifier : Qt::NoModifier;
+        send_mouse(ev, QEvent::MouseButtonPress, x);
+        for (const auto& dx : op[2]) {
+            x += dx.get<double>();
+            send_mouse(ev, QEvent::MouseMove, x, mods);
+        }
+        send_mouse(ev, QEvent::MouseButtonRelease, x);
+    } else if (k == "region0") {
+        auto* ev = find<app::RegionEditor>(w, "regions")->value(op[1].get<int>());
+        const double x = 5.0;
+        // A double click: press, release, then the second press as a double click.
+        send_mouse(ev, QEvent::MouseButtonPress, x);
+        send_mouse(ev, QEvent::MouseButtonRelease, x);
+        send_mouse(ev, QEvent::MouseButtonDblClick, x);
+        send_mouse(ev, QEvent::MouseButtonRelease, x);
+    } else if (k == "act") {
+        w.action(op[1].get<std::string>())->trigger();
+    } else if (k == "key") {
+        const std::string key = op[1];
+        Qt::KeyboardModifiers mods = op[2].get<bool>() ? Qt::ShiftModifier : Qt::NoModifier;
+        int code = 0;
+        if (key == "ArrowLeft") code = Qt::Key_Left;
+        else if (key == "ArrowRight") code = Qt::Key_Right;
+        else if (key == "Escape") code = Qt::Key_Escape;
+        else if (key == " ") code = Qt::Key_Space;
+        else if (key == "[") code = Qt::Key_BracketLeft;
+        else if (key == "]") code = Qt::Key_BracketRight;
+        else if (key.size() == 1 && std::isdigit(static_cast<unsigned char>(key[0]))) code = Qt::Key_0 + (key[0] - '0');
+        else if (key.size() == 1 && std::isalpha(static_cast<unsigned char>(key[0]))) {
+            code = Qt::Key_A + (std::toupper(static_cast<unsigned char>(key[0])) - 'A');
+            if (std::isupper(static_cast<unsigned char>(key[0]))) mods |= Qt::ShiftModifier;   // "P" is Shift+P
+        }
+        ASSERT_NE(code, 0) << key;
+        QTest::keyClick(&w, Qt::Key(code), mods);
+    } else {
+        FAIL() << "unknown gesture " << k;
+    }
+    QApplication::processEvents();
+}
+
+}  // namespace
+
+TEST(AppPanels, EveryGestureOnTheWidgetsGivesThePagesState) {
+    for (const auto& [name, steps] : session_golden()["scripts"].items()) {
+        app::MainWindow w(false);
+        w.resize(1600, 1000);
+        w.show();
+        w.activateWindow();
+        ASSERT_TRUE(QTest::qWaitForWindowActive(&w));
+        w.show_tab("grade");   // the Region EV rows must be laid out to be pressed
+        QApplication::processEvents();
+        int i = 0;
+        for (const auto& st : steps) {
+            gesture(w, st["op"]);
+            const std::string where = name + " step " + std::to_string(i++) + " " + st["op"].dump();
+            const Session& s = w.session();
+            ASSERT_EQ(s.params_json(), st["params"].get<std::string>()) << where;
+            EXPECT_EQ(s.undo_depth(), st["undo"].get<std::size_t>()) << where;
+            EXPECT_EQ(s.redo_depth(), st["redo"].get<std::size_t>()) << where;
+            if (st["wipe"].is_null()) {
+                EXPECT_FALSE(s.wipe.has_value()) << where;
+            } else {
+                ASSERT_TRUE(s.wipe.has_value()) << where;
+                EXPECT_EQ(*s.wipe, st["wipe"].get<double>()) << where;
+            }
+            // What the panels show.
+            const auto& p = st["panel"];
+            auto* regions = find<app::RegionEditor>(w, "regions");
+            ASSERT_EQ(std::size_t(regions->rows()), p["regions"].size()) << where;
+            for (int r = 0; r < regions->rows(); ++r) {
+                const auto& g = p["regions"][std::size_t(r)];
+                EXPECT_EQ(regions->range(r)->text().toStdString(), g["q"].get<std::string>()) << where;
+                EXPECT_EQ(regions->value(r)->text().toStdString(), g["ev"].get<std::string>()) << where;
+                EXPECT_EQ(regions->value(r)->property("live").toBool(), g["live"].get<bool>()) << where << " row " << r;
+                EXPECT_EQ(regions->row(r)->property("sel").toBool(), g["sel"].get<bool>()) << where << " row " << r;
+            }
+            EXPECT_EQ(w.findChild<QLabel*>("regionCount")->text().toStdString(), p["regionCount"].get<std::string>()) << where;
+            EXPECT_EQ(w.findChild<QLabel*>("strengthVal")->text().toStdString(), p["strengthVal"].get<std::string>()) << where;
+            EXPECT_EQ(w.findChild<QLabel*>("peakVal")->text().toStdString(), p["peakVal"].get<std::string>()) << where;
+            EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text().toStdString(), p["preserveHint"].get<std::string>()) << where;
+            EXPECT_EQ(find<app::CheckRow>(w, "preserve")->on(), p["preserveOn"].get<bool>()) << where;
+            EXPECT_EQ(find<app::Seg>(w, "mode")->on().toStdString(), p["mode"].get<std::string>()) << where;
+        }
+    }
 }
 
 // ---- step 5: the scope widgets against the page's own rasters -------------

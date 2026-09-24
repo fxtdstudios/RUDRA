@@ -452,7 +452,9 @@ Studio workflow with no Python installed, every number and file matching the Stu
   page's at 1600 x 1000 (and a Studio fix: the pipeline bar was a 26 px square, now the full-width foot)
 - [x] Scope widgets: the page's waveform and histogram SVG element for element, painted as a browser
   paints it, and the vectorscope in its ring (rasters held to the page's own screenshots)
-- [ ] Reconstruct and Grade panels, probe, measurements
+- [x] Reconstruct and Grade panels with the Region EV editor: every one of the page's 251 recorded
+  gestures made on the widgets reaches its `params()`, undo and panel words
+- [ ] Probe, measurements
 - [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
 - [ ] The whole workflow on Windows with no Python on the machine
 

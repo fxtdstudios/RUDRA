@@ -12,6 +12,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
+#include <QKeyEvent>
 #include <QLocale>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -21,10 +22,12 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <optional>
 
@@ -235,11 +238,17 @@ void MainWindow::build_menus() {
         auto* a = new QAction(qs(spec.label), this);
         a->setObjectName(QStringLiteral("act:") + qs(spec.id));
         QList<QKeySequence> keys;
-        for (auto k : mapped_keys())
-            if (action_for_key(k) == spec.id) {
-                const QKeySequence seq = key_sequence(k);
-                if (!keys.contains(seq)) keys << seq;
+        for (auto k : mapped_keys()) {
+            if (action_for_key(k) != spec.id) continue;
+            const QKeySequence seq = key_sequence(k);
+            if (!keys.contains(seq)) keys << seq;
+            // The page maps "z" and "Z" alike: a letter works with Shift (or
+            // Caps Lock) too.
+            if (k.size() == 1 && std::isalpha(static_cast<unsigned char>(k[0]))) {
+                const QKeySequence shifted(QStringLiteral("Shift+") + seq.toString(QKeySequence::PortableText));
+                if (!keys.contains(shifted)) keys << shifted;
             }
+        }
         if (!spec.native_key.empty()) keys << QKeySequence(qs(spec.native_key));
         // The hint the page prints comes first, so the menu shows it.
         if (!spec.hint.empty()) {
@@ -614,6 +623,7 @@ void MainWindow::sync_ui() {
     container_field_->setText(aces ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020");
     primaries_field_->setText(aces ? "AP0 (ST 2065-4)" : "Rec.2020");
     region_count_->setText(QString::number(g.regions.size()));
+    regions_->sync();
     view_mode_->set_on(session_.wipe ? "#wipeBtn" : QString::fromStdString(session_.show));
     view_layer_->set_on(QString::number(session_.view_layer));
     guide_btn_->setChecked(guides_on_);
@@ -640,6 +650,29 @@ void MainWindow::sync_ui() {
     btn_master_->setEnabled(ready && pending_reason("master").isEmpty());
     btn_reprocess_->setEnabled(ready);
     if (viewer_stack_->count() > 1) viewer_stack_->setCurrentIndex(n > 0 ? 1 : 0);
+}
+
+void MainWindow::keyPressEvent(QKeyEvent* e) {
+    const bool modified = e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier);
+    const bool shift = e->modifiers() & Qt::ShiftModifier;
+    std::string key;
+    switch (e->key()) {
+        case Qt::Key_Left: key = "ArrowLeft"; break;
+        case Qt::Key_Right: key = "ArrowRight"; break;
+        case Qt::Key_Escape: key = "Escape"; break;
+        case Qt::Key_B: key = "b"; break;
+        default: break;
+    }
+    if (key.empty() || modified) {
+        QMainWindow::keyPressEvent(e);
+        return;
+    }
+    session_.key_down(key, shift, false, e->isAutoRepeat());
+}
+
+void MainWindow::keyReleaseEvent(QKeyEvent* e) {
+    if (e->key() == Qt::Key_B && !e->isAutoRepeat()) session_.key_up("b");
+    QMainWindow::keyReleaseEvent(e);
 }
 
 void MainWindow::set_workspace(const QString& mode) {

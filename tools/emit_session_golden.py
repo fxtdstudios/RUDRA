@@ -10,8 +10,11 @@ is a list of gestures made with real DOM events -- clicks on the mode buttons
 and the Preserve check, the strength and peak sliders (pointerdown, then an
 input event, as a drag does), pointer drags and double clicks on the Region
 EV values, menu items, and keys on the window -- and after every gesture the
-golden records JSON.stringify(params()), the undo and redo depths, and the
-wipe. engine/session.cpp must give the same bytes after the same gestures.
+golden records JSON.stringify(params()), the undo and redo depths, the
+wipe, and what the Reconstruct and Grade panels then show (the Region EV
+rows, the read-outs, the hints). engine/session.cpp must give the same bytes
+after the same gestures, and the app's panels the same words when the same
+gestures are made on them.
 
     python tools/emit_session_golden.py       # writes native/tests/golden/session/scripts.json
 """
@@ -30,7 +33,8 @@ HOOK = ("window.__studio = {state: state, params: params, snapshot: snapshot, AC
 
 # Gestures: ["mode", m] clicks the mode button; ["preserve"] clicks the check;
 # ["strength", v] and ["peak", v] drag a slider to v; ["region", i, [dx...], shift]
-# drags a Region EV value by dx pixels per move; ["region0", i] double-clicks it;
+# drags a Region EV value by dx pixels per move; ["region0", i] double-clicks it
+# (press, release, press, release, dblclick);
 # ["act", id] clicks the menu item; ["key", k, shift] presses a key on the window.
 SCRIPTS = {
     "modes_and_strength": [
@@ -66,9 +70,19 @@ async (ops) => {
   const S = window.__studio;
   const $ = (id) => document.getElementById(id);
   const out = [];
+  const text = (el) => el ? el.textContent : null;
   const record = (op) => out.push({op: op, params: JSON.stringify(S.params()),
                                    undo: S.state.undo.length, redo: S.state.redo.length,
-                                   wipe: S.state.wipe});
+                                   wipe: S.state.wipe,
+                                   panel: {
+                                     regions: Array.from($("regions").querySelectorAll(".region")).map((r) => ({
+                                       q: text(r.querySelector(".q")), ev: text(r.querySelector(".ev")),
+                                       live: r.querySelector(".ev").classList.contains("live"),
+                                       sel: r.classList.contains("sel")})),
+                                     regionCount: text($("regionCount")), strengthVal: text($("strengthVal")),
+                                     peakVal: text($("peakVal")), preserveHint: text($("preserveHint")),
+                                     preserveOn: $("preserve").classList.contains("on"),
+                                     mode: (document.querySelector("#mode button.on") || {}).dataset?.mode || null}});
   const slider = (id, v) => {
     const el = $(id);
     el.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true}));
@@ -97,8 +111,15 @@ async (ops) => {
       }
       window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
     } else if (k === "region0") {
-      const ev = $("regions").querySelectorAll(".ev")[op[1]];
-      ev.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+      // A double click as a browser makes one: two presses and releases,
+      // then dblclick. Each press selects the row and each release, with no
+      // move, takes its undo step back.
+      for (let n = 0; n < 2; n++) {
+        const ev = $("regions").querySelectorAll(".ev")[op[1]];
+        ev.dispatchEvent(new PointerEvent("pointerdown", {bubbles: true, clientX: 100, pointerId: 1}));
+        window.dispatchEvent(new PointerEvent("pointerup", {bubbles: true, pointerId: 1}));
+      }
+      $("regions").querySelectorAll(".ev")[op[1]].dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
     } else if (k === "act") {
       document.querySelector('#menubar button[data-act="' + op[1] + '"]').click();
     } else if (k === "key") {

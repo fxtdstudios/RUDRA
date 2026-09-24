@@ -6,7 +6,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp scope_widgets.cpp scope_widgets.hpp theme.cpp theme.hpp)
+add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp scope_widgets.cpp scope_widgets.hpp region_editor.cpp region_editor.hpp theme.cpp theme.hpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets rudra::rudra_engine rudra::rudra_infer)
 if(TARGET rudra_render_gpu)
