@@ -162,6 +162,9 @@ public:
     const SdrImage* frame_sdr() const;
     const std::vector<std::filesystem::path>& frames() const { return frames_; }
     ViewerWindow* viewer() const { return viewer_; }
+    // The preview's long side (the Studio's 1600; 0 for full size). Applies to frames opened after it.
+    void set_preview_max_side(int side) { preview_max_side_ = side; }
+    int preview_max_side() const { return preview_max_side_; }
     // The frame on screen (the tests): its fields and which frame it is.
     const Fields* frame_fields() const;
     int current_index() const { return current_; }
@@ -283,6 +286,13 @@ private:
     std::vector<std::filesystem::path> frames_;
     std::unique_ptr<FrameEngine> engine_;         // declared after the backend: destroyed first
     int engine_gen_ = 0;                          // which engine a delivered frame came from
+    // Each frame's size as decoded, before the preview downscale (the header's source_resolution).
+    struct SourceSizes {
+        std::mutex mu;
+        std::vector<std::pair<int, int>> size;
+    };
+    std::shared_ptr<SourceSizes> source_sizes_;
+    int preview_max_side_ = 1600;                 // media/still.hpp kPreviewMaxSide
 };
 
 }  // namespace rudra::app

@@ -9,6 +9,7 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace rudra {
 namespace {
@@ -120,6 +121,34 @@ Result<DecodedStill> decode_sdr_file(const std::filesystem::path& path) {
     auto r = decode_sdr(bytes);
     if (!r) return make_error(r.error().code, r.error().message, path.string() + (r.error().detail.empty() ? "" : ": " + r.error().detail));
     return r;
+}
+
+}  // namespace rudra
+
+namespace rudra {
+
+SdrImage fit_max_side(const SdrImage& rgb, int max_side) {
+    const auto& b = rgb.buffer();
+    const int h = b.height(), w = b.width();
+    if (max_side <= 0 || std::max(h, w) <= max_side) return rgb;
+    // int(width * ratio), as the Python truncates.
+    const double ratio = double(max_side) / double(std::max(h, w));
+    const int nw = std::max(1, int(double(w) * ratio)), nh = std::max(1, int(double(h) * ratio));
+    cv::Mat src(h, w, CV_32FC3);
+    for (int y = 0; y < h; ++y) {
+        float* row = src.ptr<float>(y);
+        for (int x = 0; x < w; ++x)
+            for (int c = 0; c < 3; ++c) row[x * 3 + c] = b.at(c, y, x);
+    }
+    cv::Mat dst;
+    cv::resize(src, dst, cv::Size(nw, nh), 0, 0, cv::INTER_AREA);
+    PlanarBuffer out(3, nh, nw);
+    for (int y = 0; y < nh; ++y) {
+        const float* row = dst.ptr<float>(y);
+        for (int x = 0; x < nw; ++x)
+            for (int c = 0; c < 3; ++c) out.at(c, y, x) = row[x * 3 + c];
+    }
+    return SdrImage(std::move(out));
 }
 
 }  // namespace rudra

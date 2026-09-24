@@ -751,12 +751,20 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
     auto* backend = backend_.get();
     const ModelConstants model{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev};
     auto files = frames_;
+    source_sizes_ = std::make_shared<SourceSizes>();
+    source_sizes_->size.assign(files.size(), {0, 0});
     engine_ = std::make_unique<FrameEngine>(
-        [files](int i) -> Result<SdrImage> {
+        [files, sizes = source_sizes_, side = preview_max_side_](int i) -> Result<SdrImage> {
 #ifdef RUDRA_HAVE_STILL_DECODE
             auto d = decode_sdr_file(files[std::size_t(i)]);
             if (!d) return d.error();
-            return std::move(d->rgb);
+            {
+                std::lock_guard lock(sizes->mu);
+                sizes->size[std::size_t(i)] = {d->rgb.width(), d->rgb.height()};
+            }
+            // The Studio's preview: 1600 on the long side (ui/server.py _fit);
+            // masters decode again at full size.
+            return fit_max_side(d->rgb, side);
 #else
             // A build without media's still decode (no OpenCV) opens no
             // frames; the viewer and the rest of the shell still work.
@@ -819,8 +827,13 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
         return;
     }
     FrameHeader header;
-    const QString res = QStringLiteral("%1x%2").arg(f.sdr->width()).arg(f.sdr->height());
-    header.source_resolution = header.resolution = res.toStdString();
+    header.resolution = QStringLiteral("%1x%2").arg(f.sdr->width()).arg(f.sdr->height()).toStdString();
+    header.source_resolution = header.resolution;
+    if (source_sizes_) {
+        std::lock_guard lock(source_sizes_->mu);
+        const auto [sw, sh] = source_sizes_->size[std::size_t(f.index)];
+        if (sw > 0) header.source_resolution = QStringLiteral("%1x%2").arg(sw).arg(sh).toStdString();
+    }
     header.tiled = false;   // the preview is one untiled pass, as the Studio's
     if (!f.from_cache) header.elapsed_s = f.infer_ms / 1000.0;
     else if (current_frame_ && current_frame_->header.elapsed_s) header.elapsed_s = current_frame_->header.elapsed_s;

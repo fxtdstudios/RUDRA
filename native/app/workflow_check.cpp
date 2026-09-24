@@ -103,6 +103,7 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
         QJsonObject o;
         o["folder"] = a.frames;
         o["frames"] = n;
+        o["preview_max_side"] = w.preview_max_side();
         if (!step("open", o, n > 0)) return finish();
     }
 
@@ -129,8 +130,10 @@ int run_workflow_check(MainWindow& w, const WorkflowArgs& a) {
                 auto d = decode_sdr_file(w.frames()[std::size_t(i)]);
                 const auto* sdr = w.frame_sdr();
                 ++checked;
-                if (!d || !sdr || d->rgb.buffer().span().size() != sdr->buffer().span().size() ||
-                    !std::equal(d->rgb.buffer().span().begin(), d->rgb.buffer().span().end(), sdr->buffer().span().begin()))
+                // The frame on screen is its own decode at the preview size.
+                const SdrImage want = d ? fit_max_side(d->rgb, w.preview_max_side()) : SdrImage();
+                if (!d || !sdr || want.buffer().span().size() != sdr->buffer().span().size() ||
+                    !std::equal(want.buffer().span().begin(), want.buffer().span().end(), sdr->buffer().span().begin()))
                     ++wrong;
             }
 #endif
