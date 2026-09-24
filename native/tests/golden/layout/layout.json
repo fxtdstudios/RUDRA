@@ -1,0 +1,5094 @@
+{
+ "oracle": "ui/index.html, style.css, theme.css, app.js and shell.js, rendered at 1600 x 1000",
+ "viewport": [
+  1600,
+  1000
+ ],
+ "states": {
+  "full": {
+   "ids": {
+    "menubar": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA File Open frames…O Close all frames Master EXRM Edit UndoZ RedoY Reset reconstruction Reset region EV Clip First frameHome Previous frame, Next frame. Last frameEnd Play / pauseSpace Reconstruct All Highlights Shadows Off Preserve outside masks Weaker residual[ Stronger residual] Measure Copy measurements as JSON Copy scope data as JSON Re-measure this frame Deliver Master EXRM Container: ACES 2065-1 Container: linear Rec.2020 Copy delivery metadata Window Frames rail Reconstruction rail Scopes Fit to window Actual pixels Help Keyboard shortcuts? About RUDRA Studio Simple Full golden harness: no model — RADIANCE STUDIO",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsSimple": {
+     "tag": "button",
+     "shown": true,
+     "text": "Simple",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsFull": {
+     "tag": "button",
+     "shown": true,
+     "text": "Full",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "lamp": {
+     "tag": "span",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "ckpt": {
+     "tag": "span",
+     "shown": true,
+     "text": "golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "device": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iMedia": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iScopes": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iInspector": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iHelp": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railLeft": {
+     "tag": "div",
+     "shown": true,
+     "text": "Media0 Drop footage here a frame, a folder of frames, or a movie or Open … Open shot Name SizePeak Nothing open yet Probe— —nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shotCount": {
+     "tag": "span",
+     "shown": true,
+     "text": "0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "dropzone": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop footage here a frame, a folder of frames, or a movie or Open …",
+     "buttons": [
+      "Open …"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "browseBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open …",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqPath": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqOpen": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open shot",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqNote": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shots": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "framesEmpty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Nothing open yet",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeXY": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probePanel": {
+     "tag": "div",
+     "shown": true,
+     "text": "—nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeNits": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeDelta": {
+     "tag": "div",
+     "shown": true,
+     "text": "pick a pixel with Probe, or hold Alt",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeSrc": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBase": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeModel": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeMask": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewMode": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA Baseline Wipe",
+     "buttons": [
+      "RUDRA",
+      "Baseline",
+      "Wipe"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "wipeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Wipe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewLayer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Image False colour Difference",
+     "buttons": [
+      "Image",
+      "False colour",
+      "Difference"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "probeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Probe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "guideBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Guides",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "zoomSeg": {
+     "tag": "div",
+     "shown": true,
+     "text": "Fit 100%",
+     "buttons": [
+      "Fit",
+      "100%"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "zoomVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "100%",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped 0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "empty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plate": {
+     "tag": "div",
+     "shown": false,
+     "text": "RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "gl": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateLabel": {
+     "tag": "span",
+     "shown": false,
+     "text": "RUDRA reconstruction",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "Hold B, or the image, to flip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakBadge": {
+     "tag": "span",
+     "shown": false,
+     "text": "Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "fcLegend": {
+     "tag": "div",
+     "shown": false,
+     "text": "0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBox": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnPrev": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnPlay": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnNext": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "tc": {
+     "tag": "span",
+     "shown": true,
+     "text": "01:00:00:00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrub": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrubHead": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "srcInfo": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railRight": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL Reconstruct Grade Deliver All Highlights Shadows Off Residual strength 1.00× Display peak 203nits Preserve outside masks do-no-harm The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged. Region EV3 400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file. Anchor to source exposure conform Carry source chroma below the clip ContainerOpenEXR — ACES 2065-1 Transferlinear (scene-referred) PrimariesAP0 (ST 2065-4) Whitediffuse 1.0 = 203 nits Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet. Framemeasured Render Render folder OutputCurrent imageAll loaded frames — sequence Render name Start frame Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame. Log container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model Reprocess Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scopes": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wave": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "hist": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "vector": {
+     "tag": "canvas",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "itabs": {
+     "tag": "div",
+     "shown": true,
+     "text": "Reconstruct Grade Deliver",
+     "buttons": [
+      "Reconstruct",
+      "Grade",
+      "Deliver"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "tabRec": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reconstruct",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "tabGrade": {
+     "tag": "button",
+     "shown": true,
+     "text": "Grade",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabDeliver": {
+     "tag": "button",
+     "shown": true,
+     "text": "Deliver",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "mode": {
+     "tag": "div",
+     "shown": true,
+     "text": "All Highlights Shadows Off",
+     "buttons": [
+      "All",
+      "Highlights",
+      "Shadows",
+      "Off"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "strengthVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "1.00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "strength": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "203",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peak": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "preserve": {
+     "tag": "div",
+     "shown": true,
+     "text": "Preserve outside masks do-no-harm",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "preserveHint": {
+     "tag": "span",
+     "shown": true,
+     "text": "do-no-harm",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regionCount": {
+     "tag": "span",
+     "shown": false,
+     "text": "3",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regions": {
+     "tag": "div",
+     "shown": false,
+     "text": "400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "anchor": {
+     "tag": "div",
+     "shown": false,
+     "text": "Anchor to source exposure conform",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "anchorHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "conform",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "carryChroma": {
+     "tag": "div",
+     "shown": false,
+     "text": "Carry source chroma below the clip",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "chromaHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "below the clip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "containerField": {
+     "tag": "span",
+     "shown": false,
+     "text": "OpenEXR — ACES 2065-1",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "primariesField": {
+     "tag": "span",
+     "shown": false,
+     "text": "AP0 (ST 2065-4)",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measA": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measB": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "clipBar": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderDir": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderMode": {
+     "tag": "select",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderName": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStart": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStatus": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "log": {
+     "tag": "div",
+     "shown": true,
+     "text": "container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnReprocess": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reprocess",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnMaster": {
+     "tag": "button",
+     "shown": true,
+     "text": "Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "pipe": {
+     "tag": "div",
+     "shown": true,
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeIn": {
+     "tag": "b",
+     "shown": true,
+     "text": "sRGB · Rec.709",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWorking": {
+     "tag": "b",
+     "shown": true,
+     "text": "scene-linear · 203 nits = 1.0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewTransform": {
+     "tag": "b",
+     "shown": true,
+     "text": "PQ · Rec.2020",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeMaster": {
+     "tag": "b",
+     "shown": true,
+     "text": "ACES 2065-1 EXR, half",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusMask": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusTime": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWarn": {
+     "tag": "span",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    }
+   },
+   "frame": {
+    "menubar": {
+     "shown": true,
+     "box": [
+      0,
+      0,
+      1600,
+      30
+     ]
+    },
+    "iconrail": {
+     "shown": true,
+     "box": [
+      0,
+      30,
+      36,
+      944
+     ]
+    },
+    "rail_left": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      208,
+      944
+     ]
+    },
+    "centre": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      944
+     ]
+    },
+    "vtools": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      28
+     ]
+    },
+    "viewer": {
+     "shown": true,
+     "box": [
+      244,
+      58,
+      1084,
+      876
+     ]
+    },
+    "transport": {
+     "shown": true,
+     "box": [
+      244,
+      934,
+      1084,
+      40
+     ]
+    },
+    "rail_right": {
+     "shown": true,
+     "box": [
+      1328,
+      30,
+      272,
+      944
+     ]
+    },
+    "pipe": {
+     "shown": true,
+     "box": [
+      0,
+      974,
+      1600,
+      26
+     ]
+    }
+   },
+   "panel_labels": [
+    {
+     "text": "Media",
+     "shown": true
+    },
+    {
+     "text": "Probe",
+     "shown": true
+    },
+    {
+     "text": "Waveform",
+     "shown": true
+    },
+    {
+     "text": "Histogram",
+     "shown": true
+    },
+    {
+     "text": "Vectorscope",
+     "shown": true
+    },
+    {
+     "text": "Region EV",
+     "shown": false
+    },
+    {
+     "text": "Frame",
+     "shown": true
+    },
+    {
+     "text": "Render",
+     "shown": true
+    },
+    {
+     "text": "Log",
+     "shown": true
+    }
+   ],
+   "toolbar_labels": [
+    {
+     "text": "Compare",
+     "shown": true
+    },
+    {
+     "text": "Layer",
+     "shown": true
+    },
+    {
+     "text": "Zoom",
+     "shown": true
+    }
+   ],
+   "checks": [
+    {
+     "id": "preserve",
+     "label": "Preserve outside masks",
+     "hint": "do-no-harm",
+     "on": true
+    },
+    {
+     "id": "anchor",
+     "label": "Anchor to source exposure",
+     "hint": "conform",
+     "on": true
+    },
+    {
+     "id": "carryChroma",
+     "label": "Carry source chroma",
+     "hint": "below the clip",
+     "on": true
+    }
+   ],
+   "fields": [
+    [
+     "Container",
+     "OpenEXR — ACES 2065-1"
+    ],
+    [
+     "Transfer",
+     "linear (scene-referred)"
+    ],
+    [
+     "Primaries",
+     "AP0 (ST 2065-4)"
+    ],
+    [
+     "White",
+     "diffuse 1.0 = 203 nits"
+    ]
+   ],
+   "notes": [
+    {
+     "text": "The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
+     "shown": true
+    },
+    {
+     "text": "A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
+     "shown": false
+    },
+    {
+     "text": "Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet.",
+     "shown": false
+    }
+   ],
+   "sliders": [
+    {
+     "label": "Residual strength",
+     "value": "1.00",
+     "unit": "×",
+     "min": "0",
+     "max": "2",
+     "step": "0.05"
+    },
+    {
+     "label": "Display peak",
+     "value": "203",
+     "unit": "nits",
+     "min": "-1",
+     "max": "5",
+     "step": "0.5"
+    }
+   ],
+   "icon_titles": [
+    {
+     "id": "iMedia",
+     "title": "Frames",
+     "on": true
+    },
+    {
+     "id": "iScopes",
+     "title": "Scopes",
+     "on": true
+    },
+    {
+     "id": "iInspector",
+     "title": "Inspector",
+     "on": true
+    },
+    {
+     "id": "iHelp",
+     "title": "Keyboard shortcuts",
+     "on": false
+    }
+   ],
+   "titles": {
+    "wsSimple": "Hide the scopes and the advanced groups",
+    "wsFull": "Everything",
+    "iMedia": "Frames",
+    "iScopes": "Scopes",
+    "iInspector": "Inspector",
+    "iHelp": "Keyboard shortcuts",
+    "seqPath": "A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits.",
+    "seqOpen": "Open the shot at that path",
+    "wipeBtn": "Wipe: baseline left, RUDRA right (W)",
+    "probeBtn": "Read one pixel: baseline, RUDRA, and whether the SDR clipped there",
+    "guideBtn": "Framing guides, 90% and 80%",
+    "zoomVal": "Scroll to zoom, middle-drag to pan, double-click to fit",
+    "gl": "Hold to see the baseline"
+   },
+   "placeholders": {
+    "seqPath": "D:\\plates\\shot_010  or  shot.mov",
+    "renderDir": "C:\\Renders\\Shot01"
+   },
+   "body_class": "ws-full"
+  },
+  "simple": {
+   "ids": {
+    "menubar": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA File Open frames…O Close all frames Master EXRM Edit UndoZ RedoY Reset reconstruction Reset region EV Clip First frameHome Previous frame, Next frame. Last frameEnd Play / pauseSpace Reconstruct All Highlights Shadows Off Preserve outside masks Weaker residual[ Stronger residual] Measure Copy measurements as JSON Copy scope data as JSON Re-measure this frame Deliver Master EXRM Container: ACES 2065-1 Container: linear Rec.2020 Copy delivery metadata Window Frames rail Reconstruction rail Scopes Fit to window Actual pixels Help Keyboard shortcuts? About RUDRA Studio Simple Full golden harness: no model — RADIANCE STUDIO",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsSimple": {
+     "tag": "button",
+     "shown": true,
+     "text": "Simple",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "wsFull": {
+     "tag": "button",
+     "shown": true,
+     "text": "Full",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "lamp": {
+     "tag": "span",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "ckpt": {
+     "tag": "span",
+     "shown": true,
+     "text": "golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "device": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iMedia": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iScopes": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iInspector": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iHelp": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railLeft": {
+     "tag": "div",
+     "shown": true,
+     "text": "Media0 Drop footage here a frame, a folder of frames, or a movie or Open … Open shot Name SizePeak Nothing open yet Probe— —nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shotCount": {
+     "tag": "span",
+     "shown": true,
+     "text": "0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "dropzone": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop footage here a frame, a folder of frames, or a movie or Open …",
+     "buttons": [
+      "Open …"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "browseBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open …",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqPath": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqOpen": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open shot",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqNote": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shots": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "framesEmpty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Nothing open yet",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeXY": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probePanel": {
+     "tag": "div",
+     "shown": true,
+     "text": "—nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeNits": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeDelta": {
+     "tag": "div",
+     "shown": true,
+     "text": "pick a pixel with Probe, or hold Alt",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeSrc": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBase": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeModel": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeMask": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewMode": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA Baseline Wipe",
+     "buttons": [
+      "RUDRA",
+      "Baseline",
+      "Wipe"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "wipeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Wipe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewLayer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Image False colour Difference",
+     "buttons": [
+      "Image",
+      "False colour",
+      "Difference"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "probeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Probe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "guideBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Guides",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "zoomSeg": {
+     "tag": "div",
+     "shown": true,
+     "text": "Fit 100%",
+     "buttons": [
+      "Fit",
+      "100%"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "zoomVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "100%",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped 0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "empty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plate": {
+     "tag": "div",
+     "shown": false,
+     "text": "RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "gl": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateLabel": {
+     "tag": "span",
+     "shown": false,
+     "text": "RUDRA reconstruction",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "Hold B, or the image, to flip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakBadge": {
+     "tag": "span",
+     "shown": false,
+     "text": "Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "fcLegend": {
+     "tag": "div",
+     "shown": false,
+     "text": "0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBox": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnPrev": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnPlay": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnNext": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "tc": {
+     "tag": "span",
+     "shown": true,
+     "text": "01:00:00:00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrub": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrubHead": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "srcInfo": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railRight": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL Reconstruct Grade Deliver All Highlights Shadows Off Residual strength 1.00× Display peak 203nits Preserve outside masks do-no-harm The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged. Region EV3 400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file. Anchor to source exposure conform Carry source chroma below the clip ContainerOpenEXR — ACES 2065-1 Transferlinear (scene-referred) PrimariesAP0 (ST 2065-4) Whitediffuse 1.0 = 203 nits Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet. Framemeasured Render Render folder OutputCurrent imageAll loaded frames — sequence Render name Start frame Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame. Log container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model Reprocess Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scopes": {
+     "tag": "div",
+     "shown": false,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wave": {
+     "tag": "svg",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "hist": {
+     "tag": "svg",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "vector": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "itabs": {
+     "tag": "div",
+     "shown": true,
+     "text": "Reconstruct Grade Deliver",
+     "buttons": [
+      "Reconstruct",
+      "Grade",
+      "Deliver"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "tabRec": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reconstruct",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "tabGrade": {
+     "tag": "button",
+     "shown": true,
+     "text": "Grade",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabDeliver": {
+     "tag": "button",
+     "shown": true,
+     "text": "Deliver",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "mode": {
+     "tag": "div",
+     "shown": true,
+     "text": "All Highlights Shadows Off",
+     "buttons": [
+      "All",
+      "Highlights",
+      "Shadows",
+      "Off"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "strengthVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "1.00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "strength": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "203",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peak": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "preserve": {
+     "tag": "div",
+     "shown": true,
+     "text": "Preserve outside masks do-no-harm",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "preserveHint": {
+     "tag": "span",
+     "shown": true,
+     "text": "do-no-harm",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regionCount": {
+     "tag": "span",
+     "shown": false,
+     "text": "3",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regions": {
+     "tag": "div",
+     "shown": false,
+     "text": "400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "anchor": {
+     "tag": "div",
+     "shown": false,
+     "text": "Anchor to source exposure conform",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "anchorHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "conform",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "carryChroma": {
+     "tag": "div",
+     "shown": false,
+     "text": "Carry source chroma below the clip",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "chromaHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "below the clip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "containerField": {
+     "tag": "span",
+     "shown": false,
+     "text": "OpenEXR — ACES 2065-1",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "primariesField": {
+     "tag": "span",
+     "shown": false,
+     "text": "AP0 (ST 2065-4)",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measA": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measB": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "clipBar": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderDir": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderMode": {
+     "tag": "select",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderName": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStart": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStatus": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "log": {
+     "tag": "div",
+     "shown": true,
+     "text": "container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnReprocess": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reprocess",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnMaster": {
+     "tag": "button",
+     "shown": true,
+     "text": "Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "pipe": {
+     "tag": "div",
+     "shown": true,
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeIn": {
+     "tag": "b",
+     "shown": true,
+     "text": "sRGB · Rec.709",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWorking": {
+     "tag": "b",
+     "shown": true,
+     "text": "scene-linear · 203 nits = 1.0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewTransform": {
+     "tag": "b",
+     "shown": true,
+     "text": "PQ · Rec.2020",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeMaster": {
+     "tag": "b",
+     "shown": true,
+     "text": "ACES 2065-1 EXR, half",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusMask": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusTime": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWarn": {
+     "tag": "span",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    }
+   },
+   "frame": {
+    "menubar": {
+     "shown": true,
+     "box": [
+      0,
+      0,
+      1600,
+      30
+     ]
+    },
+    "iconrail": {
+     "shown": true,
+     "box": [
+      0,
+      30,
+      36,
+      944
+     ]
+    },
+    "rail_left": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      208,
+      944
+     ]
+    },
+    "centre": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      944
+     ]
+    },
+    "vtools": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      28
+     ]
+    },
+    "viewer": {
+     "shown": true,
+     "box": [
+      244,
+      58,
+      1084,
+      876
+     ]
+    },
+    "transport": {
+     "shown": true,
+     "box": [
+      244,
+      934,
+      1084,
+      40
+     ]
+    },
+    "rail_right": {
+     "shown": true,
+     "box": [
+      1328,
+      30,
+      272,
+      944
+     ]
+    },
+    "pipe": {
+     "shown": true,
+     "box": [
+      0,
+      974,
+      1600,
+      26
+     ]
+    }
+   },
+   "panel_labels": [
+    {
+     "text": "Media",
+     "shown": true
+    },
+    {
+     "text": "Probe",
+     "shown": true
+    },
+    {
+     "text": "Waveform",
+     "shown": false
+    },
+    {
+     "text": "Histogram",
+     "shown": false
+    },
+    {
+     "text": "Vectorscope",
+     "shown": false
+    },
+    {
+     "text": "Region EV",
+     "shown": false
+    },
+    {
+     "text": "Frame",
+     "shown": true
+    },
+    {
+     "text": "Render",
+     "shown": true
+    },
+    {
+     "text": "Log",
+     "shown": true
+    }
+   ],
+   "toolbar_labels": [
+    {
+     "text": "Compare",
+     "shown": true
+    },
+    {
+     "text": "Layer",
+     "shown": true
+    },
+    {
+     "text": "Zoom",
+     "shown": true
+    }
+   ],
+   "checks": [
+    {
+     "id": "preserve",
+     "label": "Preserve outside masks",
+     "hint": "do-no-harm",
+     "on": true
+    },
+    {
+     "id": "anchor",
+     "label": "Anchor to source exposure",
+     "hint": "conform",
+     "on": true
+    },
+    {
+     "id": "carryChroma",
+     "label": "Carry source chroma",
+     "hint": "below the clip",
+     "on": true
+    }
+   ],
+   "fields": [
+    [
+     "Container",
+     "OpenEXR — ACES 2065-1"
+    ],
+    [
+     "Transfer",
+     "linear (scene-referred)"
+    ],
+    [
+     "Primaries",
+     "AP0 (ST 2065-4)"
+    ],
+    [
+     "White",
+     "diffuse 1.0 = 203 nits"
+    ]
+   ],
+   "notes": [
+    {
+     "text": "The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
+     "shown": false
+    },
+    {
+     "text": "A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
+     "shown": false
+    },
+    {
+     "text": "Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet.",
+     "shown": false
+    }
+   ],
+   "sliders": [
+    {
+     "label": "Residual strength",
+     "value": "1.00",
+     "unit": "×",
+     "min": "0",
+     "max": "2",
+     "step": "0.05"
+    },
+    {
+     "label": "Display peak",
+     "value": "203",
+     "unit": "nits",
+     "min": "-1",
+     "max": "5",
+     "step": "0.5"
+    }
+   ],
+   "icon_titles": [
+    {
+     "id": "iMedia",
+     "title": "Frames",
+     "on": true
+    },
+    {
+     "id": "iScopes",
+     "title": "Scopes",
+     "on": false
+    },
+    {
+     "id": "iInspector",
+     "title": "Inspector",
+     "on": true
+    },
+    {
+     "id": "iHelp",
+     "title": "Keyboard shortcuts",
+     "on": false
+    }
+   ],
+   "titles": {
+    "wsSimple": "Hide the scopes and the advanced groups",
+    "wsFull": "Everything",
+    "iMedia": "Frames",
+    "iScopes": "Scopes",
+    "iInspector": "Inspector",
+    "iHelp": "Keyboard shortcuts",
+    "seqPath": "A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits.",
+    "seqOpen": "Open the shot at that path",
+    "wipeBtn": "Wipe: baseline left, RUDRA right (W)",
+    "probeBtn": "Read one pixel: baseline, RUDRA, and whether the SDR clipped there",
+    "guideBtn": "Framing guides, 90% and 80%",
+    "zoomVal": "Scroll to zoom, middle-drag to pan, double-click to fit",
+    "gl": "Hold to see the baseline"
+   },
+   "placeholders": {
+    "seqPath": "D:\\plates\\shot_010  or  shot.mov",
+    "renderDir": "C:\\Renders\\Shot01"
+   },
+   "body_class": "ws-simple"
+  },
+  "rails_hidden": {
+   "ids": {
+    "menubar": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA File Open frames…O Close all frames Master EXRM Edit UndoZ RedoY Reset reconstruction Reset region EV Clip First frameHome Previous frame, Next frame. Last frameEnd Play / pauseSpace Reconstruct All Highlights Shadows Off Preserve outside masks Weaker residual[ Stronger residual] Measure Copy measurements as JSON Copy scope data as JSON Re-measure this frame Deliver Master EXRM Container: ACES 2065-1 Container: linear Rec.2020 Copy delivery metadata Window Frames rail Reconstruction rail Scopes Fit to window Actual pixels Help Keyboard shortcuts? About RUDRA Studio Simple Full golden harness: no model — RADIANCE STUDIO",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsSimple": {
+     "tag": "button",
+     "shown": true,
+     "text": "Simple",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsFull": {
+     "tag": "button",
+     "shown": true,
+     "text": "Full",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "lamp": {
+     "tag": "span",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "ckpt": {
+     "tag": "span",
+     "shown": true,
+     "text": "golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "device": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iMedia": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iScopes": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iInspector": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iHelp": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railLeft": {
+     "tag": "div",
+     "shown": false,
+     "text": "Media0 Drop footage here a frame, a folder of frames, or a movie or Open … Open shot Name SizePeak Nothing open yet Probe— —nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shotCount": {
+     "tag": "span",
+     "shown": false,
+     "text": "0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "dropzone": {
+     "tag": "div",
+     "shown": false,
+     "text": "Drop footage here a frame, a folder of frames, or a movie or Open …",
+     "buttons": [
+      "Open …"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "browseBtn": {
+     "tag": "button",
+     "shown": false,
+     "text": "Open …",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqPath": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqOpen": {
+     "tag": "button",
+     "shown": false,
+     "text": "Open shot",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqNote": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shots": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "framesEmpty": {
+     "tag": "div",
+     "shown": false,
+     "text": "Nothing open yet",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeXY": {
+     "tag": "span",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probePanel": {
+     "tag": "div",
+     "shown": false,
+     "text": "—nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeNits": {
+     "tag": "span",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeDelta": {
+     "tag": "div",
+     "shown": false,
+     "text": "pick a pixel with Probe, or hold Alt",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeSrc": {
+     "tag": "b",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBase": {
+     "tag": "b",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeModel": {
+     "tag": "b",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeMask": {
+     "tag": "b",
+     "shown": false,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewMode": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA Baseline Wipe",
+     "buttons": [
+      "RUDRA",
+      "Baseline",
+      "Wipe"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "wipeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Wipe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewLayer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Image False colour Difference",
+     "buttons": [
+      "Image",
+      "False colour",
+      "Difference"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "probeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Probe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "guideBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Guides",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "zoomSeg": {
+     "tag": "div",
+     "shown": true,
+     "text": "Fit 100%",
+     "buttons": [
+      "Fit",
+      "100%"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "zoomVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "100%",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped 0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "empty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plate": {
+     "tag": "div",
+     "shown": false,
+     "text": "RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "gl": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateLabel": {
+     "tag": "span",
+     "shown": false,
+     "text": "RUDRA reconstruction",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "Hold B, or the image, to flip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakBadge": {
+     "tag": "span",
+     "shown": false,
+     "text": "Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "fcLegend": {
+     "tag": "div",
+     "shown": false,
+     "text": "0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBox": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnPrev": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnPlay": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnNext": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "tc": {
+     "tag": "span",
+     "shown": true,
+     "text": "01:00:00:00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrub": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrubHead": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "srcInfo": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railRight": {
+     "tag": "div",
+     "shown": false,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL Reconstruct Grade Deliver All Highlights Shadows Off Residual strength 1.00× Display peak 203nits Preserve outside masks do-no-harm The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged. Region EV3 400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file. Anchor to source exposure conform Carry source chroma below the clip ContainerOpenEXR — ACES 2065-1 Transferlinear (scene-referred) PrimariesAP0 (ST 2065-4) Whitediffuse 1.0 = 203 nits Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet. Framemeasured Render Render folder OutputCurrent imageAll loaded frames — sequence Render name Start frame Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame. Log container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model Reprocess Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scopes": {
+     "tag": "div",
+     "shown": false,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wave": {
+     "tag": "svg",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "hist": {
+     "tag": "svg",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "vector": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "itabs": {
+     "tag": "div",
+     "shown": false,
+     "text": "Reconstruct Grade Deliver",
+     "buttons": [
+      "Reconstruct",
+      "Grade",
+      "Deliver"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "tabRec": {
+     "tag": "button",
+     "shown": false,
+     "text": "Reconstruct",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "tabGrade": {
+     "tag": "button",
+     "shown": false,
+     "text": "Grade",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabDeliver": {
+     "tag": "button",
+     "shown": false,
+     "text": "Deliver",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "mode": {
+     "tag": "div",
+     "shown": false,
+     "text": "All Highlights Shadows Off",
+     "buttons": [
+      "All",
+      "Highlights",
+      "Shadows",
+      "Off"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "strengthVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "1.00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "strength": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "203",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peak": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "preserve": {
+     "tag": "div",
+     "shown": false,
+     "text": "Preserve outside masks do-no-harm",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "preserveHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "do-no-harm",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regionCount": {
+     "tag": "span",
+     "shown": false,
+     "text": "3",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regions": {
+     "tag": "div",
+     "shown": false,
+     "text": "400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "anchor": {
+     "tag": "div",
+     "shown": false,
+     "text": "Anchor to source exposure conform",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "anchorHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "conform",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "carryChroma": {
+     "tag": "div",
+     "shown": false,
+     "text": "Carry source chroma below the clip",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "chromaHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "below the clip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "containerField": {
+     "tag": "span",
+     "shown": false,
+     "text": "OpenEXR — ACES 2065-1",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "primariesField": {
+     "tag": "span",
+     "shown": false,
+     "text": "AP0 (ST 2065-4)",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measA": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measB": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "clipBar": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderDir": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderMode": {
+     "tag": "select",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderName": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStart": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStatus": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "log": {
+     "tag": "div",
+     "shown": false,
+     "text": "container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnReprocess": {
+     "tag": "button",
+     "shown": false,
+     "text": "Reprocess",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnMaster": {
+     "tag": "button",
+     "shown": false,
+     "text": "Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "pipe": {
+     "tag": "div",
+     "shown": true,
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeIn": {
+     "tag": "b",
+     "shown": true,
+     "text": "sRGB · Rec.709",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWorking": {
+     "tag": "b",
+     "shown": true,
+     "text": "scene-linear · 203 nits = 1.0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewTransform": {
+     "tag": "b",
+     "shown": true,
+     "text": "PQ · Rec.2020",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeMaster": {
+     "tag": "b",
+     "shown": true,
+     "text": "ACES 2065-1 EXR, half",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusMask": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusTime": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWarn": {
+     "tag": "span",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    }
+   },
+   "frame": {
+    "menubar": {
+     "shown": true,
+     "box": [
+      0,
+      0,
+      1600,
+      30
+     ]
+    },
+    "iconrail": {
+     "shown": true,
+     "box": [
+      0,
+      30,
+      36,
+      944
+     ]
+    },
+    "rail_left": {
+     "shown": false,
+     "box": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    "centre": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      1564,
+      944
+     ]
+    },
+    "vtools": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      1564,
+      28
+     ]
+    },
+    "viewer": {
+     "shown": true,
+     "box": [
+      36,
+      58,
+      1564,
+      876
+     ]
+    },
+    "transport": {
+     "shown": true,
+     "box": [
+      36,
+      934,
+      1564,
+      40
+     ]
+    },
+    "rail_right": {
+     "shown": false,
+     "box": [
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    "pipe": {
+     "shown": true,
+     "box": [
+      0,
+      974,
+      1600,
+      26
+     ]
+    }
+   },
+   "panel_labels": [
+    {
+     "text": "Media",
+     "shown": false
+    },
+    {
+     "text": "Probe",
+     "shown": false
+    },
+    {
+     "text": "Waveform",
+     "shown": false
+    },
+    {
+     "text": "Histogram",
+     "shown": false
+    },
+    {
+     "text": "Vectorscope",
+     "shown": false
+    },
+    {
+     "text": "Region EV",
+     "shown": false
+    },
+    {
+     "text": "Frame",
+     "shown": false
+    },
+    {
+     "text": "Render",
+     "shown": false
+    },
+    {
+     "text": "Log",
+     "shown": false
+    }
+   ],
+   "toolbar_labels": [
+    {
+     "text": "Compare",
+     "shown": true
+    },
+    {
+     "text": "Layer",
+     "shown": true
+    },
+    {
+     "text": "Zoom",
+     "shown": true
+    }
+   ],
+   "checks": [
+    {
+     "id": "preserve",
+     "label": "Preserve outside masks",
+     "hint": "do-no-harm",
+     "on": true
+    },
+    {
+     "id": "anchor",
+     "label": "Anchor to source exposure",
+     "hint": "conform",
+     "on": true
+    },
+    {
+     "id": "carryChroma",
+     "label": "Carry source chroma",
+     "hint": "below the clip",
+     "on": true
+    }
+   ],
+   "fields": [
+    [
+     "Container",
+     "OpenEXR — ACES 2065-1"
+    ],
+    [
+     "Transfer",
+     "linear (scene-referred)"
+    ],
+    [
+     "Primaries",
+     "AP0 (ST 2065-4)"
+    ],
+    [
+     "White",
+     "diffuse 1.0 = 203 nits"
+    ]
+   ],
+   "notes": [
+    {
+     "text": "The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
+     "shown": false
+    },
+    {
+     "text": "A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
+     "shown": false
+    },
+    {
+     "text": "Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet.",
+     "shown": false
+    }
+   ],
+   "sliders": [
+    {
+     "label": "Residual strength",
+     "value": "1.00",
+     "unit": "×",
+     "min": "0",
+     "max": "2",
+     "step": "0.05"
+    },
+    {
+     "label": "Display peak",
+     "value": "203",
+     "unit": "nits",
+     "min": "-1",
+     "max": "5",
+     "step": "0.5"
+    }
+   ],
+   "icon_titles": [
+    {
+     "id": "iMedia",
+     "title": "Frames",
+     "on": true
+    },
+    {
+     "id": "iScopes",
+     "title": "Scopes",
+     "on": true
+    },
+    {
+     "id": "iInspector",
+     "title": "Inspector",
+     "on": true
+    },
+    {
+     "id": "iHelp",
+     "title": "Keyboard shortcuts",
+     "on": false
+    }
+   ],
+   "titles": {
+    "wsSimple": "Hide the scopes and the advanced groups",
+    "wsFull": "Everything",
+    "iMedia": "Frames",
+    "iScopes": "Scopes",
+    "iInspector": "Inspector",
+    "iHelp": "Keyboard shortcuts",
+    "seqPath": "A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits.",
+    "seqOpen": "Open the shot at that path",
+    "wipeBtn": "Wipe: baseline left, RUDRA right (W)",
+    "probeBtn": "Read one pixel: baseline, RUDRA, and whether the SDR clipped there",
+    "guideBtn": "Framing guides, 90% and 80%",
+    "zoomVal": "Scroll to zoom, middle-drag to pan, double-click to fit",
+    "gl": "Hold to see the baseline"
+   },
+   "placeholders": {
+    "seqPath": "D:\\plates\\shot_010  or  shot.mov",
+    "renderDir": "C:\\Renders\\Shot01"
+   },
+   "body_class": "ws-full"
+  },
+  "tab_grade": {
+   "ids": {
+    "menubar": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA File Open frames…O Close all frames Master EXRM Edit UndoZ RedoY Reset reconstruction Reset region EV Clip First frameHome Previous frame, Next frame. Last frameEnd Play / pauseSpace Reconstruct All Highlights Shadows Off Preserve outside masks Weaker residual[ Stronger residual] Measure Copy measurements as JSON Copy scope data as JSON Re-measure this frame Deliver Master EXRM Container: ACES 2065-1 Container: linear Rec.2020 Copy delivery metadata Window Frames rail Reconstruction rail Scopes Fit to window Actual pixels Help Keyboard shortcuts? About RUDRA Studio Simple Full golden harness: no model — RADIANCE STUDIO",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsSimple": {
+     "tag": "button",
+     "shown": true,
+     "text": "Simple",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsFull": {
+     "tag": "button",
+     "shown": true,
+     "text": "Full",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "lamp": {
+     "tag": "span",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "ckpt": {
+     "tag": "span",
+     "shown": true,
+     "text": "golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "device": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iMedia": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iScopes": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iInspector": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iHelp": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railLeft": {
+     "tag": "div",
+     "shown": true,
+     "text": "Media0 Drop footage here a frame, a folder of frames, or a movie or Open … Open shot Name SizePeak Nothing open yet Probe— —nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shotCount": {
+     "tag": "span",
+     "shown": true,
+     "text": "0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "dropzone": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop footage here a frame, a folder of frames, or a movie or Open …",
+     "buttons": [
+      "Open …"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "browseBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open …",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqPath": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqOpen": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open shot",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqNote": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shots": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "framesEmpty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Nothing open yet",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeXY": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probePanel": {
+     "tag": "div",
+     "shown": true,
+     "text": "—nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeNits": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeDelta": {
+     "tag": "div",
+     "shown": true,
+     "text": "pick a pixel with Probe, or hold Alt",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeSrc": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBase": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeModel": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeMask": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewMode": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA Baseline Wipe",
+     "buttons": [
+      "RUDRA",
+      "Baseline",
+      "Wipe"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "wipeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Wipe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewLayer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Image False colour Difference",
+     "buttons": [
+      "Image",
+      "False colour",
+      "Difference"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "probeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Probe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "guideBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Guides",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "zoomSeg": {
+     "tag": "div",
+     "shown": true,
+     "text": "Fit 100%",
+     "buttons": [
+      "Fit",
+      "100%"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "zoomVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "100%",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped 0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "empty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plate": {
+     "tag": "div",
+     "shown": false,
+     "text": "RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "gl": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateLabel": {
+     "tag": "span",
+     "shown": false,
+     "text": "RUDRA reconstruction",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "Hold B, or the image, to flip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakBadge": {
+     "tag": "span",
+     "shown": false,
+     "text": "Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "fcLegend": {
+     "tag": "div",
+     "shown": false,
+     "text": "0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBox": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnPrev": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnPlay": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnNext": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "tc": {
+     "tag": "span",
+     "shown": true,
+     "text": "01:00:00:00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrub": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrubHead": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "srcInfo": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railRight": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL Reconstruct Grade Deliver All Highlights Shadows Off Residual strength 1.00× Display peak 203nits Preserve outside masks do-no-harm The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged. Region EV3 400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file. Anchor to source exposure conform Carry source chroma below the clip ContainerOpenEXR — ACES 2065-1 Transferlinear (scene-referred) PrimariesAP0 (ST 2065-4) Whitediffuse 1.0 = 203 nits Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet. Framemeasured Render Render folder OutputCurrent imageAll loaded frames — sequence Render name Start frame Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame. Log container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model Reprocess Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scopes": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wave": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "hist": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "vector": {
+     "tag": "canvas",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "itabs": {
+     "tag": "div",
+     "shown": true,
+     "text": "Reconstruct Grade Deliver",
+     "buttons": [
+      "Reconstruct",
+      "Grade",
+      "Deliver"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "tabRec": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reconstruct",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabGrade": {
+     "tag": "button",
+     "shown": true,
+     "text": "Grade",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "tabDeliver": {
+     "tag": "button",
+     "shown": true,
+     "text": "Deliver",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "mode": {
+     "tag": "div",
+     "shown": false,
+     "text": "All Highlights Shadows Off",
+     "buttons": [
+      "All",
+      "Highlights",
+      "Shadows",
+      "Off"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "strengthVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "1.00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "strength": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "203",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peak": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "preserve": {
+     "tag": "div",
+     "shown": false,
+     "text": "Preserve outside masks do-no-harm",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "preserveHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "do-no-harm",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regionCount": {
+     "tag": "span",
+     "shown": true,
+     "text": "3",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regions": {
+     "tag": "div",
+     "shown": true,
+     "text": "400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "anchor": {
+     "tag": "div",
+     "shown": false,
+     "text": "Anchor to source exposure conform",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "anchorHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "conform",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "carryChroma": {
+     "tag": "div",
+     "shown": false,
+     "text": "Carry source chroma below the clip",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "chromaHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "below the clip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "containerField": {
+     "tag": "span",
+     "shown": false,
+     "text": "OpenEXR — ACES 2065-1",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "primariesField": {
+     "tag": "span",
+     "shown": false,
+     "text": "AP0 (ST 2065-4)",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measA": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measB": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "clipBar": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderDir": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderMode": {
+     "tag": "select",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderName": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStart": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStatus": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "log": {
+     "tag": "div",
+     "shown": true,
+     "text": "container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnReprocess": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reprocess",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnMaster": {
+     "tag": "button",
+     "shown": true,
+     "text": "Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "pipe": {
+     "tag": "div",
+     "shown": true,
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeIn": {
+     "tag": "b",
+     "shown": true,
+     "text": "sRGB · Rec.709",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWorking": {
+     "tag": "b",
+     "shown": true,
+     "text": "scene-linear · 203 nits = 1.0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewTransform": {
+     "tag": "b",
+     "shown": true,
+     "text": "PQ · Rec.2020",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeMaster": {
+     "tag": "b",
+     "shown": true,
+     "text": "ACES 2065-1 EXR, half",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusMask": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusTime": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWarn": {
+     "tag": "span",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    }
+   },
+   "frame": {
+    "menubar": {
+     "shown": true,
+     "box": [
+      0,
+      0,
+      1600,
+      30
+     ]
+    },
+    "iconrail": {
+     "shown": true,
+     "box": [
+      0,
+      30,
+      36,
+      944
+     ]
+    },
+    "rail_left": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      208,
+      944
+     ]
+    },
+    "centre": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      944
+     ]
+    },
+    "vtools": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      28
+     ]
+    },
+    "viewer": {
+     "shown": true,
+     "box": [
+      244,
+      58,
+      1084,
+      876
+     ]
+    },
+    "transport": {
+     "shown": true,
+     "box": [
+      244,
+      934,
+      1084,
+      40
+     ]
+    },
+    "rail_right": {
+     "shown": true,
+     "box": [
+      1328,
+      30,
+      272,
+      944
+     ]
+    },
+    "pipe": {
+     "shown": true,
+     "box": [
+      0,
+      974,
+      1600,
+      26
+     ]
+    }
+   },
+   "panel_labels": [
+    {
+     "text": "Media",
+     "shown": true
+    },
+    {
+     "text": "Probe",
+     "shown": true
+    },
+    {
+     "text": "Waveform",
+     "shown": true
+    },
+    {
+     "text": "Histogram",
+     "shown": true
+    },
+    {
+     "text": "Vectorscope",
+     "shown": true
+    },
+    {
+     "text": "Region EV",
+     "shown": true
+    },
+    {
+     "text": "Frame",
+     "shown": true
+    },
+    {
+     "text": "Render",
+     "shown": true
+    },
+    {
+     "text": "Log",
+     "shown": true
+    }
+   ],
+   "toolbar_labels": [
+    {
+     "text": "Compare",
+     "shown": true
+    },
+    {
+     "text": "Layer",
+     "shown": true
+    },
+    {
+     "text": "Zoom",
+     "shown": true
+    }
+   ],
+   "checks": [
+    {
+     "id": "preserve",
+     "label": "Preserve outside masks",
+     "hint": "do-no-harm",
+     "on": true
+    },
+    {
+     "id": "anchor",
+     "label": "Anchor to source exposure",
+     "hint": "conform",
+     "on": true
+    },
+    {
+     "id": "carryChroma",
+     "label": "Carry source chroma",
+     "hint": "below the clip",
+     "on": true
+    }
+   ],
+   "fields": [
+    [
+     "Container",
+     "OpenEXR — ACES 2065-1"
+    ],
+    [
+     "Transfer",
+     "linear (scene-referred)"
+    ],
+    [
+     "Primaries",
+     "AP0 (ST 2065-4)"
+    ],
+    [
+     "White",
+     "diffuse 1.0 = 203 nits"
+    ]
+   ],
+   "notes": [
+    {
+     "text": "The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
+     "shown": false
+    },
+    {
+     "text": "A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
+     "shown": true
+    },
+    {
+     "text": "Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet.",
+     "shown": false
+    }
+   ],
+   "sliders": [
+    {
+     "label": "Residual strength",
+     "value": "1.00",
+     "unit": "×",
+     "min": "0",
+     "max": "2",
+     "step": "0.05"
+    },
+    {
+     "label": "Display peak",
+     "value": "203",
+     "unit": "nits",
+     "min": "-1",
+     "max": "5",
+     "step": "0.5"
+    }
+   ],
+   "icon_titles": [
+    {
+     "id": "iMedia",
+     "title": "Frames",
+     "on": true
+    },
+    {
+     "id": "iScopes",
+     "title": "Scopes",
+     "on": true
+    },
+    {
+     "id": "iInspector",
+     "title": "Inspector",
+     "on": true
+    },
+    {
+     "id": "iHelp",
+     "title": "Keyboard shortcuts",
+     "on": false
+    }
+   ],
+   "titles": {
+    "wsSimple": "Hide the scopes and the advanced groups",
+    "wsFull": "Everything",
+    "iMedia": "Frames",
+    "iScopes": "Scopes",
+    "iInspector": "Inspector",
+    "iHelp": "Keyboard shortcuts",
+    "seqPath": "A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits.",
+    "seqOpen": "Open the shot at that path",
+    "wipeBtn": "Wipe: baseline left, RUDRA right (W)",
+    "probeBtn": "Read one pixel: baseline, RUDRA, and whether the SDR clipped there",
+    "guideBtn": "Framing guides, 90% and 80%",
+    "zoomVal": "Scroll to zoom, middle-drag to pan, double-click to fit",
+    "gl": "Hold to see the baseline"
+   },
+   "placeholders": {
+    "seqPath": "D:\\plates\\shot_010  or  shot.mov",
+    "renderDir": "C:\\Renders\\Shot01"
+   },
+   "body_class": "ws-full"
+  },
+  "tab_deliver": {
+   "ids": {
+    "menubar": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA File Open frames…O Close all frames Master EXRM Edit UndoZ RedoY Reset reconstruction Reset region EV Clip First frameHome Previous frame, Next frame. Last frameEnd Play / pauseSpace Reconstruct All Highlights Shadows Off Preserve outside masks Weaker residual[ Stronger residual] Measure Copy measurements as JSON Copy scope data as JSON Re-measure this frame Deliver Master EXRM Container: ACES 2065-1 Container: linear Rec.2020 Copy delivery metadata Window Frames rail Reconstruction rail Scopes Fit to window Actual pixels Help Keyboard shortcuts? About RUDRA Studio Simple Full golden harness: no model — RADIANCE STUDIO",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsSimple": {
+     "tag": "button",
+     "shown": true,
+     "text": "Simple",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wsFull": {
+     "tag": "button",
+     "shown": true,
+     "text": "Full",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "lamp": {
+     "tag": "span",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "ckpt": {
+     "tag": "span",
+     "shown": true,
+     "text": "golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "device": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "iMedia": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iScopes": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iInspector": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "iHelp": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railLeft": {
+     "tag": "div",
+     "shown": true,
+     "text": "Media0 Drop footage here a frame, a folder of frames, or a movie or Open … Open shot Name SizePeak Nothing open yet Probe— —nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shotCount": {
+     "tag": "span",
+     "shown": true,
+     "text": "0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "dropzone": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop footage here a frame, a folder of frames, or a movie or Open …",
+     "buttons": [
+      "Open …"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "browseBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open …",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqPath": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqOpen": {
+     "tag": "button",
+     "shown": true,
+     "text": "Open shot",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "seqNote": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "shots": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "framesEmpty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Nothing open yet",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeXY": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probePanel": {
+     "tag": "div",
+     "shown": true,
+     "text": "—nits pick a pixel with Probe, or hold Alt Source— Baseline— RUDRA— Masks—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeNits": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeDelta": {
+     "tag": "div",
+     "shown": true,
+     "text": "pick a pixel with Probe, or hold Alt",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeSrc": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBase": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeModel": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeMask": {
+     "tag": "b",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewMode": {
+     "tag": "div",
+     "shown": true,
+     "text": "RUDRA Baseline Wipe",
+     "buttons": [
+      "RUDRA",
+      "Baseline",
+      "Wipe"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "wipeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Wipe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewLayer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Image False colour Difference",
+     "buttons": [
+      "Image",
+      "False colour",
+      "Difference"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "probeBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Probe",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "guideBtn": {
+     "tag": "button",
+     "shown": true,
+     "text": "Guides",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "zoomSeg": {
+     "tag": "div",
+     "shown": true,
+     "text": "Fit 100%",
+     "buttons": [
+      "Fit",
+      "100%"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "zoomVal": {
+     "tag": "span",
+     "shown": true,
+     "text": "100%",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewer": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped 0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "empty": {
+     "tag": "div",
+     "shown": true,
+     "text": "Drop an SDR frame PNG, JPEG or TIFF — one, or a whole sequence",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plate": {
+     "tag": "div",
+     "shown": false,
+     "text": "RUDRA reconstruction Hold B, or the image, to flip Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "gl": {
+     "tag": "canvas",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateLabel": {
+     "tag": "span",
+     "shown": false,
+     "text": "RUDRA reconstruction",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "plateHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "Hold B, or the image, to flip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakBadge": {
+     "tag": "span",
+     "shown": false,
+     "text": "Display peak 203 nits · clipped",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "fcLegend": {
+     "tag": "div",
+     "shown": false,
+     "text": "0.1 1 10 100 160 250 1k 4k 10k over",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "probeBox": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnPrev": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnPlay": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnNext": {
+     "tag": "button",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "tc": {
+     "tag": "span",
+     "shown": true,
+     "text": "01:00:00:00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrub": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scrubHead": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "srcInfo": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "railRight": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL Reconstruct Grade Deliver All Highlights Shadows Off Residual strength 1.00× Display peak 203nits Preserve outside masks do-no-harm The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged. Region EV3 400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file. Anchor to source exposure conform Carry source chroma below the clip ContainerOpenEXR — ACES 2065-1 Transferlinear (scene-referred) PrimariesAP0 (ST 2065-4) Whitediffuse 1.0 = 203 nits Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet. Framemeasured Render Render folder OutputCurrent imageAll loaded frames — sequence Render name Start frame Folder on the Studio computer. Sequence uses loaded frame order and the current grade for every frame. Log container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model Reprocess Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "scopes": {
+     "tag": "div",
+     "shown": true,
+     "text": "Waveformluma percentile · nits/log Histogramabsolute nits · log2 stops · DW VectorscopeRec.2020 RMG BCY GYL",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "wave": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "hist": {
+     "tag": "svg",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "vector": {
+     "tag": "canvas",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "itabs": {
+     "tag": "div",
+     "shown": true,
+     "text": "Reconstruct Grade Deliver",
+     "buttons": [
+      "Reconstruct",
+      "Grade",
+      "Deliver"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "tabRec": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reconstruct",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabGrade": {
+     "tag": "button",
+     "shown": true,
+     "text": "Grade",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "tabDeliver": {
+     "tag": "button",
+     "shown": true,
+     "text": "Deliver",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "mode": {
+     "tag": "div",
+     "shown": false,
+     "text": "All Highlights Shadows Off",
+     "buttons": [
+      "All",
+      "Highlights",
+      "Shadows",
+      "Off"
+     ],
+     "on": false,
+     "disabled": false
+    },
+    "strengthVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "1.00",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "strength": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peakVal": {
+     "tag": "span",
+     "shown": false,
+     "text": "203",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "peak": {
+     "tag": "input",
+     "shown": false,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "preserve": {
+     "tag": "div",
+     "shown": false,
+     "text": "Preserve outside masks do-no-harm",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "preserveHint": {
+     "tag": "span",
+     "shown": false,
+     "text": "do-no-harm",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regionCount": {
+     "tag": "span",
+     "shown": false,
+     "text": "3",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "regions": {
+     "tag": "div",
+     "shown": false,
+     "text": "400 – 2k nits+0.00EV2k – 8k nits+0.00EV0.05 – 12 nits+0.00EV",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "anchor": {
+     "tag": "div",
+     "shown": true,
+     "text": "Anchor to source exposure conform",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "anchorHint": {
+     "tag": "span",
+     "shown": true,
+     "text": "conform",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "carryChroma": {
+     "tag": "div",
+     "shown": true,
+     "text": "Carry source chroma below the clip",
+     "buttons": null,
+     "on": true,
+     "disabled": false
+    },
+    "chromaHint": {
+     "tag": "span",
+     "shown": true,
+     "text": "below the clip",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "containerField": {
+     "tag": "span",
+     "shown": true,
+     "text": "OpenEXR — ACES 2065-1",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "primariesField": {
+     "tag": "span",
+     "shown": true,
+     "text": "AP0 (ST 2065-4)",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measA": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "measB": {
+     "tag": "div",
+     "shown": true,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "clipBar": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderDir": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderMode": {
+     "tag": "select",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderName": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStart": {
+     "tag": "input",
+     "shown": true,
+     "text": null,
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "renderStatus": {
+     "tag": "div",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "log": {
+     "tag": "div",
+     "shown": true,
+     "text": "container: OpenEXR — ACES 2065-1no model loaded: golden harness: no model",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "btnReprocess": {
+     "tag": "button",
+     "shown": true,
+     "text": "Reprocess",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "btnMaster": {
+     "tag": "button",
+     "shown": true,
+     "text": "Master EXR",
+     "buttons": null,
+     "on": false,
+     "disabled": true
+    },
+    "pipe": {
+     "tag": "div",
+     "shown": true,
+     "text": "insRGB · Rec.709 ▸ workingscene-linear · 203 nits = 1.0 ▸ viewPQ · Rec.2020 ▸ masterACES 2065-1 EXR, half — —",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeIn": {
+     "tag": "b",
+     "shown": true,
+     "text": "sRGB · Rec.709",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWorking": {
+     "tag": "b",
+     "shown": true,
+     "text": "scene-linear · 203 nits = 1.0",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "viewTransform": {
+     "tag": "b",
+     "shown": true,
+     "text": "PQ · Rec.2020",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeMaster": {
+     "tag": "b",
+     "shown": true,
+     "text": "ACES 2065-1 EXR, half",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusMask": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "statusTime": {
+     "tag": "span",
+     "shown": true,
+     "text": "—",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    },
+    "pipeWarn": {
+     "tag": "span",
+     "shown": false,
+     "text": "",
+     "buttons": null,
+     "on": false,
+     "disabled": false
+    }
+   },
+   "frame": {
+    "menubar": {
+     "shown": true,
+     "box": [
+      0,
+      0,
+      1600,
+      30
+     ]
+    },
+    "iconrail": {
+     "shown": true,
+     "box": [
+      0,
+      30,
+      36,
+      944
+     ]
+    },
+    "rail_left": {
+     "shown": true,
+     "box": [
+      36,
+      30,
+      208,
+      944
+     ]
+    },
+    "centre": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      944
+     ]
+    },
+    "vtools": {
+     "shown": true,
+     "box": [
+      244,
+      30,
+      1084,
+      28
+     ]
+    },
+    "viewer": {
+     "shown": true,
+     "box": [
+      244,
+      58,
+      1084,
+      876
+     ]
+    },
+    "transport": {
+     "shown": true,
+     "box": [
+      244,
+      934,
+      1084,
+      40
+     ]
+    },
+    "rail_right": {
+     "shown": true,
+     "box": [
+      1328,
+      30,
+      272,
+      944
+     ]
+    },
+    "pipe": {
+     "shown": true,
+     "box": [
+      0,
+      974,
+      1600,
+      26
+     ]
+    }
+   },
+   "panel_labels": [
+    {
+     "text": "Media",
+     "shown": true
+    },
+    {
+     "text": "Probe",
+     "shown": true
+    },
+    {
+     "text": "Waveform",
+     "shown": true
+    },
+    {
+     "text": "Histogram",
+     "shown": true
+    },
+    {
+     "text": "Vectorscope",
+     "shown": true
+    },
+    {
+     "text": "Region EV",
+     "shown": false
+    },
+    {
+     "text": "Frame",
+     "shown": true
+    },
+    {
+     "text": "Render",
+     "shown": true
+    },
+    {
+     "text": "Log",
+     "shown": true
+    }
+   ],
+   "toolbar_labels": [
+    {
+     "text": "Compare",
+     "shown": true
+    },
+    {
+     "text": "Layer",
+     "shown": true
+    },
+    {
+     "text": "Zoom",
+     "shown": true
+    }
+   ],
+   "checks": [
+    {
+     "id": "preserve",
+     "label": "Preserve outside masks",
+     "hint": "do-no-harm",
+     "on": true
+    },
+    {
+     "id": "anchor",
+     "label": "Anchor to source exposure",
+     "hint": "conform",
+     "on": true
+    },
+    {
+     "id": "carryChroma",
+     "label": "Carry source chroma",
+     "hint": "below the clip",
+     "on": true
+    }
+   ],
+   "fields": [
+    [
+     "Container",
+     "OpenEXR — ACES 2065-1"
+    ],
+    [
+     "Transfer",
+     "linear (scene-referred)"
+    ],
+    [
+     "Primaries",
+     "AP0 (ST 2065-4)"
+    ],
+    [
+     "White",
+     "diffuse 1.0 = 203 nits"
+    ]
+   ],
+   "notes": [
+    {
+     "text": "The reconstruction is applied where clipping or crushed shadows made the SDR mapping non-invertible. Everywhere else the analytic baseline is preserved unchanged.",
+     "shown": false
+    },
+    {
+     "text": "A region is a soft luminance qualifier, not a mask, so it follows the picture. Drag a value to scrub it, double-click to zero it. Master applies the identical qualifier and gain to the file.",
+     "shown": false
+    },
+    {
+     "text": "Switch the container from the Deliver menu. ProRes, HDR10 and HLG are written by rudra deliver from the command line; they are not wired to this panel yet.",
+     "shown": true
+    }
+   ],
+   "sliders": [
+    {
+     "label": "Residual strength",
+     "value": "1.00",
+     "unit": "×",
+     "min": "0",
+     "max": "2",
+     "step": "0.05"
+    },
+    {
+     "label": "Display peak",
+     "value": "203",
+     "unit": "nits",
+     "min": "-1",
+     "max": "5",
+     "step": "0.5"
+    }
+   ],
+   "icon_titles": [
+    {
+     "id": "iMedia",
+     "title": "Frames",
+     "on": true
+    },
+    {
+     "id": "iScopes",
+     "title": "Scopes",
+     "on": true
+    },
+    {
+     "id": "iInspector",
+     "title": "Inspector",
+     "on": true
+    },
+    {
+     "id": "iHelp",
+     "title": "Keyboard shortcuts",
+     "on": false
+    }
+   ],
+   "titles": {
+    "wsSimple": "Hide the scopes and the advanced groups",
+    "wsFull": "Everything",
+    "iMedia": "Frames",
+    "iScopes": "Scopes",
+    "iInspector": "Inspector",
+    "iHelp": "Keyboard shortcuts",
+    "seqPath": "A folder of frames, or a video file. Nothing is uploaded — the server reads it where it sits.",
+    "seqOpen": "Open the shot at that path",
+    "wipeBtn": "Wipe: baseline left, RUDRA right (W)",
+    "probeBtn": "Read one pixel: baseline, RUDRA, and whether the SDR clipped there",
+    "guideBtn": "Framing guides, 90% and 80%",
+    "zoomVal": "Scroll to zoom, middle-drag to pan, double-click to fit",
+    "gl": "Hold to see the baseline"
+   },
+   "placeholders": {
+    "seqPath": "D:\\plates\\shot_010  or  shot.mov",
+    "renderDir": "C:\\Renders\\Shot01"
+   },
+   "body_class": "ws-full"
+  }
+ }
+}

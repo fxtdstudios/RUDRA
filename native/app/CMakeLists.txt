@@ -6,7 +6,7 @@ find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets)
 qt_standard_project_setup()
 
 # The window and the look as a library: RUDRA and the app's Qt tests link it.
-add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp theme.cpp theme.hpp)
+add_library(rudra_app_ui STATIC main_window.cpp main_window.hpp layout.cpp widgets.cpp widgets.hpp theme.cpp theme.hpp)
 target_include_directories(rudra_app_ui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(rudra_app_ui PUBLIC Qt6::Widgets rudra::rudra_engine rudra::rudra_infer)
 if(TARGET rudra_render_gpu)
@@ -28,6 +28,9 @@ set_source_files_properties("${RUDRA_THEME_DIR}/tokens.txt" PROPERTIES QT_RESOUR
 qt_add_resources(rudra_app_ui theme PREFIX /theme FILES "${RUDRA_THEME_DIR}/studio.qss" "${RUDRA_THEME_DIR}/tokens.txt")
 file(GLOB rudra_fonts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/fonts/*.ttf")
 qt_add_resources(rudra_app_ui fonts PREFIX / FILES ${rudra_fonts} BASE "${CMAKE_CURRENT_SOURCE_DIR}")
+# The lockup's mark, the page's own asset.
+set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark.png)
+qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png")
 
 qt_add_executable(RUDRA main.cpp)
 target_link_libraries(RUDRA PRIVATE rudra_app_ui)

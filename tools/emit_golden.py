@@ -15,6 +15,7 @@ Emitters, in order:
     composite  tools/emit_composite_golden.py  composite, master chain, measure
     decode     tools/emit_decode_golden.py     still decode fixtures
     delivery   tools/emit_delivery_golden.py   grade, HDR10/HLG, sidecars, EXR/ACES/OCIO
+    layout     tools/emit_layout_golden.py     the Studio page's layout, words and states (needs Playwright)
     master     tools/emit_master_golden.py     the Studio's master of three stills
     qc         tools/emit_qc_golden.py         QC checks and report text
     queue      tools/emit_queue_golden.py      queue state files and refusals
@@ -36,6 +37,7 @@ EMITTERS = {
     "composite": "emit_composite_golden.py",
     "decode": "emit_decode_golden.py",
     "delivery": "emit_delivery_golden.py",
+    "layout": "emit_layout_golden.py",
     "master": "emit_master_golden.py",
     "qc": "emit_qc_golden.py",
     "queue": "emit_queue_golden.py",

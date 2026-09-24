@@ -54,6 +54,9 @@ public:
     std::optional<double> wipe;       // off, or 0..1 across the plate
     bool flip_held = false;
     int region_sel = -1;
+    std::string show = "model";       // Compare: "model" (RUDRA) or "baseline"
+    int view_layer = 0;               // Layer: 0 image, 1 false colour, 2 difference
+    bool rail_left = true, rail_right = true, scopes_open = true;   // Window
 
     double display_nits() const;
     // JSON.stringify(params()), the settings a render and a master take.
@@ -65,7 +68,7 @@ public:
     std::size_t redo_depth() const { return redo_.size(); }
 
     // Called after every change, with what changed.
-    enum Change : std::uint32_t { Grade = 1, Peak = 2, Wipe = 4, Delivery = 8, Flip = 16 };
+    enum Change : std::uint32_t { Grade = 1, Peak = 2, Wipe = 4, Delivery = 8, Flip = 16, Window = 32, View = 64 };
     void on_change(std::function<void(std::uint32_t)> cb) { changed_ = std::move(cb); }
 
     // ---- actions (engine/actions ids) --------------------------------------
@@ -88,6 +91,10 @@ public:
     void set_container(std::string_view kind);
     void toggle_wipe();                          // ACTIONS.wipe
     void set_wipe(double x);                     // a drag on the plate, clamped 0..1
+    void set_show(std::string_view source);      // the Compare buttons: also ends a wipe
+    void set_view_layer(int layer);              // the Layer buttons
+    void toggle_anchor();                        // Deliver: anchor to the source exposure
+    void toggle_carry_chroma();                  // Deliver: carry the source chroma
 
     // A Region EV value: press, move, release (the pointer's x in pixels),
     // and the double click that zeroes it.

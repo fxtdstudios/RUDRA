@@ -23,7 +23,12 @@
 
 class QAction;
 class QLabel;
+class QLineEdit;
 class QMenu;
+class QPlainTextEdit;
+class QPushButton;
+class QSlider;
+class QStackedWidget;
 
 namespace rudra {
 class FrameEngine;
@@ -35,6 +40,11 @@ class ViewerWindow;
 }  // namespace rudra
 
 namespace rudra::app {
+
+class CheckRow;
+class IconButton;
+class ScrubBar;
+class Seg;
 
 class MainWindow : public QMainWindow {
 public:
@@ -57,6 +67,14 @@ public:
     // Why an action is off in this build or at this step ("" when it is live).
     QString pending_reason(std::string_view id) const;
 
+    // The page's shell (shell.js): the workspace and the inspector tab.
+    void set_workspace(const QString& mode);     // "full" or "simple"
+    QString workspace() const { return workspace_; }
+    void show_tab(const QString& tab);           // "rec", "grade", "deliver"
+    QString tab() const { return tab_; }
+    // A line in the Log, as the page's log() writes it.
+    void log(const QString& line);
+
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
     const Session& session() const { return session_; }
@@ -68,7 +86,14 @@ private:
     void bind_handlers();
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
     void sync_checks();
+    void sync_ui();
     void session_changed(std::uint32_t what);
+    void build_ui(bool with_viewer);
+    QWidget* build_left_rail();
+    QWidget* build_centre(bool with_viewer);
+    QWidget* build_right_rail();
+    QWidget* build_pipe();
+    void build_menubar_corners();
 
     void start_engine(std::vector<std::filesystem::path> frames);
     void close_frames();
@@ -82,12 +107,31 @@ private:
     std::map<std::string, QString, std::less<>> pending_;
 
     ViewerWindow* viewer_ = nullptr;
+    QString workspace_ = "full", tab_ = "rec";
+    bool guides_on_ = false;
+    // The widgets the state is drawn into (the page's ids).
+    QWidget *rail_left_ = nullptr, *rail_right_ = nullptr, *scopes_ = nullptr;
+    QStackedWidget *viewer_stack_ = nullptr, *panels_ = nullptr;
+    Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
+        *ws_ = nullptr;
+    CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;
+    QSlider *strength_ = nullptr, *peak_ = nullptr;
+    QLabel *strength_val_ = nullptr, *peak_val_ = nullptr, *shot_count_ = nullptr, *frames_empty_ = nullptr,
+           *tc_ = nullptr, *src_info_ = nullptr, *zoom_val_ = nullptr, *container_field_ = nullptr,
+           *primaries_field_ = nullptr, *ckpt_ = nullptr, *device_ = nullptr, *lamp_ = nullptr,
+           *region_count_ = nullptr, *view_transform_ = nullptr;
+    QPushButton *guide_btn_ = nullptr, *probe_btn_ = nullptr, *btn_master_ = nullptr, *btn_reprocess_ = nullptr;
+    IconButton *i_media_ = nullptr, *i_scopes_ = nullptr, *i_inspector_ = nullptr, *btn_prev_ = nullptr,
+               *btn_play_ = nullptr, *btn_next_ = nullptr;
+    ScrubBar* scrub_ = nullptr;
+    QLineEdit* seq_path_ = nullptr;
+    QPlainTextEdit* log_ = nullptr;
+    std::vector<QWidget*> notes_;
     Session session_;
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;
     QString frame_info_;
-    QLabel* model_ = nullptr;
     QString runtimes_;
     std::unique_ptr<ModelManifest> manifest_;
     std::unique_ptr<InferenceBackend> backend_;   // used only from the engine's worker

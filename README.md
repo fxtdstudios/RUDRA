@@ -448,7 +448,9 @@ Studio workflow with no Python installed, every number and file matching the Stu
   against the page and in the app's real menubar (offscreen Qt tests)
 - [x] Session model with undo, the page's `params()` byte for byte (251 states of the page itself,
   driven headless by real DOM events)
-- [ ] Main window, scope widgets, Reconstruct and Grade panels, probe, measurements
+- [x] Main window: the page's layout, words and states as widgets, the frame within 1 px of the
+  page's at 1600 x 1000 (and a Studio fix: the pipeline bar was a 26 px square, now the full-width foot)
+- [ ] Scope widgets, Reconstruct and Grade panels, probe, measurements
 - [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
 - [ ] The whole workflow on Windows with no Python on the machine
 

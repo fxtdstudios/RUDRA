@@ -12,7 +12,16 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
+#include <QLocale>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <QStackedWidget>
+#include <QStyle>
 #include <QVBoxLayout>
+
+#include "widgets.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -90,24 +99,12 @@ QString check_group(std::string_view check) {
 
 MainWindow::MainWindow(bool with_viewer) {
     setWindowTitle("RUDRA");
-    resize(1280, 800);
-    auto* body = new QWidget(this);
-    auto* layout = new QVBoxLayout(body);
-    layout->setContentsMargins(0, 0, 0, 0);
-    model_ = new QLabel("No model package open.", body);
-    model_->setAlignment(Qt::AlignCenter);
-    model_->setProperty("role", "key");
-    model_->setContentsMargins(8, 6, 8, 6);
-    layout->addWidget(model_);
+    resize(1600, 1000);
+    session_.on_change([this](std::uint32_t what) { session_changed(what); });
+    build_ui(with_viewer);
 #ifdef RUDRA_APP_VIEWER
-    if (with_viewer) {
-        viewer_ = new ViewerWindow();
-        auto* container = QWidget::createWindowContainer(viewer_, body);
-        container->setObjectName("viewerHost");
-        container->setFocusPolicy(Qt::StrongFocus);
-        container->setMinimumSize(320, 200);
-        layout->addWidget(container, 1);
-        viewer_->on_status([this](const ViewerStatus& st) {
+    if (viewer_) {
+        viewer_->on_status([this](const ViewerStatus&) {
             // A wipe dragged or dropped on the plate itself: the session follows.
             const double w = viewer_->view().wipe;
             const std::optional<double> now = w >= 0.0 ? std::optional<double>(w) : std::nullopt;
@@ -115,27 +112,21 @@ MainWindow::MainWindow(bool with_viewer) {
                 session_.wipe = now;
                 sync_checks();
             }
-            (void)st;
             show_status();
         });
-    } else {
-        layout->addStretch(1);
     }
-#else
-    (void)with_viewer;
-    layout->addStretch(1);
 #endif
-    setCentralWidget(body);
-    session_.on_change([this](std::uint32_t what) { session_changed(what); });
     bind_handlers();
     build_menus();
     sync_checks();
+    sync_ui();
     refresh_enabled();
 
     QStringList runtimes;
     for (auto r : compiled_runtimes()) runtimes << to_string(r);
     runtimes_ = runtimes.isEmpty() ? "no inference runtime" : runtimes.join(", ");
-    statusBar()->showMessage(runtimes_);
+    log("runtimes: " + runtimes_);
+    log(QString("container: ") + container_field_->text());
 }
 
 MainWindow::~MainWindow() {
@@ -201,22 +192,17 @@ void MainWindow::bind_handlers() {
                                     {"Built by", "FXTD Studios / Radiance Research"}});
     };
 
+    h["view-image"] = [this] { session_.set_view_layer(0); };
+    h["view-false-colour"] = [this] { session_.set_view_layer(1); };
+    h["view-difference"] = [this] { session_.set_view_layer(2); };
+
     // Waiting on later steps of Phase 3: off, and they say why.
-    for (const char* id : {"rail-left", "rail-right", "scopes"}) pending_[id] = "The rails arrive with Phase 3 step 4.";
     for (const char* id : {"copy-metrics", "copy-scopes", "remeasure", "copy-delivery"})
         pending_[id] = "Measurements arrive with Phase 3 step 8.";
     pending_["master"] = "Master arrives with Phase 3 step 9.";
 
 #ifdef RUDRA_APP_VIEWER
     {
-        auto view = [this](auto&& edit) {
-            return [this, edit] {
-                if (!viewer_) return;
-                auto v = viewer_->view();
-                edit(v);
-                viewer_->set_view(v);
-            };
-        };
         auto guides = [this](auto&& edit) {
             return [this, edit] {
                 if (!viewer_) return;
@@ -227,9 +213,6 @@ void MainWindow::bind_handlers() {
         };
         h["zoom-fit"] = [this] { if (viewer_) viewer_->zoom_fit(); };
         h["zoom-actual"] = [this] { if (viewer_) viewer_->zoom_actual(); };
-        h["view-image"] = view([](ViewParams& v) { v.mode = ViewMode::Image; });
-        h["view-false-colour"] = view([](ViewParams& v) { v.mode = ViewMode::FalseColour; });
-        h["view-difference"] = view([](ViewParams& v) { v.mode = ViewMode::Difference; });
         h["guides-action"] = guides([](GuideOptions& g) { g.action_safe = !g.action_safe; });
         h["guides-title"] = guides([](GuideOptions& g) { g.title_safe = !g.title_safe; });
         h["guides-centre"] = guides([](GuideOptions& g) { g.centre = !g.centre; });
@@ -292,6 +275,17 @@ void MainWindow::build_menus() {
             sync_checks();
             refresh_enabled();
         });
+        // shell.js TAB_FOR_ACT: a menu item that changes something on a tab
+        // that is not showing brings that tab forward (menus only, not keys).
+        connect(menu, &QMenu::triggered, this, [this](QAction* a) {
+            static const std::map<QString, QString> tab_for = {
+                {"act:reset-regions", "grade"},  {"act:container-aces", "deliver"}, {"act:container-linear", "deliver"},
+                {"act:copy-delivery", "deliver"}, {"act:mode-all", "rec"},         {"act:mode-highlights", "rec"},
+                {"act:mode-shadows", "rec"},      {"act:mode-off", "rec"},         {"act:preserve", "rec"},
+                {"act:strength-up", "rec"},       {"act:strength-down", "rec"},    {"act:reset-recon", "rec"}};
+            const auto it = tab_for.find(a->objectName());
+            if (it != tab_for.end()) show_tab(it->second);
+        });
     }
 }
 
@@ -330,19 +324,18 @@ void MainWindow::sync_checks() {
     set("container-aces", session_.container == "aces");
     set("container-linear", session_.container == "linear");
     set("wipe", session_.wipe.has_value());
-    set("rail-left", true);
-    set("rail-right", true);
-    set("scopes", true);
+    set("view-image", session_.view_layer == 0);
+    set("view-false-colour", session_.view_layer == 1);
+    set("view-difference", session_.view_layer == 2);
+    set("rail-left", session_.rail_left);
+    set("rail-right", session_.rail_right);
+    set("scopes", session_.scopes_open);
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
-        const auto v = viewer_->view();
         const auto g = viewer_->guides();
         const bool fit = viewer_->viewport().scale <= 0.0;
         set("zoom-fit", fit);
         set("zoom-actual", !fit);
-        set("view-image", v.mode == ViewMode::Image);
-        set("view-false-colour", v.mode == ViewMode::FalseColour);
-        set("view-difference", v.mode == ViewMode::Difference);
         set("guides-action", g.action_safe);
         set("guides-title", g.title_safe);
         set("guides-centre", g.centre);
@@ -382,25 +375,23 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
+    (void)what;   // only the viewer needs to know which part changed
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
-        if (what & (Session::Peak | Session::Wipe)) {
+        if (what & (Session::Peak | Session::Wipe | Session::View)) {
             auto v = viewer_->view();
             v.display_nits = session_.display_nits();
             v.wipe = session_.wipe ? *session_.wipe : -1.0;
+            v.mode = session_.view_layer == 1 ? ViewMode::FalseColour
+                     : session_.view_layer == 2 ? ViewMode::Difference : ViewMode::Image;
+            v.show = session_.show == "baseline" ? ViewSource::Baseline : ViewSource::Model;
             viewer_->set_view(v);
         }
     }
 #endif
-    if (what & Session::Grade) {
-        statusBar()->showMessage(QStringLiteral("strength %1  ·  %2%3")
-                                     .arg(session_.grade.strength, 0, 'f', 2)
-                                     .arg(QString::fromStdString(session_.grade.mode),
-                                          session_.grade.preserve ? "  ·  preserve" : ""),
-                                 1500);
-    }
     sync_checks();
+    sync_ui();
     refresh_enabled();
 }
 
@@ -409,17 +400,17 @@ void MainWindow::open_package(const QString& preset) {
     if (dir.isEmpty()) return;
     auto m = read_manifest(dir.toStdString());
     if (!m) {
-        model_->setText(QString::fromStdString(m.error().message + " " + m.error().detail));
+        log(QString::fromStdString(m.error().message + " " + m.error().detail));
         return;
     }
     auto v = verify_package_files(*m);
     if (!v) {
-        model_->setText(describe(*m) + "  ·  " + QString::fromStdString(v.error().message));
+        log(describe(*m) + "  ·  " + QString::fromStdString(v.error().message));
         return;
     }
     auto b = open_backend(*m);
     if (!b) {
-        model_->setText(describe(*m) + "  ·  " + QString::fromStdString(b.error().message));
+        log(describe(*m) + "  ·  " + QString::fromStdString(b.error().message));
         return;
     }
     // The engine's worker uses the backend: it goes first.
@@ -429,7 +420,14 @@ void MainWindow::open_package(const QString& preset) {
     manifest_ = std::make_unique<ModelManifest>(*m);
     backend_ = std::move(*b);
     const auto info = backend_->info();
-    model_->setText(describe(*m) + QStringLiteral("  ·  %1 on %2").arg(to_string(info.runtime), to_string(info.device)));
+    ckpt_->setText(QString::fromStdString(m->name));
+    device_->setText(QStringLiteral("%1 on %2").arg(to_string(info.runtime), to_string(info.device)));
+    lamp_->setProperty("state", "on");
+    lamp_->style()->unpolish(lamp_);
+    lamp_->style()->polish(lamp_);
+    log("model " + describe(*m));
+    log("device " + device_->text());
+    sync_ui();
     refresh_enabled();
 }
 
@@ -449,7 +447,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
     if (QFileInfo(path).isDir()) {
         auto seq = open_sequence(path.toStdString());
         if (!seq) {
-            statusBar()->showMessage(QString::fromStdString(seq.error().message));
+            log(QString::fromStdString(seq.error().message));
             return;
         }
         frames = seq->frames;
@@ -475,6 +473,7 @@ void MainWindow::close_frames() {
     if (viewer_) viewer_->clear_frame();
 #endif
     refresh_enabled();
+    sync_ui();
     show_status();
 }
 
@@ -511,6 +510,7 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames) {
     });
     engine_->set_sequence(int(frames_.size()));
     refresh_enabled();
+    sync_ui();
     step_to(0);
 }
 
@@ -520,13 +520,17 @@ void MainWindow::step_to(int i) {
     current_ = ((i % n) + n) % n;
     waiting_ = true;
     engine_->show(current_);
+    sync_ui();
 }
 
 void MainWindow::toggle_play() {
     if (play_.isActive()) {
         play_.stop();
+        btn_play_->set_glyph(IconButton::Glyph::Play);
         return;
     }
+    if (frames_.size() < 2) return;
+    btn_play_->set_glyph(IconButton::Glyph::Pause);
     // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
     play_.setInterval(1000 / 24);
     QObject::connect(&play_, &QTimer::timeout, this, [this] {
@@ -540,7 +544,7 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
     waiting_ = false;
     const QString name = QString::fromStdString(frames_[std::size_t(f.index)].filename().string());
     if (f.error) {
-        statusBar()->showMessage(name + ": " + QString::fromStdString(f.error->message));
+        log(name + ": " + QString::fromStdString(f.error->message));
         return;
     }
 #ifdef RUDRA_APP_VIEWER
@@ -565,17 +569,90 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
 }
 
 void MainWindow::show_status() {
-    QString view;
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         const ViewerStatus s = viewer_->status();
+        zoom_val_->setText(QStringLiteral("%1%").arg(s.zoom_percent));
+        zoom_seg_->set_on(viewer_->viewport().scale <= 0.0 ? "fit" : (s.zoom_percent == 100 ? "actual" : ""));
         const bool hdr = s.target.path != OutputPath::SdrPqSimulation;
-        view = QString::fromStdString(s.backend) + " · " + QString::fromStdString(s.swapchain) +
-               (hdr ? QStringLiteral(" · peak %1 nits").arg(std::lround(s.target.peak_nits)) : QString()) +
-               QStringLiteral(" · %1% · ").arg(s.zoom_percent);
+        findChild<QLabel*>("statusTime")->setText(QString::fromStdString(s.backend) + " · " +
+                                                  QString::fromStdString(s.swapchain) +
+                                                  (hdr ? QStringLiteral(" · peak %1 nits").arg(std::lround(s.target.peak_nits))
+                                                       : QString()));
     }
 #endif
-    statusBar()->showMessage(view + runtimes_ + (frame_info_.isEmpty() ? QString() : "  ·  " + frame_info_));
+    src_info_->setText(frame_info_.isEmpty() ? QStringLiteral("—") : frame_info_);
+}
+
+// The page's timecode(): non-drop, from 01:00:00:00.
+static QString timecode(int frame, double fps) {
+    const int rate = std::max(1, int(std::floor(fps + 0.5)));
+    const long long f = frame + static_cast<long long>(rate) * 3600;
+    auto pad = [](long long v) { return QString::number(v).rightJustified(2, '0'); };
+    return pad((f / (rate * 3600LL)) % 24) + ":" + pad((f / (rate * 60LL)) % 60) + ":" + pad((f / rate) % 60) + ":" +
+           pad(f % rate);
+}
+
+void MainWindow::sync_ui() {
+    const auto& g = session_.grade;
+    mode_seg_->set_on(QString::fromStdString(g.mode));
+    {
+        const QSignalBlocker b1(strength_), b2(peak_);
+        strength_->setValue(int(std::lround(g.strength * 20.0)));
+        peak_->setValue(int(std::lround(session_.peak_ev * 2.0)));
+    }
+    strength_val_->setText(QString::number(g.strength, 'f', 2));
+    peak_val_->setText(QLocale(QLocale::English).toString(qlonglong(std::floor(session_.display_nits() + 0.5))));
+    preserve_->set_on(g.preserve);
+    preserve_->set_hint(g.preserve ? "do-no-harm" : "raw prediction");
+    anchor_->set_on(session_.anchor);
+    anchor_->set_hint(session_.anchor ? "conform" : "raw ITM level");
+    carry_chroma_->set_on(session_.carry_chroma);
+    carry_chroma_->set_hint(session_.carry_chroma ? "below the clip" : "per-channel");
+    const bool aces = session_.container == "aces";
+    container_field_->setText(aces ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020");
+    primaries_field_->setText(aces ? "AP0 (ST 2065-4)" : "Rec.2020");
+    region_count_->setText(QString::number(g.regions.size()));
+    view_mode_->set_on(session_.wipe ? "#wipeBtn" : QString::fromStdString(session_.show));
+    view_layer_->set_on(QString::number(session_.view_layer));
+    guide_btn_->setChecked(guides_on_);
+    // Window
+    rail_left_->setVisible(session_.rail_left);
+    rail_right_->setVisible(session_.rail_right);
+    scopes_->setVisible(session_.scopes_open && workspace_ != "simple");
+    i_media_->set_on(session_.rail_left);
+    i_inspector_->set_on(session_.rail_right);
+    i_scopes_->set_on(session_.scopes_open && workspace_ != "simple");
+    ws_->set_on(workspace_);
+    tabs_->set_on(tab_);
+    panels_->setCurrentIndex(tab_ == "grade" ? 1 : tab_ == "deliver" ? 2 : 0);
+    for (auto* n : notes_) n->setVisible(workspace_ != "simple");
+    // Frames (drawFrames)
+    const int n = int(frames_.size());
+    shot_count_->setText(QString::number(n));
+    frames_empty_->setVisible(n == 0);
+    if (auto* dz = findChild<QWidget*>("dropzone")) dz->setVisible(n == 0);   // shell.js: tucked once frames open
+    tc_->setText(timecode(n ? current_ : 0, 24.0));
+    scrub_->set_position(n > 1 ? double(current_) / double(n - 1) : 0.0);
+    for (auto* b : {btn_prev_, btn_play_, btn_next_}) b->setEnabled(n > 1);
+    const bool ready = n > 0 && backend_ != nullptr;
+    btn_master_->setEnabled(ready && pending_reason("master").isEmpty());
+    btn_reprocess_->setEnabled(ready);
+    if (viewer_stack_->count() > 1) viewer_stack_->setCurrentIndex(n > 0 ? 1 : 0);
+}
+
+void MainWindow::set_workspace(const QString& mode) {
+    workspace_ = mode == "simple" ? "simple" : "full";
+    sync_ui();
+}
+
+void MainWindow::show_tab(const QString& tab) {
+    tab_ = tab;
+    sync_ui();
+}
+
+void MainWindow::log(const QString& line) {
+    if (log_) log_->appendPlainText(line);
 }
 
 }  // namespace rudra::app

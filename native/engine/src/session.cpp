@@ -214,6 +214,27 @@ void Session::set_wipe(double x) {
     notify(Wipe);
 }
 
+void Session::set_show(std::string_view source) {
+    show = std::string(source);
+    wipe.reset();
+    notify(View | Wipe);
+}
+
+void Session::set_view_layer(int layer) {
+    view_layer = layer;
+    notify(View);
+}
+
+void Session::toggle_anchor() {
+    anchor = !anchor;
+    notify(Delivery);
+}
+
+void Session::toggle_carry_chroma() {
+    carry_chroma = !carry_chroma;
+    notify(Delivery);
+}
+
 void Session::region_press(int index, double x) {
     if (index < 0 || index >= int(grade.regions.size())) return;
     region_sel = index;
@@ -251,7 +272,8 @@ void Session::region_zero(int index) {
 bool Session::owns(std::string_view a) {
     static const std::string_view mine[] = {"mode-all", "mode-highlights", "mode-shadows", "mode-off", "preserve",
                                             "strength-down", "strength-up", "reset-recon", "reset-regions", "undo",
-                                            "redo", "container-aces", "container-linear", "wipe"};
+                                            "redo", "container-aces", "container-linear", "wipe",
+                                            "rail-left", "rail-right", "scopes"};
     return std::find(std::begin(mine), std::end(mine), a) != std::end(mine);
 }
 
@@ -270,7 +292,16 @@ bool Session::run(std::string_view a) {
     else if (a == "container-aces") set_container("aces");
     else if (a == "container-linear") set_container("linear");
     else if (a == "wipe") toggle_wipe();
-    else return false;
+    else if (a == "rail-left") {
+        rail_left = !rail_left;
+        notify(Window);
+    } else if (a == "rail-right") {
+        rail_right = !rail_right;
+        notify(Window);
+    } else if (a == "scopes") {
+        scopes_open = !scopes_open;
+        notify(Window);
+    } else return false;
     return true;
 }
 

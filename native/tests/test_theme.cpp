@@ -117,13 +117,17 @@ TEST(Theme, SurroundIsNeutral) {
     int n = 0;
     for (auto it = std::sregex_iterator(s.begin(), s.end(), bg); it != std::sregex_iterator(); ++it, ++n) {
         const std::string c = normalise((*it)[1].str());
+        // Besides the greys: the selection and active states, the slider key,
+        // and the model lamp in the menubar (--ok, the page's .lamp).
         const bool allowed = neutral(c) || c == normalise(t.at("accent-dim")) || c == normalise(t.at("accent")) ||
-                             c == "#a2b8c7";
+                             c == "#a2b8c7" || c == normalise(t.at("ok"));
         EXPECT_TRUE(allowed) << "background " << c;
     }
     EXPECT_GT(n, 20);
     // The viewer's surround and the window itself are --bg.
-    EXPECT_NE(s.find("QWidget#viewerHost { background: " + t.at("bg")), std::string::npos);
+    EXPECT_NE(s.find("QStackedWidget#viewer, QWidget#empty { background: " + t.at("bg")), std::string::npos);
+    EXPECT_NE(s.find("QWidget {\n  font-family: \"" + t.at("ui-family") + "\";\n  background: " + t.at("bg")),
+              std::string::npos);
 }
 
 TEST(Theme, FontsAreTheTokens) {
