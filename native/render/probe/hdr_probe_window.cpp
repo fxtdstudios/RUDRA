@@ -1,4 +1,5 @@
 #include "hdr_probe_window.hpp"
+#include "rudra/render/gl_format.hpp"
 
 #include <algorithm>
 #include <QCoreApplication>
@@ -146,6 +147,9 @@ QSurface::SurfaceType surface_type(Api a) {
 
 HdrProbeWindow::HdrProbeWindow(const Options& opt) : opt_(opt) {
     setSurfaceType(surface_type(opt.api));
+#ifdef __APPLE__
+    if (opt.api == Api::OpenGL) setFormat(rhi_gl_format());
+#endif
     setTitle(QStringLiteral("RUDRA HDR probe (Gate B)"));
     resize(1280, 720);
 }
@@ -198,8 +202,9 @@ bool HdrProbeWindow::init() {
     QRhi::Flags flags;
     switch (opt_.api) {
         case Api::OpenGL: {
-            fallback_.reset(QRhiGles2InitParams::newFallbackSurface());
+            fallback_.reset(QRhiGles2InitParams::newFallbackSurface(rhi_gl_format()));
             QRhiGles2InitParams p;
+            p.format = rhi_gl_format();
             p.fallbackSurface = fallback_.get();
             p.window = this;
             rhi_.reset(QRhi::create(QRhi::OpenGLES2, &p, flags));

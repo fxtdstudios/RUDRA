@@ -1,4 +1,5 @@
 #include "rudra/render/gpu_composite.hpp"
+#include "rudra/render/gl_format.hpp"
 
 #include "rudra/core/gamut.hpp"
 #include "passes.hpp"
@@ -577,8 +578,9 @@ private:
                 break;
             }
             case GpuApi::OpenGL: {
-                fallback_.reset(QRhiGles2InitParams::newFallbackSurface());
+                fallback_.reset(QRhiGles2InitParams::newFallbackSurface(rhi_gl_format()));
                 QRhiGles2InitParams p;
+                p.format = rhi_gl_format();
                 p.fallbackSurface = fallback_.get();
                 rhi_.reset(QRhi::create(QRhi::OpenGLES2, &p, QRhi::EnableTimestamps));
                 break;
