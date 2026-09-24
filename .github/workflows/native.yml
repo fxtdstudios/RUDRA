@@ -14,7 +14,7 @@ name: native
 on:
   push:
     paths: ["native/**", "tools/export_model.py", "tools/emit_core_golden.py", "tools/emit_composite_golden.py", "tools/emit_decode_golden.py", "tools/emit_delivery_golden.py", "tools/emit_master_golden.py", "tools/emit_qc_golden.py", "tools/emit_queue_golden.py", "tools/emit_sequence_golden.py", "tools/emit_viewer_golden.py", "tools/emit_viewport_golden.py", "tools/emit_golden.py", "rudra/decode.py", "rudra/hdr10.py",
-            "tools/check_layers.py", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
+            "tools/check_layers.py", "tools/ci_run.sh", "rudra/sdr2hdr.py", "rudra/anchor.py", "rudra/chroma.py",
             "rudra/delivery/**", "rudra/qc.py", "rudra/batch.py", "ui/sequence.py", "training/infer_sdr2hdr.py", "ui/server.py",
             "ui/compositor.js", "ui/app.js", "ui/style.css", "ui/theme.css", ".github/workflows/native.yml"]
   pull_request:
@@ -83,15 +83,17 @@ jobs:
         # so only the Python's verdicts (video/index.json) must not move.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
+          if [ "$RUNNER_OS" = "Linux" ]; then tools/ci_run.sh "Goldens" python tools/emit_golden.py; else tools/ci_run.sh "Goldens" python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
+          tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
+        run: tools/ci_run.sh "Configure" cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
       - name: Build
-        run: cmake --build build --config Release --parallel
+        shell: bash
+        run: tools/ci_run.sh "Build" cmake --build build --config Release --parallel 4
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: bash
+        run: tools/ci_run.sh "Test" ctest --test-dir build -C Release --output-on-failure
 
   parity:
     name: Gate A (LibTorch + ONNX Runtime, CPU)
@@ -114,8 +116,8 @@ jobs:
         # runner may differ in the last bit) and the C++ tests below then run
         # against what the Python on this runner computes.
         run: |
-          python tools/emit_golden.py
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
+          tools/ci_run.sh "Goldens" python tools/emit_golden.py
+          tools/ci_run.sh "Goldens moved" git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API
@@ -130,12 +132,12 @@ jobs:
             -DCMAKE_PREFIX_PATH="$(python -c 'import torch; print(torch.utils.cmake_prefix_path)')" \
             -DRUDRA_TEST_PACKAGE="$PWD/dist/models/sdr2hdr_shadow_v1"
       - name: Build
-        run: cmake --build build --parallel
+        run: tools/ci_run.sh "Build" cmake --build build --parallel
       - name: Gate A
         run: |
           export LD_LIBRARY_PATH="$ORT_ROOT/lib:$LD_LIBRARY_PATH"
-          ctest --test-dir build --output-on-failure
-          build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
+          tools/ci_run.sh "Tests" ctest --test-dir build --output-on-failure
+          tools/ci_run.sh "Gate A" build/cli/rudra-native diff dist/models/sdr2hdr_shadow_v1 --runtime all
 
   app:
     name: Qt shell
@@ -144,9 +146,9 @@ jobs:
       - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libgl-dev nlohmann-json3-dev ninja-build
       - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=OFF
-      - run: cmake --build build --parallel --target RUDRA rudra_app_tests
+      - run: tools/ci_run.sh "Build" cmake --build build --parallel --target RUDRA rudra_app_tests
       - name: The window against the Studio page (menus, keys, actions), offscreen
-        run: ctest --test-dir build -R '^app\.' --output-on-failure
+        run: tools/ci_run.sh "App tests" ctest --test-dir build -R '^app\.' --output-on-failure
       - name: Starts headless
         run: |
           set +e
@@ -179,9 +181,10 @@ jobs:
         shell: bash
         # The app too: the viewer build without still decode is the one the
         # Windows gate script makes, and it must compile on every OS.
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON -DRUDRA_BUILD_APP=ON
+        run: tools/ci_run.sh "Configure" cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON -DRUDRA_BUILD_APP=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
+        shell: bash
+        run: tools/ci_run.sh "Build" cmake --build build --config Release --parallel 4 --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |
@@ -194,16 +197,16 @@ jobs:
           grep -q '"verdict": "FAIL"' probe.json
       - name: GPU composite parity on llvmpipe (Linux, OpenGL)
         if: runner.os == 'Linux'
-        run: xvfb-run -a build/render/probe/rudra-gpu-parity --api gl
+        run: tools/ci_run.sh "GPU parity (GL)" xvfb-run -a build/render/probe/rudra-gpu-parity --api gl
       - name: The viewer window through its swapchain (Linux, OpenGL)
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api gl
+        run: tools/ci_run.sh "Viewer (GL)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api gl
       - name: GPU parity and the viewer window on lavapipe (Linux, Vulkan)
         # Vulkan has frames in flight, which the OpenGL runs cannot show: a
         # readback that completes a frame late once made the window check
         # compare each case with the previous one.
         if: runner.os == 'Linux'
         run: |
-          xvfb-run -a build/render/probe/rudra-gpu-parity --api vulkan
-          xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
-          QT_SCALE_FACTOR=1.5 xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
+          tools/ci_run.sh "GPU parity (Vulkan)" xvfb-run -a build/render/probe/rudra-gpu-parity --api vulkan
+          tools/ci_run.sh "Viewer (Vulkan)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
+          QT_SCALE_FACTOR=1.5 tools/ci_run.sh "Viewer (Vulkan, 1.5x)" xvfb-run -a -s "-screen 0 1600x1000x24" build/render/probe/rudra-viewer-check --api vulkan
