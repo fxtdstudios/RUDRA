@@ -376,10 +376,25 @@ int main(int argc, char** argv) {
     };
 
     win.show();
+    win.raise();
     QTimer::singleShot(300, [&] { next(); });   // exposed and a few frames presented
-    QTimer::singleShot(30000, [&] {
-        out << "rudra-viewer-check: timed out\n";
-        QCoreApplication::exit(2);
+    // A check that stops making progress says where, in the report too.
+    QTimer::singleShot(90000, [&] {
+        const ViewerStatus s = win.status();
+        out << "rudra-viewer-check: timed out at case " << step << " (exposed " << (win.isExposed() ? "yes" : "no")
+            << ", swapchain " << QString::fromStdString(s.swapchain) << ", backend "
+            << QString::fromStdString(s.backend) << ")\n";
+        report["cases"] = rows;
+        report["verdict"] = "TIMEOUT";
+        report["timed_out_at_case"] = step;
+        report["exposed"] = win.isExposed();
+        report["backend"] = QString::fromStdString(s.backend);
+        if (cli.isSet(report_opt)) {
+            QFile f(cli.value(report_opt));
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(QJsonDocument(report).toJson());
+        }
+        out.flush();
+        QCoreApplication::exit(3);
     });
     return QGuiApplication::exec();
 }
