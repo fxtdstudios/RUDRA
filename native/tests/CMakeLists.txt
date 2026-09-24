@@ -15,7 +15,9 @@ if(RUDRA_WITH_OPENCV)
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(rudra_tests)
+# Listed when ctest runs, not after the link: on Windows the runtimes' DLLs are
+# copied beside the executable after the build, so running it at link time fails.
+gtest_discover_tests(rudra_tests DISCOVERY_MODE PRE_TEST)
 
 # Gate A in C++: point at an exported package to run it as a test
 # (cmake -DRUDRA_TEST_PACKAGE=dist/models/sdr2hdr_shadow_v1).
