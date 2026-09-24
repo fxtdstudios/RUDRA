@@ -42,9 +42,11 @@ QColor token_colour(const ThemeReport& t, const QString& name) {
 ThemeReport apply_theme(QApplication& app) {
     ThemeReport r;
 
-    for (const QString& line : read_resource(":/theme/tokens.txt").split('\n', Qt::SkipEmptyParts)) {
+    // Trimmed: a CRLF file must not put a CR into a family or colour name.
+    for (const QString& raw : read_resource(":/theme/tokens.txt").split('\n', Qt::SkipEmptyParts)) {
+        const QString line = raw.trimmed();
         const qsizetype sp = line.indexOf(' ');
-        if (sp > 0) r.tokens.insert(line.left(sp), line.mid(sp + 1));
+        if (sp > 0) r.tokens.insert(line.left(sp), line.mid(sp + 1).trimmed());
     }
     if (r.tokens.isEmpty()) r.problems << "tokens.txt is missing from the resources";
     r.ui_family = r.tokens.value("ui-family");

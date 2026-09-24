@@ -18,6 +18,8 @@ foreach(v THEME_CSS TEMPLATE OUT_DIR)
 endforeach()
 
 file(READ "${THEME_CSS}" css)
+# A Windows checkout may have CRLF; no token value may carry a CR.
+string(REPLACE "\r" "" css "${css}")
 
 # Comments out first: they name colours the theme rejected (the old
 # blue-black), and one of them could otherwise read as a token.
@@ -72,6 +74,7 @@ foreach(f ui mono)
 endforeach()
 
 file(READ "${TEMPLATE}" qss)
+string(REPLACE "\r" "" qss "${qss}")
 set(tokens_txt "")
 foreach(n IN LISTS names)
   string(REPLACE "var(--${n})" "${tok_${n}}" qss "${qss}")
@@ -92,7 +95,9 @@ function(write_if_changed path body)
     file(READ "${path}" old)
   endif()
   if(NOT old STREQUAL body)
-    file(WRITE "${path}" "${body}")
+    # LF on every OS (file(CONFIGURE) with NEWLINE_STYLE, not file(WRITE)).
+    set(RUDRA_THEME_BODY "${body}")
+    file(CONFIGURE OUTPUT "${path}" CONTENT "@RUDRA_THEME_BODY@" @ONLY NEWLINE_STYLE UNIX)
   endif()
 endfunction()
 write_if_changed("${OUT_DIR}/studio.qss" "${banner}${qss}")

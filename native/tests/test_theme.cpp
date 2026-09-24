@@ -59,6 +59,7 @@ std::map<std::string, std::string> tokens() {
     std::map<std::string, std::string> t;
     std::ifstream f(std::filesystem::path(RUDRA_THEME_DIR) / "tokens.txt");
     for (std::string line; std::getline(f, line);) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
         const auto sp = line.find(' ');
         if (sp != std::string::npos) t[line.substr(0, sp)] = line.substr(sp + 1);
     }
@@ -74,6 +75,9 @@ const std::string& qss() {
 
 TEST(Theme, GeneratedFromThemeCss) {
     ASSERT_FALSE(qss().empty()) << "studio.qss was not generated";
+    // LF only, whatever the checkout: a CR in a token is a family Qt cannot find.
+    EXPECT_EQ(slurp(std::filesystem::path(RUDRA_THEME_DIR) / "tokens.txt").find('\r'), std::string::npos);
+    EXPECT_EQ(slurp(std::filesystem::path(RUDRA_THEME_DIR) / "studio.qss").find('\r'), std::string::npos);
     EXPECT_EQ(qss().find("var("), std::string::npos);
     const auto t = tokens();
     for (const char* name : {"bg", "panel", "panel-2", "raise", "line", "line-2", "ink", "ink-2", "ink-3", "accent",
