@@ -1,5 +1,6 @@
 #include "rudra/engine/session.hpp"
 
+#include "rudra/core/js_format.hpp"
 #include "rudra/engine/actions.hpp"
 
 #include <algorithm>
@@ -14,8 +15,6 @@ namespace {
 constexpr double kPageDiffuseWhite = 203.0;   // DIFFUSE_WHITE in app.js
 constexpr std::size_t kUndoDepth = 60;   // pushUndo keeps the last 60
 
-// Math.round: the nearest integer, halves up (toward +infinity).
-double js_round(double x) { return std::floor(x + 0.5); }
 
 // Math.pow(2, e) for the peak slider's steps. The slider moves in halves, and
 // 2^(n/2) is a power of two times sqrt(2) for odd n: exact, where a library
@@ -55,38 +54,6 @@ RecoveryMode recovery(std::string_view m) {
 
 std::vector<RegionState> default_regions() {
     return {{"highlights", 400.0, 2000.0, 0.0}, {"speculars", 2000.0, 8000.0, 0.0}, {"shadows", 0.05, 12.0, 0.0}};
-}
-
-std::string js_number(double v) {
-    if (std::isnan(v)) return "NaN";
-    if (std::isinf(v)) return v > 0 ? "Infinity" : "-Infinity";
-    if (v == 0.0) return "0";   // -0 prints as 0 too
-    // The shortest round-trip digits, as d.ddde±x.
-    char buf[64];
-    const auto r = std::to_chars(buf, buf + sizeof buf, v, std::chars_format::scientific);
-    std::string sci(buf, r.ptr);
-    const bool neg = sci[0] == '-';
-    if (neg) sci.erase(0, 1);
-    const auto e = sci.find('e');
-    const int exp = std::atoi(sci.c_str() + e + 1);
-    std::string digits;
-    for (std::size_t i = 0; i < e; ++i)
-        if (sci[i] != '.') digits += sci[i];
-    const int k = int(digits.size());
-    const int n = exp + 1;   // the decimal point sits after n digits
-    std::string out;
-    if (k <= n && n <= 21) {
-        out = digits + std::string(std::size_t(n - k), '0');
-    } else if (0 < n && n <= 21) {
-        out = digits.substr(0, std::size_t(n)) + "." + digits.substr(std::size_t(n));
-    } else if (-6 < n && n <= 0) {
-        out = "0." + std::string(std::size_t(-n), '0') + digits;
-    } else {
-        out = digits.substr(0, 1);
-        if (k > 1) out += "." + digits.substr(1);
-        out += (n - 1 >= 0 ? "e+" : "e-") + std::to_string(std::abs(n - 1));
-    }
-    return neg ? "-" + out : out;
 }
 
 Session::Session() { grade.regions = default_regions(); }

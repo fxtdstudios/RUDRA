@@ -24,6 +24,7 @@
 #include <QVBoxLayout>
 
 #include "main_window.hpp"
+#include "scope_widgets.hpp"
 #include "widgets.hpp"
 
 #ifdef RUDRA_APP_VIEWER
@@ -395,15 +396,22 @@ QWidget* MainWindow::build_right_rail() {
     const struct { const char* title; const char* note; const char* id; int h; } scopes[] = {
         {"Waveform", "luma percentile \u00b7 nits/log", "wave", 112},
         {"Histogram", "absolute nits \u00b7 log2 stops \u00b7 DW", "hist", 84},
-        {"Vectorscope", "Rec.2020", "vector", 176}};
+        {"Vectorscope", "Rec.2020", "vector", 0}};
     for (const auto& s : scopes) {
         sv->addWidget(panel_label(s.title, s.note, {}, scopes_));
         auto* plot = styled({}, "plot");
         auto* pl = column(plot);
-        pl->setContentsMargins(8, 7, 8, 9);
-        auto* area = styled(s.id, "plot-area");
-        area->setFixedHeight(s.h);
-        pl->addWidget(area);
+        if (s.h > 0) {
+            pl->setContentsMargins(8, 7, 8, 9);
+            auto* area = new ScopePlot(s.id, QString(s.id) == "wave" ? ScopePlot::Kind::Waveform
+                                                                      : ScopePlot::Kind::Histogram,
+                                       s.h, plot);
+            (QString(s.id) == "wave" ? wave_ : hist_) = area;
+            pl->addWidget(area);
+        } else {
+            vector_ = new VectorscopeView(plot);
+            pl->addWidget(vector_);
+        }
         sv->addWidget(plot);
     }
     v->addWidget(scopes_);

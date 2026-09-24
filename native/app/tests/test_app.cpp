@@ -20,9 +20,14 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QImage>
 #include <QTest>
+
+#include <cstdio>
+#include <functional>
 #include <QTextDocumentFragment>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -33,6 +38,7 @@
 #include <nlohmann/json.hpp>
 
 #include "main_window.hpp"
+#include "scope_widgets.hpp"
 #include "widgets.hpp"
 #include "rudra/engine/actions.hpp"
 #include "theme.hpp"
@@ -482,6 +488,218 @@ TEST(AppLayout, ShellControlsDoWhatShellJsDoes) {
     w.run("undo");
     EXPECT_EQ(w.findChild<QLabel*>("strengthVal")->text(), "1.00");
     EXPECT_EQ(w.findChild<QLabel*>("preserveHint")->text(), "do-no-harm");
+}
+
+// ---- step 5: the scope widgets against the page's own rasters -------------
+
+namespace {
+
+const json& scope_golden() {
+    static const json g = [] {
+        std::ifstream f(std::string(RUDRA_GOLDEN_DIR) + "/scopes/drawings.json");
+        return json::parse(f);
+    }();
+    return g;
+}
+
+// How far two rasters of the same drawing are apart: the mean difference in
+// codes, and the share of pixels whose channels all lie within `tol`.
+struct Agreement {
+    double mean = 1e9, within = 0.0;
+    int worst = 0;
+};
+Agreement agreement(const QImage& a, const QImage& b, int tol) {
+    Agreement r;
+    const QImage x = a.convertToFormat(QImage::Format_RGB32), y = b.convertToFormat(QImage::Format_RGB32);
+    if (x.size() != y.size()) return r;
+    double sum = 0.0;
+    long good = 0, all = 0;
+    for (int row = 0; row < x.height(); ++row)
+        for (int col = 0; col < x.width(); ++col) {
+            const QRgb p = x.pixel(col, row), q = y.pixel(col, row);
+            const int dr = std::abs(qRed(p) - qRed(q)), dg = std::abs(qGreen(p) - qGreen(q)),
+                      db = std::abs(qBlue(p) - qBlue(q));
+            sum += (dr + dg + db) / 3.0;
+            const int d = std::max({dr, dg, db});
+            r.worst = std::max(r.worst, d);
+            good += d <= tol;
+            ++all;
+        }
+    r.mean = sum / double(all);
+    r.within = double(good) / double(all);
+    return r;
+}
+
+// The pixels a drawing's labels change: where `with` and `without` differ.
+std::vector<bool> changed(const QImage& with, const QImage& without) {
+    const QImage x = with.convertToFormat(QImage::Format_RGB32), y = without.convertToFormat(QImage::Format_RGB32);
+    std::vector<bool> m(std::size_t(x.width()) * std::size_t(x.height()), false);
+    for (int row = 0; row < x.height(); ++row)
+        for (int col = 0; col < x.width(); ++col) {
+            const QRgb p = x.pixel(col, row), q = y.pixel(col, row);
+            m[std::size_t(row) * std::size_t(x.width()) + std::size_t(col)] =
+                std::max({std::abs(qRed(p) - qRed(q)), std::abs(qGreen(p) - qGreen(q)),
+                          std::abs(qBlue(p) - qBlue(q))}) > 16;
+        }
+    return m;
+}
+
+// The share of `a`'s pixels with a pixel of `b` within one pixel of them.
+double covered(const std::vector<bool>& a, const std::vector<bool>& b, int w, int h) {
+    long n = 0, hit = 0;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            if (!a[std::size_t(y) * std::size_t(w) + std::size_t(x)]) continue;
+            ++n;
+            bool near = false;
+            for (int dy = -1; dy <= 1 && !near; ++dy)
+                for (int dx = -1; dx <= 1 && !near; ++dx) {
+                    const int u = x + dx, v = y + dy;
+                    near = u >= 0 && v >= 0 && u < w && v < h && b[std::size_t(v) * std::size_t(w) + std::size_t(u)];
+                }
+            hit += near;
+        }
+    return n ? double(hit) / double(n) : 1.0;
+}
+
+// Where each <text> of a drawing lands in a widget of `target`: the
+// transform paint_svg uses (viewBox, xMidYMid meet), a monospaced width.
+struct LabelBox {
+    std::string text;
+    QRectF box;
+    bool middle = false;
+};
+std::vector<LabelBox> label_boxes(const SvgDrawing& d, const QRectF& target) {
+    std::vector<LabelBox> out;
+    double vx = 0, vy = 0, vw = 1, vh = 1;
+    std::sscanf(d.view_box.c_str(), "%lf %lf %lf %lf", &vx, &vy, &vw, &vh);
+    const double k = std::min(target.width() / vw, target.height() / vh);
+    const double ox = target.x() + (target.width() - vw * k) / 2.0 - vx * k;
+    const double oy = target.y() + (target.height() - vh * k) / 2.0 - vy * k;
+    std::function<void(const SvgElement&)> walk = [&](const SvgElement& e) {
+        for (const auto& c : e.children) walk(c);
+        if (e.tag != "text") return;
+        const double size = std::stod(*e.attr("font-size")) * k;
+        const double wd = 0.6 * size * double(e.text.size());
+        double x = ox + std::stod(*e.attr("x")) * k;
+        const double y = oy + std::stod(*e.attr("y")) * k;
+        const std::string* a = e.attr("text-anchor");
+        const bool middle = a && *a == "middle";
+        if (middle) x -= wd / 2.0;
+        out.push_back({e.text, QRectF(x - 2, y - size - 2, wd + 4, size * 1.3 + 4), middle});
+    };
+    for (const auto& e : d.elements) walk(e);
+    return out;
+}
+
+// A mask inside a box: its left and right extent, its vertical centre of
+// mass, and how many pixels it has there.
+struct Extent {
+    double left = 0, right = 0, cy = 0;
+    int n = 0;
+};
+Extent extent(const std::vector<bool>& m, int w, int h, const QRectF& box) {
+    Extent e;
+    double sy = 0;
+    e.left = 1e9;
+    e.right = -1e9;
+    for (int y = std::max(0, int(box.top())); y < std::min(h, int(std::ceil(box.bottom()))); ++y)
+        for (int x = std::max(0, int(box.left())); x < std::min(w, int(std::ceil(box.right()))); ++x)
+            if (m[std::size_t(y) * std::size_t(w) + std::size_t(x)]) {
+                e.left = std::min(e.left, double(x));
+                e.right = std::max(e.right, double(x));
+                sy += y;
+                ++e.n;
+            }
+    if (e.n) e.cy = sy / e.n;
+    return e;
+}
+
+QImage grab_at(QWidget& w, int width, int height) {
+    w.setFixedSize(width, height);
+    w.setAttribute(Qt::WA_DontShowOnScreen, true);
+    w.show();
+    QApplication::processEvents();
+    return w.grab().toImage();
+}
+
+}  // namespace
+
+TEST(AppScopes, WaveformAndHistogramLookAsThePageDrawsThem) {
+    for (const auto& c : scope_golden()["cases"]) {
+        const std::string name = c["name"];
+        ScopeData s;
+        for (const char* k : {"lo", "q1", "mid", "q3", "hi"})
+            (k == std::string("lo") ? s.lo : k == std::string("q1") ? s.q1 : k == std::string("mid") ? s.mid
+             : k == std::string("q3") ? s.q3 : s.hi) = c["scopes"][k].get<std::vector<double>>();
+        s.histogram = c["scopes"]["histogram"].get<std::vector<double>>();
+        std::optional<double> maxcll;
+        if (!c["metrics"].is_null()) {
+            maxcll = c["metrics"]["maxcll"].is_null() ? std::nan("") : c["metrics"]["maxcll"].get<double>();
+        }
+        for (const char* part : {"wave", "hist"}) {
+            const auto& box = c["drawn"][part]["box"];
+            app::ScopePlot plot(part, part == std::string("wave") ? app::ScopePlot::Kind::Waveform
+                                                                  : app::ScopePlot::Kind::Histogram,
+                                box[1].get<int>());
+            plot.set_data(s, maxcll);
+            plot.set_text_shown(false);
+            const QImage got = grab_at(plot, box[0].get<int>(), box[1].get<int>());
+            const std::string base = std::string(RUDRA_GOLDEN_DIR) + "/scopes/" + name + "_" + part;
+            const QImage want(QString::fromStdString(base + "_notext.png"));
+            ASSERT_FALSE(want.isNull()) << name << " " << part;
+            // The geometry and colour, labels hidden: equal but for how two
+            // rasterisers cover an edge (a missing or misplaced band, bar or
+            // line moves the mean past a code and the share under 97 %).
+            const Agreement a = agreement(got, want, 8);
+            if (a.mean > 1.0 || a.within < 0.97) got.save(QString::fromStdString("/tmp/native_scope_" + name + "_" + part + ".png"));
+            EXPECT_LE(a.mean, 1.0) << name << " " << part;
+            EXPECT_GE(a.within, 0.97) << name << " " << part << ": " << a.within * 100 << " % within 8 codes";
+            // The labels: drawn where the page draws them. Glyphs differ
+            // between rasterisers, so this compares where, not how.
+            plot.set_text_shown(true);
+            const QImage got_text = plot.grab().toImage();
+            const QImage want_text(QString::fromStdString(base + ".png"));
+            const int w = got.width(), h = got.height();
+            const auto ours = changed(got_text, got), page = changed(want_text, want);
+            EXPECT_GE(covered(ours, page, w, h), 0.8) << name << " " << part << ": our labels where the page has none";
+            EXPECT_GE(covered(page, ours, w, h), 0.8) << name << " " << part << ": the page's labels missing";
+            // And each label in its place: around every <text> of the display
+            // list, the page's glyphs and ours start (or, centred, centre)
+            // within a pixel and sit on the same line. How long a string runs
+            // is the platform's (Chromium on Linux rounds each advance to a
+            // whole pixel at these sizes, on Windows and macOS it does not),
+            // so the far end is not compared.
+            for (const auto& l : label_boxes(plot.drawing(), QRectF(1, 1, w - 2, h - 2))) {
+                const Extent pe = extent(page, w, h, l.box), oe = extent(ours, w, h, l.box);
+                ASSERT_GT(pe.n, 0) << name << " " << part << ": the page drew no \"" << l.text << "\"";
+                ASSERT_GT(oe.n, 0) << name << " " << part << ": no \"" << l.text << "\"";
+                const double px = l.middle ? (pe.left + pe.right) / 2.0 : pe.left;
+                const double ox = l.middle ? (oe.left + oe.right) / 2.0 : oe.left;
+                EXPECT_LE(std::abs(px - ox), 1.0) << name << " " << part << " \"" << l.text << "\" x";
+                EXPECT_LE(std::abs(pe.cy - oe.cy), 1.0) << name << " " << part << " \"" << l.text << "\" y";
+            }        }
+    }
+}
+
+TEST(AppScopes, VectorscopeLooksAsThePageDrawsIt) {
+    const auto& v = scope_golden()["vector"];
+    const int w = v["sample"]["width"], h = v["sample"]["height"];
+    const auto rgba = v["sample"]["rgba"].get<std::vector<double>>();
+    PlanarBuffer sample(3, h, w);
+    for (int i = 0; i < w * h; ++i)
+        for (int ch = 0; ch < 3; ++ch) sample.plane(ch)[i] = float(rgba[std::size_t(i) * 4 + std::size_t(ch)]);
+    app::VectorscopeView view;
+    view.set_image(vectorscope(sample));
+    const QImage got = grab_at(view, v["plot_box"][0].get<int>(), v["plot_box"][1].get<int>());
+    const QImage want(QString::fromStdString(std::string(RUDRA_GOLDEN_DIR) + "/scopes/vector.png"));
+    ASSERT_FALSE(want.isNull());
+    // The picture itself is Phase 2's, equal to the page's canvas; what is
+    // compared here is its placing, scaling and frame (labels included).
+    const Agreement a = agreement(got, want, 8);
+    if (a.mean > 1.0 || a.within < 0.985) got.save("/tmp/native_scope_vector.png");
+    EXPECT_LE(a.mean, 1.0);
+    EXPECT_GE(a.within, 0.985) << a.within * 100 << " % within 8 codes (worst " << a.worst << ")";
 }
 
 int main(int argc, char** argv) {

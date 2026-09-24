@@ -21,6 +21,7 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include "scope_widgets.hpp"
 #include "widgets.hpp"
 
 #include <algorithm>
@@ -649,6 +650,19 @@ void MainWindow::set_workspace(const QString& mode) {
 void MainWindow::show_tab(const QString& tab) {
     tab_ = tab;
     sync_ui();
+}
+
+void MainWindow::show_scopes(const ScopeData& s, std::optional<double> maxcll,
+                             const std::vector<std::uint8_t>& vector_rgba) {
+    wave_->set_data(s, maxcll);
+    hist_->set_data(s, maxcll);
+    vector_->set_image(vector_rgba);
+}
+
+void MainWindow::clear_scopes() {
+    wave_->clear();
+    hist_->clear();
+    vector_->clear();
 }
 
 void MainWindow::log(const QString& line) {

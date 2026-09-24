@@ -19,6 +19,7 @@ Emitters, in order:
     master     tools/emit_master_golden.py     the Studio's master of three stills
     qc         tools/emit_qc_golden.py         QC checks and report text
     queue      tools/emit_queue_golden.py      queue state files and refusals
+    scopes     tools/emit_scopes_golden.py     the Studio page's scope drawings and rasters (needs Playwright)
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
     session    tools/emit_session_golden.py    the Studio page's state, params() and undo (needs Playwright)
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
@@ -41,6 +42,7 @@ EMITTERS = {
     "master": "emit_master_golden.py",
     "qc": "emit_qc_golden.py",
     "queue": "emit_queue_golden.py",
+    "scopes": "emit_scopes_golden.py",
     "sequence": "emit_sequence_golden.py",
     "session": "emit_session_golden.py",
     "viewer": "emit_viewer_golden.py",

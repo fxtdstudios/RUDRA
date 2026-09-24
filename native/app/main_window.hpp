@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <optional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -19,6 +20,7 @@
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
+#include "rudra/core/scopes.hpp"
 #include "rudra/engine/session.hpp"
 
 class QAction;
@@ -43,6 +45,8 @@ namespace rudra::app {
 
 class CheckRow;
 class IconButton;
+class ScopePlot;
+class VectorscopeView;
 class ScrubBar;
 class Seg;
 
@@ -74,6 +78,10 @@ public:
     QString tab() const { return tab_; }
     // A line in the Log, as the page's log() writes it.
     void log(const QString& line);
+    // The scopes of the frame on screen (drawScopes, drawVector); cleared
+    // when there is none.
+    void show_scopes(const ScopeData& s, std::optional<double> maxcll, const std::vector<std::uint8_t>& vector_rgba);
+    void clear_scopes();
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
@@ -124,6 +132,8 @@ private:
     IconButton *i_media_ = nullptr, *i_scopes_ = nullptr, *i_inspector_ = nullptr, *btn_prev_ = nullptr,
                *btn_play_ = nullptr, *btn_next_ = nullptr;
     ScrubBar* scrub_ = nullptr;
+    ScopePlot *wave_ = nullptr, *hist_ = nullptr;
+    VectorscopeView* vector_ = nullptr;
     QLineEdit* seq_path_ = nullptr;
     QPlainTextEdit* log_ = nullptr;
     std::vector<QWidget*> notes_;

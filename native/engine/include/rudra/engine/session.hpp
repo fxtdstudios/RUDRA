@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "rudra/core/composite.hpp"
+#include "rudra/core/js_format.hpp"
 
 namespace rudra {
 
@@ -38,9 +39,7 @@ struct GradeSnapshot {
 // 8 000, shadows 0.05 to 12 nits, all at 0 EV.
 std::vector<RegionState> default_regions();
 
-// A number as JavaScript prints it (Number.prototype.toString): the shortest
-// digits that read back to the same double, fixed between 1e-7 and 1e21.
-std::string js_number(double v);
+// js_number (core/js_format.hpp) prints a number as the page's JSON.stringify does.
 
 class Session {
 public:
