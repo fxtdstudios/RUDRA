@@ -1,0 +1,234 @@
+{
+ "oracle": "ui/server.py master_targets",
+ "cases": [
+  {
+   "name": "image",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "master"
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/master.exr"
+   ]
+  },
+  {
+   "name": "image_default_name",
+   "params": {
+    "render_dir": "<root>/out"
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/master.exr"
+   ]
+  },
+  {
+   "name": "sequence_three",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "shot_010",
+    "render_mode": "sequence",
+    "frame_start": 1,
+    "render_count": 3
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/shot_010.000001.exr",
+    "<root>/out/shot_010.000002.exr",
+    "<root>/out/shot_010.000003.exr"
+   ]
+  },
+  {
+   "name": "sequence_from_zero",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "a.b-c_d",
+    "render_mode": "sequence",
+    "frame_start": 0,
+    "render_count": 2
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/a.b-c_d.000000.exr",
+    "<root>/out/a.b-c_d.000001.exr"
+   ]
+  },
+  {
+   "name": "sequence_big_start",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "m",
+    "render_mode": "sequence",
+    "frame_start": 1234567,
+    "render_count": 2
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/m.1234567.exr",
+    "<root>/out/m.1234568.exr"
+   ]
+  },
+  {
+   "name": "folder_with_dots",
+   "params": {
+    "render_dir": "<root>/out/../out/./deep",
+    "render_name": "master"
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/deep/master.exr"
+   ]
+  },
+  {
+   "name": "folder_spaces",
+   "params": {
+    "render_dir": "  <root>/out  ",
+    "render_name": "  master  "
+   },
+   "files": [],
+   "paths": [
+    "<root>/out/master.exr"
+   ]
+  },
+  {
+   "name": "relative_folder",
+   "params": {
+    "render_dir": "renders/out",
+    "render_name": "master"
+   },
+   "files": [],
+   "error": "Choose an absolute render folder on the Studio computer"
+  },
+  {
+   "name": "empty_folder",
+   "params": {
+    "render_dir": "",
+    "render_name": "master"
+   },
+   "files": [],
+   "error": "Choose an absolute render folder on the Studio computer"
+  },
+  {
+   "name": "bad_name_space",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "my master"
+   },
+   "files": [],
+   "error": "Render name must contain only letters, numbers, dots, underscores or hyphens"
+  },
+  {
+   "name": "bad_name_slash",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "a/b"
+   },
+   "files": [],
+   "error": "Render name must contain only letters, numbers, dots, underscores or hyphens"
+  },
+  {
+   "name": "bad_name_dotdot",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": ".."
+   },
+   "files": [],
+   "error": "Render name must contain only letters, numbers, dots, underscores or hyphens"
+  },
+  {
+   "name": "empty_name",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "   "
+   },
+   "files": [],
+   "error": "Render name must contain only letters, numbers, dots, underscores or hyphens"
+  },
+  {
+   "name": "count_zero",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_mode": "sequence",
+    "render_count": 0
+   },
+   "files": [],
+   "error": "Invalid frame range"
+  },
+  {
+   "name": "start_negative",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_mode": "sequence",
+    "frame_start": -1
+   },
+   "files": [],
+   "error": "Invalid frame range"
+  },
+  {
+   "name": "too_many",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_mode": "sequence",
+    "render_count": 100001
+   },
+   "files": [],
+   "error": "Invalid frame range"
+  },
+  {
+   "name": "past_the_end",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_mode": "sequence",
+    "frame_start": 99999999,
+    "render_count": 2
+   },
+   "files": [],
+   "error": "Invalid frame range"
+  },
+  {
+   "name": "image_of_two",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_count": 2
+   },
+   "files": [],
+   "error": "Image render requires one frame"
+  },
+  {
+   "name": "exr_exists",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "master"
+   },
+   "files": [
+    "out/master.exr"
+   ],
+   "error": "Refusing to overwrite existing render: <root>/out/master.exr"
+  },
+  {
+   "name": "sidecar_exists",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "master"
+   },
+   "files": [
+    "out/master.json"
+   ],
+   "error": "Refusing to overwrite existing render: <root>/out/master.exr"
+  },
+  {
+   "name": "sequence_one_exists",
+   "params": {
+    "render_dir": "<root>/out",
+    "render_name": "s",
+    "render_mode": "sequence",
+    "frame_start": 1,
+    "render_count": 3
+   },
+   "files": [
+    "out/s.000002.json"
+   ],
+   "error": "Refusing to overwrite existing render: <root>/out/s.000002.exr"
+  }
+ ]
+}

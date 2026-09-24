@@ -15,7 +15,10 @@
 #include <QFrame>
 #include <QKeyEvent>
 #include <QLayout>
+#include <QComboBox>
+#include <QLineEdit>
 #include <QLocale>
+#include <QSpinBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -170,6 +173,7 @@ MainWindow::MainWindow(bool with_viewer) {
 }
 
 MainWindow::~MainWindow() {
+    master_job_.reset();   // cancels and waits: it uses the backend
     play_.stop();
     engine_.reset();   // joins the worker before the backend goes
 }
@@ -243,7 +247,14 @@ void MainWindow::bind_handlers() {
         measure_now();
         log("re-measured");
     };
-    pending_["master"] = "Master arrives with Phase 3 step 9.";
+    h["master"] = [this] {
+        if (mastering()) {   // while it renders, the button stops it after this frame
+            master_job_->cancel();
+            findChild<QLabel*>("renderStatus")->setText("Stopping after this frame\u2026");
+            return;
+        }
+        master();
+    };
 
 #ifdef RUDRA_APP_VIEWER
     {
@@ -349,7 +360,7 @@ void MainWindow::refresh_enabled() {
             case EnableRule::Always: break;
             case EnableRule::AnyFrames: on = any; break;
             case EnableRule::ManyFrames: on = many; break;
-            case EnableRule::CanMaster: on = any && backend_ != nullptr; break;
+            case EnableRule::CanMaster: on = (any && backend_ != nullptr) || mastering(); break;
             case EnableRule::CanUndo: on = session_.undo_depth() > 0; break;
             case EnableRule::CanRedo: on = session_.redo_depth() > 0; break;
             case EnableRule::HasMetrics:
@@ -556,8 +567,9 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames) {
             return make_error(ErrorCode::Unsupported, "This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
 #endif
         },
-        [backend](const SdrImage& sdr) {
-            // One untiled pass, as the Studio's preview.
+        [backend, mu = backend_mutex_](const SdrImage& sdr) {
+            // One untiled pass, as the Studio's preview; the master job shares the backend.
+            std::lock_guard lock(*mu);
             return infer_frame(*backend, sdr, TileConfig{0, 0});
         });
     QPointer<MainWindow> self(this);
@@ -694,7 +706,7 @@ void MainWindow::sync_ui() {
     scrub_->set_position(n > 1 ? double(current_) / double(n - 1) : 0.0);
     for (auto* b : {btn_prev_, btn_play_, btn_next_}) b->setEnabled(n > 1);
     const bool ready = n > 0 && backend_ != nullptr;
-    btn_master_->setEnabled(ready && pending_reason("master").isEmpty());
+    btn_master_->setEnabled((ready && pending_reason("master").isEmpty()) || mastering());
     btn_reprocess_->setEnabled(ready);
     if (viewer_stack_->count() > 1) viewer_stack_->setCurrentIndex(n > 0 ? 1 : 0);
 }
@@ -916,6 +928,112 @@ void MainWindow::probe_pixel(std::optional<std::pair<double, double>> px, QPoint
     if (ly + bh > area->height()) ly = global.y() - origin.y() - bh - 16;
     probe_box_->move(origin + QPoint(std::max(4, lx), std::max(4, ly)));
     probe_box_->show();
+}
+
+void MainWindow::master(PrepareMasterFrame prepare, std::size_t count) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    auto say = [status](const QString& t) {
+        status->setText(t);
+        status->setVisible(!t.isEmpty());
+    };
+    const bool injected = bool(prepare);
+    if (!injected && (!backend_ || frames_.empty())) return;   // !state.live || !current()
+    if (mastering()) return;                                    // state.busy
+    auto* dir = findChild<QLineEdit*>("renderDir");
+    const QString folder = dir->text().trimmed();
+    if (folder.isEmpty()) {
+        say("Choose a render folder first.");
+        dir->setFocus();
+        return;
+    }
+    const bool sequence = findChild<QComboBox*>("renderMode")->currentData().toString() == "sequence";
+    std::vector<std::filesystem::path> sources;
+    if (!injected) sources = sequence ? frames_ : std::vector<std::filesystem::path>{frames_[std::size_t(current_)]};
+    const std::size_t n = injected ? (sequence ? count : 1) : sources.size();
+    RenderPlan plan;
+    plan.render_dir = folder.toStdString();
+    plan.render_name = findChild<QLineEdit*>("renderName")->text().trimmed().toStdString();
+    plan.render_count = int(n);
+    plan.frame_start = findChild<QSpinBox*>("renderStart")->value();
+    plan.sequence = sequence;
+    auto targets = master_targets(plan);
+    if (!targets) {
+        say(QStringLiteral("Stopped after 0 / %1: %2").arg(n).arg(QString::fromStdString(targets.error().message)));
+        log("Render stopped: " + QString::fromStdString(targets.error().message));
+        return;
+    }
+    log("Render destination: " + QString::fromStdString(targets->front().string()) +
+        (targets->size() > 1 ? " \u2026 " + QString::fromStdString(targets->back().string()) : QString()));
+
+    // The settings of the moment: params(), the Deliver checks, the container.
+    MasterRequest q;
+    q.checkpoint = manifest_ ? manifest_->name : std::string();
+    q.preserve_outside = session_.grade.preserve;
+    q.recovery_mode = session_.grade.mode;
+    q.strength = session_.grade.strength;
+    for (const auto& r : session_.grade.regions) q.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
+    q.anchor = session_.anchor;
+    q.carry_chroma = session_.carry_chroma;
+    q.container = session_.container;
+    const ModelConstants model = manifest_ ? ModelConstants{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev}
+                                           : (current_frame_ ? current_frame_->model : ModelConstants{16.0f, 4.0f, -1.0f});
+    if (!prepare) {
+#ifdef RUDRA_HAVE_STILL_DECODE
+        prepare = [sources, backend = backend_.get(), mu = backend_mutex_](std::size_t i) -> Result<MasterFrame> {
+            auto d = decode_sdr_file(sources[i]);
+            if (!d) return d.error();
+            std::lock_guard lock(*mu);
+            auto fr = infer_frame(*backend, d->rgb, TileConfig{0, 0});   // full resolution, untiled
+            if (!fr) return fr.error();
+            return MasterFrame{std::move(d->rgb), d->bits, std::move(fr->fields), std::move(fr->scalars)};
+        };
+#else
+        say("This build has no still decode (RUDRA_WITH_OPENCV=OFF).");
+        return;
+#endif
+    }
+    play_.stop();   // stopPlay()
+    btn_master_->setText("Rendering\u2026");
+    btn_master_->setToolTip("Click to stop after the frame being written");
+    QPointer<MainWindow> self(this);
+    master_job_ = std::make_unique<MasterJob>(model, q, *targets, std::move(prepare));
+    master_job_->start(
+        [self, n](std::size_t i) {
+            QMetaObject::invokeMethod(qApp, [self, i, n] {
+                if (self) self->findChild<QLabel*>("renderStatus")->setText(QStringLiteral("Rendering %1 / %2").arg(i + 1).arg(n));
+                if (self) self->findChild<QLabel*>("renderStatus")->show();
+            });
+        },
+        [self](const MasterProgress& p) {
+            const QString line = "Saved " + QString::fromStdString(p.last.exr.string()) +
+                                 QStringLiteral(" \u00b7 %1x%2").arg(p.last.width).arg(p.last.height);
+            QMetaObject::invokeMethod(qApp, [self, line] {
+                if (self) self->log(line);
+            });
+        },
+        [self, folder](const MasterOutcome& o) {
+            QMetaObject::invokeMethod(qApp, [self, o, folder] {
+                if (self) self->master_finished(o, folder);
+            });
+        });
+    refresh_enabled();
+    sync_ui();   // the button stays live: a click stops the render
+}
+
+void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) {
+    auto* status = findChild<QLabel*>("renderStatus");
+    if (o.error || o.cancelled) {
+        const QString why = o.error ? QString::fromStdString(o.error->message) : QStringLiteral("cancelled");
+        status->setText(QStringLiteral("Stopped after %1 / %2: %3").arg(o.completed).arg(o.total).arg(why));
+        log("Render stopped: " + why);
+    } else {
+        status->setText(QStringLiteral("Rendered %1 frame(s) to %2").arg(o.completed).arg(folder));
+    }
+    status->show();
+    btn_master_->setText("Master EXR");   // busy(false)
+    btn_master_->setToolTip({});
+    refresh_enabled();
+    sync_ui();
 }
 
 void MainWindow::log(const QString& line) {

@@ -456,7 +456,9 @@ Studio workflow with no Python installed, every number and file matching the Stu
   gestures made on the widgets reaches its `params()`, undo and panel words
 - [x] Probe and frame measurements: the page's read-outs word for word, measured on the app's own
   thread from the chain Phase 2 held to the browser, the probe at the pixel under the pointer
-- [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
+- [x] Deliver tab: a master EXR of the frame or the sequence as a background job with progress and a
+  stop, the Studio server's render plan and refusals exactly, nothing ever replaced
+- [ ] Checkpoint manager and first run, the remaining sheets
 - [ ] The whole workflow on Windows with no Python on the machine
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:

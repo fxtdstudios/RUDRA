@@ -12,6 +12,7 @@
 #include <map>
 #include <optional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/core/scopes.hpp"
+#include "rudra/engine/master_job.hpp"
 #include "rudra/engine/measure.hpp"
 #include "rudra/engine/session.hpp"
 
@@ -95,6 +97,12 @@ public:
     // clears it. `global` places the floating box.
     void probe_pixel(std::optional<std::pair<double, double>> px, QPoint global = {});
     QWidget* probe_box() const { return probe_box_; }
+
+    // The Deliver tab's Master EXR (the page's master()): the render plan from
+    // the Render fields, then a background job over the frames. `prepare` and
+    // `count` stand in for the opened frames and the network (the tests).
+    void master(PrepareMasterFrame prepare = {}, std::size_t count = 0);
+    bool mastering() const { return master_job_ && master_job_->running(); }
 
     // The page's state: grade, undo, peak, wipe, container (engine/session).
     Session& session() { return session_; }
@@ -179,6 +187,9 @@ private:
     bool stats_running_ = false, stats_again_ = false;
     class ClipBar* clip_bar_ = nullptr;
     QWidget* probe_box_ = nullptr;
+    std::unique_ptr<MasterJob> master_job_;
+    std::shared_ptr<std::mutex> backend_mutex_ = std::make_shared<std::mutex>();   // the engine and the master share it
+    void master_finished(const MasterOutcome& o, const QString& folder);
     bool probe_on_ = false;
     Session session_;
     QTimer play_;

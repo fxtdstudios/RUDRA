@@ -22,6 +22,9 @@
 #include <QStackedWidget>
 #include <QImage>
 #include <QMouseEvent>
+#include <QComboBox>
+#include <QPlainTextEdit>
+#include <QSpinBox>
 #include <QTest>
 
 #include <cstdio>
@@ -30,6 +33,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <thread>
 #include <cctype>
 #include <cmath>
 
@@ -210,7 +217,8 @@ TEST(AppActions, EnabledAsThePageEnablesThem) {
         EXPECT_TRUE(w.action(id)->isEnabled()) << id;
     // What waits on a later step says so.
     EXPECT_TRUE(w.action("rail-left")->isEnabled());
-    EXPECT_TRUE(w.action("master")->toolTip().contains("step 9"));
+    EXPECT_TRUE(w.action("copy-metrics")->toolTip().contains("step 11"));
+    EXPECT_TRUE(w.pending_reason("master").isEmpty());   // step 9 made it live
     // A disabled action does not run from its key either.
     w.run("undo");
     EXPECT_EQ(w.session().undo_depth(), 0u);
@@ -761,6 +769,96 @@ TEST(AppMeasure, TheProbeReadsThePixelUnderThePointer) {
     EXPECT_EQ(w.findChild<QLabel*>("probeNits")->property("state").toString(), "idle");
     EXPECT_EQ(w.findChild<QLabel*>("probeDelta")->text().toStdString(), "pick a pixel with Probe, or hold Alt");
     EXPECT_FALSE(w.probe_box()->isVisible());
+}
+
+// ---- step 9: the Deliver tab's master, as a background job ----------------
+
+namespace {
+
+MasterFrame small_frame() {
+    MasterFrame f;
+    f.sdr = SdrImage(PlanarBuffer(3, 12, 20, 0.6f));
+    f.fields = Fields{PlanarBuffer(3, 12, 20, 0.1f), PlanarBuffer(1, 12, 20, 0.5f), PlanarBuffer(1, 12, 20, 0.0f)};
+    return f;
+}
+
+std::filesystem::path fresh_dir(const std::string& name) {
+    const auto root = std::filesystem::temp_directory_path() / ("rudra-app-master-" + name);
+    std::filesystem::remove_all(root);
+    return root;
+}
+
+QString status_of(app::MainWindow& w) { return w.findChild<QLabel*>("renderStatus")->text(); }
+
+bool wait_for(const std::function<bool()>& done, int ms = 10000) {
+    for (int i = 0; i < ms / 10 && !done(); ++i) QTest::qWait(10);
+    return done();
+}
+
+}  // namespace
+
+TEST(AppDeliver, MasterRendersThePlanAndSaysSo) {
+    app::MainWindow w(false);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    auto prepare = [](std::size_t) -> Result<MasterFrame> { return small_frame(); };
+    // No folder: the page's message, nothing rendered.
+    w.master(prepare, 3);
+    EXPECT_EQ(status_of(w), "Choose a render folder first.");
+    EXPECT_FALSE(w.mastering());
+    const auto root = fresh_dir("ok");
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+    w.findChild<QLineEdit*>("renderName")->setText("shot_010");
+    w.findChild<QComboBox*>("renderMode")->setCurrentIndex(1);   // All loaded frames, sequence
+    w.findChild<QSpinBox*>("renderStart")->setValue(1);
+    w.master(prepare, 3);
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Rendered"); }));
+    EXPECT_EQ(status_of(w).toStdString(), "Rendered 3 frame(s) to " + root.string());
+    EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
+    const QString log = w.findChild<QPlainTextEdit*>("log")->toPlainText();
+    const auto first = root / "shot_010.000001.exr", last = root / "shot_010.000003.exr";
+    EXPECT_TRUE(log.contains(QString::fromStdString("Render destination: " + first.string() + " \u2026 " + last.string())));
+    for (int i = 1; i <= 3; ++i) {
+        const auto exr = root / ("shot_010.00000" + std::to_string(i) + ".exr");
+        EXPECT_TRUE(std::filesystem::exists(exr)) << exr;
+        EXPECT_TRUE(log.contains(QString::fromStdString("Saved " + exr.string() + " \u00b7 20x12"))) << i;
+    }
+    // Again: refused, nothing replaced.
+    w.master(prepare, 3);
+    EXPECT_EQ(status_of(w).toStdString(), "Stopped after 0 / 3: Refusing to overwrite existing render: " + first.string());
+    // A bad name and a relative folder, as the plan refuses them.
+    w.findChild<QLineEdit*>("renderName")->setText("my shot");
+    w.master(prepare, 3);
+    EXPECT_EQ(status_of(w), "Stopped after 0 / 3: Render name must contain only letters, numbers, dots, underscores or hyphens");
+    w.findChild<QLineEdit*>("renderName")->setText("shot");
+    w.findChild<QLineEdit*>("renderDir")->setText("renders/out");
+    w.findChild<QComboBox*>("renderMode")->setCurrentIndex(0);   // Current image
+    w.master(prepare, 3);
+    EXPECT_EQ(status_of(w), "Stopped after 0 / 1: Choose an absolute render folder on the Studio computer");
+    std::filesystem::remove_all(root);
+}
+
+TEST(AppDeliver, MasterEXRStopsARenderAfterTheFrameInHand) {
+    app::MainWindow w(false);
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    const auto root = fresh_dir("cancel");
+    w.findChild<QLineEdit*>("renderDir")->setText(QString::fromStdString(root.string()));
+    w.findChild<QComboBox*>("renderMode")->setCurrentIndex(1);
+    std::atomic<int> started{0};
+    w.master([&](std::size_t) -> Result<MasterFrame> {
+        ++started;
+        std::this_thread::sleep_for(std::chrono::milliseconds(60));
+        return small_frame();
+    }, 20);
+    ASSERT_TRUE(w.mastering());
+    ASSERT_TRUE(wait_for([&] { return started >= 1; }));
+    w.findChild<QPushButton*>("btnMaster")->click();   // the button stops it
+    ASSERT_TRUE(wait_for([&] { return !w.mastering() && status_of(w).startsWith("Stopped"); }));
+    EXPECT_TRUE(status_of(w).endsWith(": cancelled")) << status_of(w).toStdString();
+    EXPECT_LT(started.load(), 20);
+    EXPECT_EQ(w.findChild<QPushButton*>("btnMaster")->text(), "Master EXR");
+    std::filesystem::remove_all(root);
 }
 
 // ---- step 5: the scope widgets against the page's own rasters -------------
