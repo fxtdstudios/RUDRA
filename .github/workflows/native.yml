@@ -149,6 +149,10 @@ jobs:
           QT_QPA_PLATFORM=offscreen timeout 5 build/app/RUDRA
           code=$?
           test "$code" = "124" || { echo "RUDRA exited with $code before the timeout"; exit 1; }
+      - name: The look resolves (Plex weights, Fusion, the sheet from ui/theme.css)
+        run: |
+          QT_QPA_PLATFORM=offscreen build/app/RUDRA --theme-check theme-check.json || { cat theme-check.json; exit 1; }
+          cat theme-check.json
 
   probe:
     name: Gate B probe, ${{ matrix.os }}

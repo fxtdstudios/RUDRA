@@ -7,7 +7,8 @@
 // and inference on its own thread, generations so a late result never lands
 // on the wrong frame, read-ahead and a frame cache, as the Studio's page does.
 // Comma and full stop step, Home and End jump, Space plays. The rails and the
-// Pro-direction layout are Phase 3.
+// Pro-direction layout are Phase 3; its look (theme.cpp, from ui/theme.css)
+// is step 1.
 
 #include <QActionGroup>
 #include <QApplication>
@@ -15,17 +16,21 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenuBar>
+#include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 
 #include <QKeyEvent>
 #include <QTimer>
+
+#include "theme.hpp"
 
 #include "rudra/core/model_manifest.hpp"
 #include "rudra/engine/frame_engine.hpp"
@@ -77,19 +82,18 @@ public:
     MainWindow() {
         setWindowTitle("RUDRA");
         resize(1280, 800);
-        // The surround is neutral grey: R = G = B, no tint (ui/theme.css).
-        setStyleSheet("QMainWindow, QWidget { background: #141414; color: #c9c9c9; }"
-                      "QLabel { font-size: 13px; } QStatusBar { color: #8a8a8a; }");
         auto* body = new QWidget(this);
         auto* layout = new QVBoxLayout(body);
         layout->setContentsMargins(0, 0, 0, 0);
         model_ = new QLabel("No model package open.", body);
         model_->setAlignment(Qt::AlignCenter);
+        model_->setProperty("role", "key");
         model_->setContentsMargins(8, 6, 8, 6);
         layout->addWidget(model_);
 #ifdef RUDRA_APP_VIEWER
         viewer_ = new rudra::ViewerWindow();
         auto* container = QWidget::createWindowContainer(viewer_, body);
+        container->setObjectName("viewerHost");
         container->setFocusPolicy(Qt::StrongFocus);
         container->setMinimumSize(320, 200);
         layout->addWidget(container, 1);
@@ -389,9 +393,32 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("RUDRA");
     QApplication::setOrganizationName("FXTD Studios");
+    const rudra::app::ThemeReport theme = rudra::app::apply_theme(app);
+    // RUDRA --theme-check out.json: the look as this machine resolves it
+    // (fonts, weights, style), for CI and the gates; exit 1 on a problem.
+    const QStringList args = QApplication::arguments();
+    if (const qsizetype i = args.indexOf("--theme-check"); i >= 0) {
+        QFile f(i + 1 < args.size() ? args[i + 1] : QString("theme-check.json"));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(rudra::app::theme_report_json(theme));
+        return theme.ok() ? 0 : 1;
+    }
+    // RUDRA --grab out.png [package [source]]: the window as drawn, for the
+    // side-by-side review against the Studio and the Pro-direction boards.
+    QString grab_to;
+    QStringList rest = args.mid(1);
+    if (const qsizetype i = rest.indexOf("--grab"); i >= 0) {
+        grab_to = i + 1 < rest.size() ? rest[i + 1] : QString("rudra-window.png");
+        rest.remove(i, std::min<qsizetype>(2, rest.size() - i));
+    }
     MainWindow w;
-    if (argc > 1) w.open_package(QString::fromLocal8Bit(argv[1]));
-    if (argc > 2) w.open_source(QString::fromLocal8Bit(argv[2]));
+    if (rest.size() > 0) w.open_package(rest[0]);
+    if (rest.size() > 1) w.open_source(rest[1]);
     w.show();
+    if (!grab_to.isEmpty()) {
+        QTimer::singleShot(800, &w, [&w, grab_to] {
+            w.grab().save(grab_to);
+            QApplication::exit(0);
+        });
+    }
     return QApplication::exec();
 }

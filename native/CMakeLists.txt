@@ -26,6 +26,7 @@ set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime package root (include/, lib/)")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(RudraDeps)
 include(RudraWarnings)
+include(RudraTheme)
 
 add_subdirectory(platform)
 add_subdirectory(core)

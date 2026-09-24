@@ -1,0 +1,186 @@
+/* RUDRA Studio in Qt Widgets: ui/theme.css translated rule by rule.
+
+   Colours come only from ui/theme.css: its tokens by name, and the
+   handful of literal greys the page's own rules use (the menubar #232323,
+   the hover ink #e6e6e6). native/tests/test_theme.cpp holds every colour
+   here to that, and every grey to R = G = B. The page's 10.5px sizes are
+   11px here: a Qt font has whole pixel sizes.
+
+   Classes of the page become the dynamic property "role" on a widget
+   (QLabel[role="plabel"] is .plabel), and ids become object names. */
+
+QWidget {
+  font-family: "var(--ui-family)";
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 500;
+  selection-background-color: var(--accent-dim);
+  selection-color: #dceaf5;
+}
+
+QMainWindow, QMainWindow::separator { background: var(--bg); }
+QMainWindow::separator { width: 1px; height: 1px; background: #000; }
+QSplitter::handle { background: #000; }
+QSplitter::handle:horizontal { width: 1px; }
+QSplitter::handle:vertical { height: 1px; }
+
+/* ── menubar: one 30px row ─────────────────────────────────────────── */
+QMenuBar {
+  background: #232323;
+  border-bottom: 1px solid #000;
+  min-height: 29px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+QMenuBar::item { background: transparent; color: #9a9a9a; padding: 4px 9px; border-radius: var(--radius); }
+QMenuBar::item:selected, QMenuBar::item:pressed { background: var(--raise); color: #e6e6e6; }
+QMenu {
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  padding: 3px 0;
+  font-size: 12px;
+}
+QMenu::item { padding: 4px 22px 4px 18px; color: var(--ink); background: transparent; }
+QMenu::item:selected { background: var(--accent-dim); color: #dceaf5; }
+QMenu::item:disabled { color: var(--ink-3); }
+QMenu::separator { height: 1px; background: var(--line); margin: 3px 0; }
+QMenu::indicator { width: 10px; height: 10px; left: 5px; }
+QMenu::indicator:checked { background: var(--accent); border: 1px solid var(--accent-line); }
+
+/* ── rails and panel labels ────────────────────────────────────────── */
+QWidget#railLeft { background: var(--panel); border-right: 1px solid #000; min-width: 208px; max-width: 208px; }
+QWidget#railRight { background: var(--panel); border-left: 1px solid #000; min-width: 272px; max-width: 272px; }
+QWidget#iconRail { background: #1b1b1b; border-right: 1px solid #000; }
+QLabel[role="plabel"] {
+  background: #232323;
+  border-bottom: 1px solid var(--line);
+  color: #8e8e8e;
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 23px;
+  max-height: 23px;
+  padding: 0 9px;
+}
+QLabel[role="note"] { color: var(--ink-3); font-family: "var(--mono-family)"; font-size: 10px; }
+QLabel[role="note-p"] { color: var(--ink-3); font-size: 11px; }
+QLabel[role="value"] { font-family: "var(--mono-family)"; color: #bdbdbd; }
+QLabel[role="value"][state="warn"] { color: var(--gold); }
+QLabel[role="value"][state="clip"] { color: var(--bad); }
+QLabel[role="key"] { color: var(--ink-3); }
+QLabel[role="unit"] { color: var(--ink-3); font-size: 10px; }
+
+/* ── the probe readout ─────────────────────────────────────────────── */
+QWidget#probePanel { background: var(--panel-2); border-top: 1px solid #000; }
+QLabel#probeNits { font-family: "var(--mono-family)"; font-size: 32px; color: #ededed; }
+QLabel#probeNits[state="idle"] { font-size: 15px; color: var(--ink-3); }
+QLabel#probeDelta { font-family: "var(--mono-family)"; color: var(--gold); }
+QLabel#probeDelta[state="idle"] { color: var(--ink-3); }
+
+/* ── scopes and frame stats ────────────────────────────────────────── */
+QWidget#scopes { background: var(--panel); border-bottom: 1px solid #000; }
+QWidget[role="plot"] { background: #0e0e0e; }
+QWidget#frameStats { background: var(--panel-2); border-top: 1px solid #000; }
+
+/* ── viewer, its toolbar and the transport ─────────────────────────── */
+QWidget#viewerHost { background: var(--bg); }
+QWidget#viewerTools, QToolBar#viewerTools { background: #1d1d1d; border: 0; border-bottom: 1px solid #000; spacing: 4px; padding: 3px 6px; }
+QLabel[role="vlabel"] { color: var(--ink-3); font-weight: 600; }
+QWidget#transport { background: #232323; border-top: 1px solid #000; min-height: 39px; max-height: 39px; }
+QLabel#timecode { font-family: "var(--mono-family)"; font-size: 15px; color: #e4e4e4; }
+
+/* ── the colour pipeline bar ───────────────────────────────────────── */
+QWidget#pipe, QStatusBar { background: #101010; border-top: 1px solid #000; min-height: 25px; max-height: 25px; }
+QStatusBar::item { border: 0; }
+QWidget#pipe QLabel, QStatusBar QLabel { background: transparent; color: #a5a5a5; }
+QLabel[role="pipe-em"] { color: #565656; font-size: 10px; }
+QLabel[role="pipe-b"] { color: #d2d2d2; font-family: "var(--mono-family)"; }
+QLabel[role="pipe-arrow"] { color: #4a4a4a; font-size: 10px; }
+QLabel[role="pipe-s"] { color: var(--ink-3); font-family: "var(--mono-family)"; }
+QLabel#pipeWarn { color: var(--gold); font-family: "var(--mono-family)"; }
+
+/* ── buttons: the page's .seg and .tbtn ────────────────────────────── */
+QPushButton, QToolButton {
+  background: var(--raise);
+  color: #9a9a9a;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-size: 11px;
+}
+QPushButton:hover, QToolButton:hover { color: #e6e6e6; }
+QPushButton:checked, QToolButton:checked, QPushButton[on="true"] { background: var(--accent-dim); color: #dceaf5; }
+QPushButton:disabled, QToolButton:disabled { color: var(--ink-3); }
+QPushButton:focus, QToolButton:focus { border-color: var(--accent-line); }
+QToolButton::menu-indicator { image: none; width: 0; }
+QToolBar { background: #1d1d1d; border: 0; spacing: 1px; }
+QToolBar QToolButton { border-radius: 0; }
+
+/* ── tabs: the page's .itabs ───────────────────────────────────────── */
+QTabWidget::pane { border: 0; border-top: 1px solid var(--line); background: var(--panel); }
+QTabBar { background: var(--panel); }
+QTabBar::tab {
+  background: var(--panel);
+  color: var(--ink-2);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 5px 10px;
+  font-size: 11px;
+}
+QTabBar::tab:selected { color: var(--ink); border-bottom: 1px solid var(--accent); }
+QTabBar::tab:hover { color: #e6e6e6; }
+
+/* ── sliders: a hairline track and a square key ────────────────────── */
+QSlider { background: transparent; min-height: 17px; }
+QSlider::groove:horizontal { height: 3px; background: #2a2a2a; border-radius: 1px; }
+QSlider::sub-page:horizontal, QSlider::add-page:horizontal { background: #2a2a2a; border-radius: 1px; }
+QSlider::handle:horizontal {
+  width: 9px;
+  height: 15px;
+  margin: -6px 0;
+  background: #a2b8c7;
+  border: 1px solid #141414;
+  border-radius: 1px;
+}
+QSlider::handle:horizontal:focus { border-color: var(--accent); }
+QLabel[role="slider-lab"] { color: #a8a8a8; }
+QLabel[role="slider-val"] { color: #c4c4c4; font-family: "var(--mono-family)"; }
+
+/* ── text fields, combos, spin boxes, check boxes ──────────────────── */
+QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 2px 5px;
+}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border-color: var(--accent-line); }
+QComboBox::drop-down { border: 0; width: 14px; }
+QComboBox QAbstractItemView { background: var(--panel); border: 1px solid var(--line-2); selection-background-color: var(--accent-dim); }
+QCheckBox { background: transparent; spacing: 6px; }
+QCheckBox::indicator { width: 11px; height: 11px; border: 1px solid var(--line-2); background: var(--panel-2); border-radius: 1px; }
+QCheckBox::indicator:checked { background: var(--accent); border-color: var(--accent-line); }
+
+/* ── lists: the shot list and the log ──────────────────────────────── */
+QListView, QListWidget, QTreeView {
+  background: var(--panel);
+  border: 0;
+  outline: 0;
+}
+QListView::item:selected, QListWidget::item:selected, QTreeView::item:selected { background: var(--accent-dim); color: #dceaf5; }
+QListView::item:hover, QListWidget::item:hover { background: var(--raise); }
+QPlainTextEdit#log { font-family: "var(--mono-family)"; font-size: 11px; background: var(--panel-2); border: 0; }
+QFrame#dropZone { border: 1px dashed var(--line-2); border-radius: var(--radius); background: transparent; }
+
+/* ── scroll bars and the clip bar ──────────────────────────────────── */
+QScrollBar:vertical { background: var(--panel-2); width: 9px; margin: 0; }
+QScrollBar:horizontal { background: var(--panel-2); height: 9px; margin: 0; }
+QScrollBar::handle { background: var(--raise); border-radius: 1px; min-height: 20px; min-width: 20px; }
+QScrollBar::handle:hover { background: var(--line-2); }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QProgressBar { background: #242424; border: 0; border-radius: 1px; max-height: 5px; color: transparent; }
+QProgressBar::chunk { background: var(--accent); }
+
+/* ── tool tips ─────────────────────────────────────────────────────── */
+QToolTip { background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 3px 5px; }

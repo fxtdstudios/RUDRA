@@ -662,6 +662,7 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     if (d_->api == GpuApi::Vulkan) {
         d_->vk = std::make_unique<QVulkanInstance>();
         d_->vk->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
+        d_->vk->setApiVersion(d_->vk->supportedApiVersion());   // 0 is refused by the validation layer
         if (d_->vk->create()) setVulkanInstance(d_->vk.get());
         else d_->api = GpuApi::OpenGL;   // no Vulkan here: the fallback
     }

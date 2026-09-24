@@ -28,7 +28,8 @@ engine     FrameEngine: the InferActor, generations, cancellation,
            read-ahead and the frame cache                         (below)
 cli        rudra-native: version | info | diff | bench | master | master-check
            (never Qt, never render)
-app        the Qt application                                     (everything)
+app        the Qt application; theme.cpp puts the look of
+           ui/theme.css on it (fonts/ holds IBM Plex, OFL)        (everything)
 tests      GoogleTest against the goldens in tests/golden/
 ```
 
@@ -57,7 +58,7 @@ Options:
 | `RUDRA_TORCH_ROOT` | empty | import LibTorch or a pip torch folder directly, without TorchConfig: a CUDA torch then needs no CUDA toolkit to build |
 | `RUDRA_WITH_OPENCV` | OFF | still decode in `media/` (OpenCV core + imgcodecs, the decoder `rudra/decode.py` uses) |
 | `RUDRA_WITH_ONNXRUNTIME` | OFF | ONNX Runtime backend (`ONNXRUNTIME_ROOT` with `include/`, `lib/`) |
-| `RUDRA_BUILD_APP` | OFF | the Qt shell (Qt 6.4+) |
+| `RUDRA_BUILD_APP` | OFF | the Qt shell (Qt 6.4+); `RUDRA --theme-check out.json` reports the fonts, weights and style it resolved, `RUDRA --grab out.png` saves the window |
 | `RUDRA_BUILD_RENDER` | OFF | `rudra_render_gpu`: the QRhi composite (Qt 6.6+ with Qt Shader Tools) |
 | `RUDRA_BUILD_HDR_PROBE` | OFF | `rudra-hdr-probe` and `rudra-gpu-parity` (turns `RUDRA_BUILD_RENDER` on) |
 | `RUDRA_TEST_PACKAGE` | empty | a model package: adds its golden frames to `ctest` |
@@ -139,7 +140,11 @@ swapchain back at fit and at 2x: every picture pixel within 1 code of
 `core/view.cpp` on `core/composite.cpp`, the surround exact. `--card` is Gate
 B through the real display pass: a card of 10 to 2 000 nits on the HDR
 swapchain, each patch at its own luminance up to the display's peak and
-clipped above it. Both gate B scripts run both on every API.
+clipped above it. Both gate B scripts run both on every API. A grab whose
+frame does not come is asked for again once a second (`nudges` in the
+report); a run that stalls writes a `TIMEOUT` report with the viewer's frame
+counters. `NATIVE_GATE_B.ps1` also builds the app and runs
+`RUDRA --theme-check`: Plex must resolve under its family at every weight.
 
 **Day 8, GPU composite parity.** `rudra-gpu-parity --api <api>` renders the
 composite shader offscreen on this GPU for every case in the composite
@@ -175,4 +180,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
 | Phase 2 (QRhi viewer) | steps 1 to 11 of 13 done: the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR, the reduction ladder, probe, measurements and scopes equal to the browser's, the viewer window in the app (Gate B through it passes on Windows), the frame path through the engine, and the guides (section 15) |
-| Video decode, encode, engine, viewer, app | Phase 1 onward |
+| Phase 3 (Qt UI) | step 1 of 12 done: the style sheet generated from `ui/theme.css` (`cmake/rudra_theme.cmake`, the `rudra_theme` target), checked by `test_theme` (every colour the theme's, greys neutral, no colour in the app's C++), Plex embedded and checked at run time by `--theme-check`, which the Qt shell CI job and `NATIVE_GATE_B.ps1` run (section 16) |
+| Video decode, encode | Phase 4 |

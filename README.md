@@ -442,6 +442,13 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 Then Phase 3 (the Qt UI, 15 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 16): the full
 Studio workflow with no Python installed, every number and file matching the Studio's.
+- [x] The look: the style sheet generated from `ui/theme.css` at build time, every
+  colour the theme's and every grey neutral (a test), IBM Plex embedded (OFL)
+- [ ] Actions: the page's 33 `data-act` ids with its shortcuts and menus
+- [ ] Session model with undo, the page's `params()` byte for byte
+- [ ] Main window, scope widgets, Reconstruct and Grade panels, probe, measurements
+- [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
+- [ ] The whole workflow on Windows with no Python on the machine
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:

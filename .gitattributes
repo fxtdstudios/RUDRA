@@ -18,6 +18,8 @@
 *.pth  binary
 *.ckpt binary
 *.npz  binary
+*.ttf  binary
+*.otf  binary
 
 # Batch files are run by cmd.exe and want CRLF. Shell scripts must never have
 # it: a CRLF shebang line makes the kernel look for an interpreter that does
