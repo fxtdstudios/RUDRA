@@ -8,7 +8,8 @@ version = "0.3.2"
 description = "Radiometric dynamic-range conditioning and HDR decoder research"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
-license = {file = "LICENSE"}
+license = {file = "LICENSE"}   # PolyForm Noncommercial 1.0.0
+classifiers = ["License :: Other/Proprietary License"]
 dependencies = [
   "numpy>=1.26,<3",
   "torch>=2.3",

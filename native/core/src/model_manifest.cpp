@@ -33,6 +33,7 @@ Result<ModelManifest> read_manifest(const std::filesystem::path& package_root) {
         m.name = j.at("name").get<std::string>();
         m.source_file = j.at("source").at("file").get<std::string>();
         m.source_sha256 = j.at("source").at("sha256").get<std::string>();
+        if (j.contains("exported") && j.at("exported").is_string()) m.exported = j.at("exported").get<std::string>();
         const auto& net = j.at("network");
         m.corpus_ev = net.at("corpus_ev").get<float>();
         m.log_scale = net.at("log_scale").get<float>();

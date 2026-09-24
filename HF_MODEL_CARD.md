@@ -72,4 +72,11 @@ on Flux/Wan/LTX. Both are provided where trained.
 > RUDRA: Radiometric Dynamic-Range Conditioning for HDR-Aware Diffusion Models.
 > FXTD Studios / Radiance Research.
 
-License: change the `license:` field above to match your release terms.
+## Licence
+
+**Non-commercial.** The weights are licensed for research, teaching, evaluation,
+benchmarking and personal use only
+([`checkpoints/LICENSE`](https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE));
+the code is licensed under the
+[PolyForm Noncommercial License 1.0.0](https://github.com/fxtdstudios/RUDRA/blob/main/LICENSE).
+Commercial licensing: [FXTD Studios](https://fxtdstudios.com).

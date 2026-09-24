@@ -1,0 +1,118 @@
+{
+ "format": {
+  "bit_rate": "360864",
+  "duration": "0.250000",
+  "filename": "odd_width.mkv",
+  "format_long_name": "Matroska / WebM",
+  "format_name": "matroska,webm",
+  "nb_programs": 0,
+  "nb_streams": 1,
+  "probe_score": 100,
+  "size": "11277",
+  "start_time": "0.000000",
+  "tags": {
+   "encoder": "Lavf"
+  }
+ },
+ "frames": [
+  {
+   "best_effort_timestamp_time": "0.000000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  },
+  {
+   "best_effort_timestamp_time": "0.042000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  },
+  {
+   "best_effort_timestamp_time": "0.083000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  },
+  {
+   "best_effort_timestamp_time": "0.125000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  },
+  {
+   "best_effort_timestamp_time": "0.167000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  },
+  {
+   "best_effort_timestamp_time": "0.208000",
+   "duration_time": "0.041000",
+   "height": 36,
+   "pkt_duration_time": "0.041000",
+   "width": 63
+  }
+ ],
+ "streams": [
+  {
+   "avg_frame_rate": "24/1",
+   "closed_captions": 0,
+   "codec_long_name": "FFmpeg video codec #1",
+   "codec_name": "ffv1",
+   "codec_tag": "0x31564646",
+   "codec_tag_string": "FFV1",
+   "codec_type": "video",
+   "coded_height": 36,
+   "coded_width": 63,
+   "color_primaries": "bt709",
+   "color_range": "tv",
+   "color_space": "bt709",
+   "color_transfer": "bt709",
+   "display_aspect_ratio": "7:4",
+   "disposition": {
+    "attached_pic": 0,
+    "captions": 0,
+    "clean_effects": 0,
+    "comment": 0,
+    "default": 0,
+    "dependent": 0,
+    "descriptions": 0,
+    "dub": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "karaoke": 0,
+    "lyrics": 0,
+    "metadata": 0,
+    "non_diegetic": 0,
+    "original": 0,
+    "still_image": 0,
+    "timed_thumbnails": 0,
+    "visual_impaired": 0
+   },
+   "field_order": "progressive",
+   "film_grain": 0,
+   "has_b_frames": 0,
+   "height": 36,
+   "index": 0,
+   "level": -99,
+   "nb_read_frames": "6",
+   "pix_fmt": "yuv444p",
+   "r_frame_rate": "24/1",
+   "refs": 1,
+   "sample_aspect_ratio": "1:1",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "tags": {
+    "DURATION": "00:00:00.250000000",
+    "ENCODER": "Lavc ffv1"
+   },
+   "time_base": "1/1000",
+   "width": 63
+  }
+ ]
+}

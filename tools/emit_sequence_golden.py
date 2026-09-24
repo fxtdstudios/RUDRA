@@ -7,16 +7,20 @@ files, an empty folder, a text file and a video. Paths are recorded with the
 temporary root replaced by <root>, and the native test rebuilds the same
 layouts and must give the same names and the same messages.
 
-Video: the Python probes it with ffmpeg; natively it is refused as
-Unsupported until libav arrives (Phase 4), so its entry records only that it
-was taken for a video.
+Video (Phase 4, step 11): the Python counts a video's packets with ffprobe
+and extracts a frame by seeking; the empty "clips" are refused for having no
+frames, and two real clips from the video goldens are opened, their frames 0
+and 4 extracted, and the PNGs' digests recorded with the ffmpeg that made
+them (the native test compares the bytes when it runs the same build).
 
     python tools/emit_sequence_golden.py        # writes native/tests/golden/sequence/
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -39,6 +43,8 @@ LAYOUTS = {
     "single": ["only.tif"],
 }
 FILES = ["notes.txt", "clip.MOV", "clip.mp4"]
+CLIPS = REPO / "native" / "tests" / "golden" / "video" / "clips"
+REAL = {"real.mp4": "h264_709.mp4", "alpha clip.mov": "prores4444_alpha.mov"}   # a space, as real names have
 
 CASES = [
     ("folder", "<root>/shot_A"),
@@ -55,6 +61,8 @@ CASES = [
     ("whitespace", "  \t "),
     ("video_upper", "<root>/clip.MOV"),
     ("video", "<root>/clip.mp4"),
+    ("video_real", "<root>/real.mp4"),
+    ("video_real_quoted", '"<root>/alpha clip.mov"'),
 ]
 
 
@@ -73,6 +81,8 @@ def build(root: Path) -> None:
                 (root / folder / e).write_bytes(b"")
     for f in FILES:
         (root / f).write_bytes(b"")
+    for name, clip in REAL.items():
+        shutil.copyfile(CLIPS / clip, root / name)
 
 
 def main() -> int:
@@ -86,22 +96,34 @@ def main() -> int:
         for name, raw in CASES:
             text = raw.replace("<root>", str(root))
             entry = {"name": name, "raw": raw}
-            if Path(text.strip().strip('"').strip("'")).suffix.lower() in VIDEO_SUFFIXES and text.strip():
-                entry["video"] = True
-            else:
-                try:
-                    d = Sequence.open(text).describe()
-                    entry.update({"kind": d["kind"], "count": d["count"], "name_field": d["name"],
-                                  "path": portable(d["path"], root), "names": d["names"]})
-                except SequenceError as e:
-                    entry["error"] = portable(str(e), root)
+            try:
+                seq = Sequence.open(text)
+                d = seq.describe()
+                entry.update({"kind": d["kind"], "count": d["count"], "name_field": d["name"],
+                              "path": portable(d["path"], root), "names": d["names"]})
+                if d["kind"] == "video":
+                    entry["fps"] = d["fps"]
+                    entry["frame_sha256"] = {str(i): hashlib.sha256(seq.frame_bytes(i)).hexdigest() for i in (0, 4)}
+                    try:
+                        seq.frame_bytes(d["count"])
+                    except SequenceError as e:
+                        entry["outside_error"] = str(e)
+            except SequenceError as e:
+                entry["error"] = portable(str(e), root)
             results.append(entry)
+    # The real clips' entries depend on the ffmpeg that read them: kept apart, so
+    # index.json is the same on every machine with ffmpeg on PATH.
+    ffmpeg = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout.splitlines()[0]
+    videos = [r for r in results if r["name"].startswith("video_real")]
+    results = [r for r in results if not r["name"].startswith("video_real")]
+    (OUT / "video.json").write_text(json.dumps({"oracle": "ui/sequence.py", "ffmpeg": ffmpeg, "clips": REAL,
+                                                "cases": videos}, indent=2), encoding="utf-8", newline="\n")
     (OUT / "index.json").write_text(json.dumps({
         "oracle": "ui/sequence.py", "frame_suffixes": sorted(FRAME_SUFFIXES),
         "video_suffixes": sorted(VIDEO_SUFFIXES), "layouts": LAYOUTS, "files": FILES,
         "cases": results}, indent=2), encoding="utf-8", newline="\n")
-    for r in results:
-        print(r["name"], r.get("names", r.get("error", "video")))
+    for r in results + videos:
+        print(r["name"], r.get("names", r.get("error"))[:3] if "names" in r else r.get("error"))
     return 0
 
 

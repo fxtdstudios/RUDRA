@@ -1,0 +1,848 @@
+{
+ "oracle": "ui/app.js showProbe, showProbePanel, showMetrics, updatePipe, paintClipBar",
+ "inputs": {
+  "probes": [
+   null,
+   {
+    "x": 812,
+    "y": 407,
+    "model": {
+     "nits": 1234.4
+    },
+    "baseline": {
+     "nits": 203.0
+    },
+    "sdr": [
+     255,
+     250,
+     10
+    ],
+    "hiMask": 0.7349,
+    "shMask": 0.0
+   },
+   {
+    "x": 3,
+    "y": 0,
+    "model": {
+     "nits": 0.5
+    },
+    "baseline": {
+     "nits": 0.52
+    },
+    "sdr": null,
+    "hiMask": null,
+    "shMask": null
+   },
+   {
+    "x": 1919,
+    "y": 1079,
+    "model": {
+     "nits": 12345.6
+    },
+    "baseline": {
+     "nits": 4000.49
+    },
+    "sdr": [
+     254,
+     12,
+     0
+    ],
+    "hiMask": 1.0,
+    "shMask": 0.125
+   },
+   {
+    "x": 100,
+    "y": 200,
+    "model": {
+     "nits": 150.0
+    },
+    "baseline": {
+     "nits": 180.0
+    },
+    "sdr": [
+     180,
+     181,
+     179
+    ],
+    "hiMask": 0.004,
+    "shMask": 0.995
+   },
+   {
+    "x": 0,
+    "y": 5,
+    "model": {
+     "nits": 203.0
+    },
+    "baseline": {
+     "nits": 203.0
+    },
+    "sdr": [
+     253,
+     253,
+     253
+    ],
+    "hiMask": 0.0,
+    "shMask": 0.0
+   },
+   {
+    "x": 7,
+    "y": 7,
+    "model": {
+     "nits": 0.0001
+    },
+    "baseline": {
+     "nits": 0.0
+    },
+    "sdr": [
+     0,
+     0,
+     0
+    ],
+    "hiMask": 0.0,
+    "shMask": 0.5
+   }
+  ],
+  "metrics": [
+   {
+    "m": {
+     "maxcll": 1235,
+     "maxfall": 87,
+     "peak_nits": 1234.49,
+     "p99_nits": 812.345,
+     "median_nits": 42.125,
+     "above_diffuse_white_pct": 12.3456,
+     "above_1000_nits_pct": 0.0125,
+     "headroom_highlight_stops": 2.604,
+     "headroom_shadow_stops": -0.1249,
+     "departure_rms_stops": 0.41234,
+     "highlight_mask_pct": 3.456,
+     "shadow_mask_pct": 10.0,
+     "compose_ms": 17.25
+    },
+    "header": {
+     "source_resolution": "3840x2160",
+     "elapsed_s": 1.234,
+     "resolution": "1920x1080",
+     "tiled": false
+    },
+    "clipped": 4.567
+   },
+   {
+    "m": {
+     "maxcll": 10000,
+     "maxfall": 2000,
+     "peak_nits": 10000.0,
+     "p99_nits": 4000.0,
+     "median_nits": 0.05,
+     "above_diffuse_white_pct": 100.0,
+     "above_1000_nits_pct": 99.9995,
+     "headroom_highlight_stops": "NaN",
+     "headroom_shadow_stops": "NaN",
+     "departure_rms_stops": 0.0,
+     "highlight_mask_pct": 0.0,
+     "shadow_mask_pct": 0.0,
+     "compose_ms": 1234.5
+    },
+    "header": {
+     "source_resolution": "1920x1080",
+     "elapsed_s": 0.07,
+     "resolution": "1920x1080",
+     "tiled": true
+    },
+    "clipped": 0.0
+   },
+   {
+    "m": {
+     "maxcll": 3,
+     "maxfall": 1,
+     "peak_nits": 2.25,
+     "p99_nits": 1.005,
+     "median_nits": 0.125,
+     "above_diffuse_white_pct": 0.0,
+     "above_1000_nits_pct": 0.0,
+     "headroom_highlight_stops": 0.0,
+     "headroom_shadow_stops": 0.0,
+     "departure_rms_stops": 1.0005,
+     "highlight_mask_pct": 99.995,
+     "shadow_mask_pct": 0.005,
+     "compose_ms": 0.4
+    },
+    "header": null,
+    "clipped": 100.0
+   }
+  ],
+  "pipes": [
+   {
+    "container": "aces",
+    "peakEv": 0,
+    "m": null,
+    "header": null
+   },
+   {
+    "container": "linear",
+    "peakEv": 2.5,
+    "m": {
+     "maxcll": 1235
+    },
+    "header": {
+     "source_bits": 10
+    }
+   },
+   {
+    "container": "aces",
+    "peakEv": 0,
+    "m": {
+     "maxcll": 203.2
+    },
+    "header": {
+     "source_bits": 8
+    }
+   },
+   {
+    "container": "aces",
+    "peakEv": 0,
+    "m": {
+     "maxcll": 203.1
+    },
+    "header": {}
+   },
+   {
+    "container": "aces",
+    "peakEv": -1,
+    "m": {
+     "maxcll": 4000
+    },
+    "header": null
+   },
+   {
+    "container": "linear",
+    "peakEv": 5,
+    "m": {
+     "maxcll": "NaN"
+    },
+    "header": null
+   }
+  ],
+  "clips": [
+   [
+    0,
+    0
+   ],
+   [
+    4.567,
+    10.0
+   ],
+   [
+    96.5,
+    10.0
+   ],
+   [
+    120,
+    5
+   ],
+   [
+    30,
+    80
+   ]
+  ]
+ },
+ "page": {
+  "probes": [
+   {
+    "xy": "—",
+    "nits": "—",
+    "idle": true,
+    "delta": "pick a pixel with Probe, or hold Alt",
+    "delta_class": "pdelta idle",
+    "src": "—",
+    "src_class": "",
+    "base": "—",
+    "model": "—",
+    "model_class": "",
+    "mask": "—",
+    "box_hidden": true,
+    "box": []
+   },
+   {
+    "xy": "812, 407",
+    "nits": "1,234",
+    "idle": false,
+    "delta": "+2.60 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "255 250 10",
+    "src_class": "clip",
+    "base": "203",
+    "model": "1,234",
+    "model_class": "hi",
+    "mask": "hi 0.73  sh 0.00",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "812, 407",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "203 nits  +0.00 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "1,234 nits  +2.60 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "+2.60 stops",
+      "cls": "hi"
+     },
+     {
+      "k": "SDR",
+      "v": "255,250,10  clipped",
+      "cls": "bad"
+     },
+     {
+      "k": "mask",
+      "v": "hi 0.73  sh 0.00",
+      "cls": ""
+     }
+    ]
+   },
+   {
+    "xy": "3, 0",
+    "nits": "1",
+    "idle": false,
+    "delta": "−8.67 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "—",
+    "src_class": "",
+    "base": "1",
+    "model": "1",
+    "model_class": "hi",
+    "mask": "hi —  sh —",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "3, 0",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "1 nits  -8.61 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "1 nits  -8.67 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "-0.06 stops",
+      "cls": "hi"
+     },
+     {
+      "k": "mask",
+      "v": "hi -  sh -",
+      "cls": ""
+     }
+    ]
+   },
+   {
+    "xy": "1919, 1079",
+    "nits": "12,346",
+    "idle": false,
+    "delta": "+5.93 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "254 12 0",
+    "src_class": "clip",
+    "base": "4,000",
+    "model": "12,346",
+    "model_class": "hi",
+    "mask": "hi 1.00  sh 0.13",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "1919, 1079",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "4,000 nits  +4.30 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "12,346 nits  +5.93 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "+1.63 stops",
+      "cls": "hi"
+     },
+     {
+      "k": "SDR",
+      "v": "254,12,0  clipped",
+      "cls": "bad"
+     },
+     {
+      "k": "mask",
+      "v": "hi 1.00  sh 0.13",
+      "cls": ""
+     }
+    ]
+   },
+   {
+    "xy": "100, 200",
+    "nits": "150",
+    "idle": false,
+    "delta": "−0.44 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "180 181 179",
+    "src_class": "",
+    "base": "180",
+    "model": "150",
+    "model_class": "hi",
+    "mask": "hi 0.00  sh 0.99",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "100, 200",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "180 nits  -0.17 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "150 nits  -0.44 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "-0.26 stops",
+      "cls": "hi"
+     },
+     {
+      "k": "SDR",
+      "v": "180,181,179",
+      "cls": ""
+     },
+     {
+      "k": "mask",
+      "v": "hi 0.00  sh 0.99",
+      "cls": ""
+     }
+    ]
+   },
+   {
+    "xy": "0, 5",
+    "nits": "203",
+    "idle": false,
+    "delta": "+0.00 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "253 253 253",
+    "src_class": "",
+    "base": "203",
+    "model": "203",
+    "model_class": "",
+    "mask": "hi 0.00  sh 0.00",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "0, 5",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "203 nits  +0.00 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "203 nits  +0.00 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "+0.00 stops",
+      "cls": ""
+     },
+     {
+      "k": "SDR",
+      "v": "253,253,253",
+      "cls": ""
+     },
+     {
+      "k": "mask",
+      "v": "hi 0.00  sh 0.00",
+      "cls": ""
+     }
+    ]
+   },
+   {
+    "xy": "7, 7",
+    "nits": "0",
+    "idle": false,
+    "delta": "−20.95 stops over diffuse white",
+    "delta_class": "pdelta",
+    "src": "0 0 0",
+    "src_class": "",
+    "base": "0",
+    "model": "0",
+    "model_class": "hi",
+    "mask": "hi 0.00  sh 0.50",
+    "box_hidden": false,
+    "box": [
+     {
+      "k": "x,y",
+      "v": "7, 7",
+      "cls": ""
+     },
+     {
+      "k": "baseline",
+      "v": "0 nits  -27.60 st",
+      "cls": ""
+     },
+     {
+      "k": "RUDRA",
+      "v": "0 nits  -20.95 st",
+      "cls": "hi"
+     },
+     {
+      "k": "delta",
+      "v": "+6.64 stops",
+      "cls": "hi"
+     },
+     {
+      "k": "SDR",
+      "v": "0,0,0",
+      "cls": ""
+     },
+     {
+      "k": "mask",
+      "v": "hi 0.00  sh 0.50",
+      "cls": ""
+     }
+    ]
+   }
+  ],
+  "metrics": [
+   {
+    "measA": [
+     {
+      "k": "MaxCLL",
+      "v": "1,235",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "MaxFALL",
+      "v": "87",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Peak",
+      "v": "1,234.5",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "P99",
+      "v": "812.3",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Median",
+      "v": "42.13",
+      "warn": false,
+      "u": "nits"
+     }
+    ],
+    "measB": [
+     {
+      "k": "Above diffuse white",
+      "v": "12.35",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Above 1 000 nits",
+      "v": "0.013",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Clipped in source",
+      "v": "4.57",
+      "warn": true,
+      "u": "%"
+     },
+     {
+      "k": "Headroom, highlights",
+      "v": "+2.60",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Headroom, shadows",
+      "v": "−0.12",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Departure RMS",
+      "v": "0.412",
+      "warn": false,
+      "u": "st"
+     }
+    ],
+    "statusMask": "masks 3.46% highlight / 10.00% shadow",
+    "statusTime": "3840x2160 · net 1.23 s · grade 17.3 ms",
+    "srcInfo": "1920x1080 · one pass"
+   },
+   {
+    "measA": [
+     {
+      "k": "MaxCLL",
+      "v": "10,000",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "MaxFALL",
+      "v": "2,000",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Peak",
+      "v": "10,000.0",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "P99",
+      "v": "4,000.0",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Median",
+      "v": "0.05",
+      "warn": false,
+      "u": "nits"
+     }
+    ],
+    "measB": [
+     {
+      "k": "Above diffuse white",
+      "v": "100.00",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Above 1 000 nits",
+      "v": "100.000",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Clipped in source",
+      "v": "0.00",
+      "warn": true,
+      "u": "%"
+     },
+     {
+      "k": "Headroom, highlights",
+      "v": "—",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Headroom, shadows",
+      "v": "—",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Departure RMS",
+      "v": "0.000",
+      "warn": false,
+      "u": "st"
+     }
+    ],
+    "statusMask": "masks 0.00% highlight / 0.00% shadow",
+    "statusTime": "1920x1080 · net 0.07 s · grade 1,234.5 ms",
+    "srcInfo": "1920x1080 · tiled"
+   },
+   {
+    "measA": [
+     {
+      "k": "MaxCLL",
+      "v": "3",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "MaxFALL",
+      "v": "1",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Peak",
+      "v": "2.3",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "P99",
+      "v": "1.0",
+      "warn": false,
+      "u": "nits"
+     },
+     {
+      "k": "Median",
+      "v": "0.13",
+      "warn": false,
+      "u": "nits"
+     }
+    ],
+    "measB": [
+     {
+      "k": "Above diffuse white",
+      "v": "0.00",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Above 1 000 nits",
+      "v": "0.000",
+      "warn": false,
+      "u": "%"
+     },
+     {
+      "k": "Clipped in source",
+      "v": "100.00",
+      "warn": true,
+      "u": "%"
+     },
+     {
+      "k": "Headroom, highlights",
+      "v": "+0.00",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Headroom, shadows",
+      "v": "+0.00",
+      "warn": false,
+      "u": "st"
+     },
+     {
+      "k": "Departure RMS",
+      "v": "1.001",
+      "warn": false,
+      "u": "st"
+     }
+    ],
+    "statusMask": "masks 100.00% highlight / 0.01% shadow",
+    "statusTime": "— · net — s · grade 0.4 ms",
+    "srcInfo": "— · one pass"
+   }
+  ],
+  "pipes": [
+   {
+    "pipeIn": "sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 203 nits",
+    "pipeMaster": "ACES 2065-1 EXR, half",
+    "warn": "",
+    "warn_hidden": true
+   },
+   {
+    "pipeIn": "10-bit sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 1,148 nits",
+    "pipeMaster": "linear Rec.2020 EXR, half",
+    "warn": "MaxCLL 1,235 over view peak 1,148 — clipped on screen, not in the master",
+    "warn_hidden": false
+   },
+   {
+    "pipeIn": "8-bit sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 203 nits",
+    "pipeMaster": "ACES 2065-1 EXR, half",
+    "warn": "MaxCLL 1,235 over view peak 1,148 — clipped on screen, not in the master",
+    "warn_hidden": true
+   },
+   {
+    "pipeIn": "sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 203 nits",
+    "pipeMaster": "ACES 2065-1 EXR, half",
+    "warn": "MaxCLL 1,235 over view peak 1,148 — clipped on screen, not in the master",
+    "warn_hidden": true
+   },
+   {
+    "pipeIn": "sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 102 nits",
+    "pipeMaster": "ACES 2065-1 EXR, half",
+    "warn": "MaxCLL 4,000 over view peak 102 — clipped on screen, not in the master",
+    "warn_hidden": false
+   },
+   {
+    "pipeIn": "sRGB · Rec.709",
+    "pipeWorking": "scene-linear · 203 nits = 1.0",
+    "viewTransform": "exposure + clip · 6,496 nits",
+    "pipeMaster": "linear Rec.2020 EXR, half",
+    "warn": "MaxCLL 4,000 over view peak 102 — clipped on screen, not in the master",
+    "warn_hidden": true
+   }
+  ],
+  "clips": [
+   {
+    "hidden": false,
+    "i_width": "0%",
+    "u_left": "0%",
+    "u_width": "0%"
+   },
+   {
+    "hidden": false,
+    "i_width": "4.567%",
+    "u_left": "4.567%",
+    "u_width": "10%"
+   },
+   {
+    "hidden": false,
+    "i_width": "96.5%",
+    "u_left": "96.5%",
+    "u_width": "3.5%"
+   },
+   {
+    "hidden": false,
+    "i_width": "100%",
+    "u_left": "100%",
+    "u_width": "0%"
+   },
+   {
+    "hidden": false,
+    "i_width": "30%",
+    "u_left": "30%",
+    "u_width": "70%"
+   }
+  ]
+ }
+}

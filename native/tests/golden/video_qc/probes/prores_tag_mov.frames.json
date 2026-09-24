@@ -1,0 +1,125 @@
+{
+ "frames": [
+  {
+   "best_effort_timestamp_time": "0.000000",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  },
+  {
+   "best_effort_timestamp_time": "0.041708",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  },
+  {
+   "best_effort_timestamp_time": "0.083417",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  },
+  {
+   "best_effort_timestamp_time": "0.125125",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  },
+  {
+   "best_effort_timestamp_time": "0.166833",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  },
+  {
+   "best_effort_timestamp_time": "0.208542",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36
+  }
+ ],
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "prores",
+   "codec_long_name": "Apple ProRes (iCodec Pro)",
+   "profile": "HQ",
+   "codec_type": "video",
+   "codec_tag_string": "apch",
+   "codec_tag": "0x68637061",
+   "width": 64,
+   "height": 36,
+   "coded_width": 64,
+   "coded_height": 36,
+   "closed_captions": 0,
+   "film_grain": 0,
+   "has_b_frames": 0,
+   "pix_fmt": "yuv422p10le",
+   "level": -99,
+   "color_space": "bt2020nc",
+   "color_transfer": "smpte2084",
+   "color_primaries": "bt2020",
+   "field_order": "progressive",
+   "refs": 1,
+   "id": "0x1",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/24000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6006,
+   "duration": "0.250250",
+   "bit_rate": "295480",
+   "bits_per_raw_sample": "10",
+   "nb_frames": "6",
+   "nb_read_frames": "6",
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0
+   },
+   "tags": {
+    "handler_name": "VideoHandler",
+    "vendor_id": "FFMP",
+    "encoder": "Lavc60.31.102 prores_ks"
+   }
+  }
+ ],
+ "format": {
+  "filename": "prores_tag.mov",
+  "nb_streams": 1,
+  "nb_programs": 0,
+  "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+  "format_long_name": "QuickTime / MOV",
+  "start_time": "0.000000",
+  "duration": "0.250250",
+  "size": "9978",
+  "bit_rate": "318977",
+  "probe_score": 100,
+  "tags": {
+   "major_brand": "qt  ",
+   "minor_version": "512",
+   "compatible_brands": "qt  "
+  }
+ }
+}

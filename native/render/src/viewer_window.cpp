@@ -1,5 +1,8 @@
 #include "rudra/render/viewer_window.hpp"
 
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 #include <QExposeEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -162,9 +165,27 @@ struct ViewerWindow::Impl {
     std::string peak_from = "swapchain";   // swapchain, DXGI, or placeholder (unknown)
 
     std::function<void(const ViewerStatus&)> status_cb;
+    std::function<void(const ViewerWindow::Hover&)> hover_cb;
+    std::function<void(const QStringList&)> drop_cb;
+    void hover(const QPointF& at, bool alt) {
+        if (!hover_cb) return;
+        ViewerWindow::Hover h;
+        h.window = at;
+        h.alt = alt;
+        const PlacedRect r = placed();
+        const ViewSize f = frame_view_size();
+        if (has_frame && r.width > 0 && r.height > 0 && at.x() >= r.left && at.y() >= r.top &&
+            at.x() < r.left + r.width && at.y() < r.top + r.height) {
+            h.x = (at.x() - r.left) / r.width * f.width;
+            h.y = (at.y() - r.top) / r.height * f.height;
+        }
+        hover_cb(h);
+    }
     std::function<void(const Grab&)> grab_cb;
     QRhiReadbackResult grab_rb;
     bool grab_pending = false, grab_y_up = false;
+    long long updates = 0, frames = 0, begin_failures = 0;
+    int last_begin = 0;
 
     ViewSize viewer_size() const { return {double(w->width()), double(w->height())}; }
     ViewSize frame_view_size() const {
@@ -415,12 +436,15 @@ struct ViewerWindow::Impl {
         if (!has_swapchain) return;
         if (sc->currentPixelSize() != sc->surfacePixelSize()) resize_swapchain();
         if (!has_swapchain) return;
+        ++updates;
         QRhi::FrameOpResult r = rhi->beginFrame(sc.get());
         if (r == QRhi::FrameOpSwapChainOutOfDate) {
             resize_swapchain();
             if (!has_swapchain) return;
             r = rhi->beginFrame(sc.get());
         }
+        last_begin = int(r);
+        if (r != QRhi::FrameOpSuccess) ++begin_failures;
         if (r == QRhi::FrameOpDeviceLost) {
             recover_device();
             return;
@@ -528,11 +552,16 @@ struct ViewerWindow::Impl {
         }
         cb->endPass(after);
         rhi->endFrame(sc.get());
+        ++frames;
         // With frames in flight (D3D12, Vulkan, Metal) a readback completes
         // only when its frame slot comes round again, so a grab would report
         // an older frame, or never. Wait for it here: grabs are for tests and
-        // Gate B, never the interactive path.
+        // Gate B, never the interactive path. On D3D12 even that is not
+        // enough: the result is handed over at a later beginFrame (Gate B,
+        // 24 Sep: every window check waited two frames that nothing asked
+        // for), so while a readback is out the viewer keeps drawing.
         if (grab_pending) rhi->finish();
+        if (grab_pending) w->requestUpdate();
     }
 
     void finish_grab() {
@@ -629,6 +658,12 @@ struct ViewerWindow::Impl {
         s.device_pixel_ratio = w->devicePixelRatio();
         s.has_frame = has_frame;
         s.wiping = view.wipe >= 0.0;
+        s.updates = updates;
+        s.frames = frames;
+        s.begin_failures = begin_failures;
+        s.last_begin = last_begin;
+        s.grab_waiting = bool(grab_cb);
+        s.grab_pending = grab_pending;
         return s;
     }
 
@@ -650,6 +685,7 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     if (d_->api == GpuApi::Vulkan) {
         d_->vk = std::make_unique<QVulkanInstance>();
         d_->vk->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
+        d_->vk->setApiVersion(d_->vk->supportedApiVersion());   // 0 is refused by the validation layer
         if (d_->vk->create()) setVulkanInstance(d_->vk.get());
         else d_->api = GpuApi::OpenGL;   // no Vulkan here: the fallback
     }
@@ -659,7 +695,13 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     setSurfaceType(surface_for(d_->api));
 }
 
-ViewerWindow::~ViewerWindow() { d_->release_all(); }
+ViewerWindow::~ViewerWindow() {
+    d_->release_all();
+    // The platform window's Vulkan surface is destroyed with the window; the
+    // instance it was made from is ours and goes with d_, so the surface goes
+    // first. Without this ~QWindow destroys it against a freed instance.
+    destroy();
+}
 
 void ViewerWindow::set_frame(ViewerFrame frame) {
     d_->baseline = corrected_baseline(frame.sdr, frame.model.corpus_ev, frame.scalars.curve_params);
@@ -757,6 +799,28 @@ bool ViewerWindow::event(QEvent* e) {
                 QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
                 d_->release_swapchain();
             break;
+        case QEvent::Leave:
+            if (d_->hover_cb) d_->hover_cb(Hover{});
+            break;
+        case QEvent::DragEnter:
+        case QEvent::DragMove: {
+            auto* de = static_cast<QDragMoveEvent*>(e);
+            if (d_->drop_cb && de->mimeData()->hasUrls()) {
+                de->acceptProposedAction();
+                return true;
+            }
+            break;
+        }
+        case QEvent::Drop: {
+            auto* de = static_cast<QDropEvent*>(e);
+            if (!d_->drop_cb) break;
+            QStringList paths;
+            for (const auto& u : de->mimeData()->urls())
+                if (u.isLocalFile()) paths << u.toLocalFile();
+            de->acceptProposedAction();
+            if (!paths.isEmpty()) d_->drop_cb(paths);
+            return true;
+        }
         case QEvent::Resize:
             // Fit follows the window; a zoom keeps its scale and pan.
             d_->notify();
@@ -801,8 +865,13 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
     d_->changed_view();
 }
 
+void ViewerWindow::on_hover(std::function<void(const Hover&)> cb) { d_->hover_cb = std::move(cb); }
+
+void ViewerWindow::on_drop(std::function<void(const QStringList&)> cb) { d_->drop_cb = std::move(cb); }
+
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
     if (!d_->input) return;
+    if (!d_->panning && !d_->wipe_dragging) d_->hover(e->position(), e->modifiers() & Qt::AltModifier);
     if (d_->panning) {
         d_->viewport.pan_x = d_->pan_x0 + (e->position().x() - d_->pan_from.x());
         d_->viewport.pan_y = d_->pan_y0 + (e->position().y() - d_->pan_from.y());

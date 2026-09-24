@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
 #include "rudra/platform/hash.hpp"
 #include "rudra/platform/npy.hpp"
+#include "rudra/platform/process.hpp"
 
 using namespace rudra;
 
@@ -21,6 +24,13 @@ TEST(Xxh64, ReferenceVectors) {
     for (int r = 0; r < 3; ++r)
         for (int i = 0; i < 256; ++i) long_input.push_back(static_cast<char>(i));
     EXPECT_EQ(xxh64(bytes(long_input), 7), 0xb1e10f6c5294cd6bULL);   // exercises the 32-byte stripes
+}
+
+TEST(Sha1, Fips180Vectors) {
+    EXPECT_EQ(sha1_hex(bytes("")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    EXPECT_EQ(sha1_hex(bytes("abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    EXPECT_EQ(sha1_hex(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")),
+              "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
 }
 
 TEST(Sha256, Fips180Vectors) {
@@ -66,4 +76,69 @@ TEST(Npy, RefusesWhatItCannotRead) {
     auto missing = read_npy("does/not/exist.npy");
     ASSERT_FALSE(missing);
     EXPECT_EQ(missing.error().code, ErrorCode::NotFound);
+}
+
+// Processes: cmake -E is the one program every build machine has.
+namespace {
+namespace fs = std::filesystem;
+fs::path scratch(const std::string& name) {
+    const fs::path d = fs::temp_directory_path() / ("rudra-process-test-" + name);
+    fs::create_directories(d);
+    return d;
+}
+}  // namespace
+
+TEST(Process, FindExecutable) {
+    EXPECT_TRUE(find_executable(RUDRA_CMAKE_COMMAND).has_value());   // a path is taken as it is
+    EXPECT_FALSE(find_executable("rudra-no-such-program-xyz").has_value());
+    EXPECT_FALSE(find_executable((scratch("find") / "missing").string()).has_value());
+}
+
+TEST(Process, RunCapturesOutputAndExit) {
+    auto r = run_process({RUDRA_CMAKE_COMMAND, "-E", "echo", "hello world", "a\"b", ""});
+    ASSERT_TRUE(r.ok());
+    EXPECT_EQ(r->exit_code, 0);
+    EXPECT_EQ(r->out.substr(0, r->out.find_last_not_of("\r\n") + 1), "hello world a\"b ");   // quoting survives
+    auto bad = run_process({RUDRA_CMAKE_COMMAND, "-E", "cat", (scratch("run") / "missing.txt").string()});
+    ASSERT_TRUE(bad.ok());
+    EXPECT_NE(bad->exit_code, 0);
+    EXPECT_FALSE(bad->err.empty());
+    EXPECT_FALSE(run_process({"rudra-no-such-program-xyz"}).ok());
+    EXPECT_FALSE(run_process({}).ok());
+}
+
+TEST(Process, StreamsLargeStdoutAndLogsStderr) {
+    const fs::path dir = scratch("stream");
+    std::string data(3 * 1024 * 1024 + 17, '\0');   // larger than any pipe buffer
+    for (std::size_t i = 0; i < data.size(); ++i) data[i] = static_cast<char>((i * 131 + 7) & 0xff);
+    { std::ofstream(dir / "big.bin", std::ios::binary).write(data.data(), std::streamsize(data.size())); }
+    auto p = Process::start({RUDRA_CMAKE_COMMAND, "-E", "cat", (dir / "big.bin").string()}, dir / "err.log");
+    ASSERT_TRUE(p.ok());
+    std::vector<std::uint8_t> got;
+    std::vector<std::uint8_t> buf(1 << 16);
+    for (;;) {
+        const std::size_t n = (*p)->read(buf);
+        got.insert(got.end(), buf.begin(), buf.begin() + std::ptrdiff_t(n));
+        if (n < buf.size()) break;
+    }
+    EXPECT_EQ((*p)->wait(), 0);
+    EXPECT_FALSE((*p)->running());
+    ASSERT_EQ(got.size(), data.size());
+    EXPECT_TRUE(std::equal(got.begin(), got.end(), reinterpret_cast<const std::uint8_t*>(data.data())));
+
+    auto e = Process::start({RUDRA_CMAKE_COMMAND, "-E", "cat", (dir / "nope.bin").string()}, dir / "err2.log");
+    ASSERT_TRUE(e.ok());
+    std::uint8_t one[1];
+    EXPECT_EQ((*e)->read(one), 0u);
+    EXPECT_NE((*e)->wait(), 0);
+    EXPECT_GT(fs::file_size(dir / "err2.log"), 0u);   // stderr went to the log
+}
+
+TEST(Process, KillEndsARunningProgram) {
+    auto p = Process::start({RUDRA_CMAKE_COMMAND, "-E", "sleep", "30"});
+    ASSERT_TRUE(p.ok());
+    EXPECT_TRUE((*p)->running());
+    (*p)->kill();
+    (*p)->wait();
+    EXPECT_FALSE((*p)->running());
 }

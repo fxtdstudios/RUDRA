@@ -173,7 +173,15 @@ table covers the recommended decoder per backbone, not every file above:
 
 ## Licence and citation
 
-Apache 2.0. If the SDR→HDR work is useful in yours:
+**Non-commercial.** The weights here are licensed for research, teaching,
+evaluation, benchmarking and personal use only
+([`checkpoints/LICENSE`](https://github.com/fxtdstudios/RUDRA/blob/main/checkpoints/LICENSE)),
+because one of their training sources (HdM-HDR-2014 / HdM-HFR-2017) is free
+for academic use only. The code that runs them is licensed under the
+[PolyForm Noncommercial License 1.0.0](https://github.com/fxtdstudios/RUDRA/blob/main/LICENSE).
+Commercial licensing: [FXTD Studios](https://fxtdstudios.com).
+
+If the SDR→HDR work is useful in yours:
 
 ```bibtex
 @misc{rudra2026,

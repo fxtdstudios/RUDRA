@@ -1,0 +1,110 @@
+{
+ "oracle": "ui/server.py _fit (cv2 4.13.0 INTER_AREA, float32)",
+ "cases": [
+  {
+   "input": "png8_rgb.npy",
+   "max_side": 32,
+   "expected": "png8_rgb_32.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    19,
+    32
+   ]
+  },
+  {
+   "input": "png8_rgb.npy",
+   "max_side": 20,
+   "expected": "png8_rgb_20.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    12,
+    20
+   ]
+  },
+  {
+   "input": "png16_rgb.npy",
+   "max_side": 11,
+   "expected": "png16_rgb_11.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    6,
+    11
+   ]
+  },
+  {
+   "input": "jpeg_q92_420.npy",
+   "max_side": 17,
+   "expected": "jpeg_q92_420_17.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    10,
+    17
+   ]
+  },
+  {
+   "input": "bmp24.npy",
+   "max_side": 25,
+   "expected": "bmp24_25.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    15,
+    25
+   ]
+  },
+  {
+   "input": "png8_rgb.npy",
+   "max_side": 0,
+   "expected": "png8_rgb_0.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    23,
+    37
+   ]
+  },
+  {
+   "input": "png8_rgb.npy",
+   "max_side": 37,
+   "expected": "png8_rgb_37.npy",
+   "in_shape": [
+    3,
+    23,
+    37
+   ],
+   "out_shape": [
+    3,
+    23,
+    37
+   ]
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 # infer: InferenceBackend and its runtimes. Runtime headers (torch, onnxruntime)
 # appear only in src/*_backend.cpp; the public headers stay runtime-free.
-set(_sources src/tiler.cpp)
+set(_sources src/tiler.cpp src/self_test.cpp)
 if(RUDRA_WITH_LIBTORCH)
   list(APPEND _sources src/libtorch_backend.cpp)
 endif()
@@ -8,7 +8,7 @@ if(RUDRA_WITH_ONNXRUNTIME)
   list(APPEND _sources src/onnxruntime_backend.cpp)
 endif()
 rudra_library(rudra_infer SOURCES ${_sources})
-target_link_libraries(rudra_infer PUBLIC rudra::rudra_core)
+target_link_libraries(rudra_infer PUBLIC rudra::rudra_core PRIVATE nlohmann_json::nlohmann_json)
 
 if(RUDRA_WITH_LIBTORCH)
   target_compile_definitions(rudra_infer PRIVATE RUDRA_HAVE_LIBTORCH)

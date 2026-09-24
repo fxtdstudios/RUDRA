@@ -1,5 +1,12 @@
 #include "rudra/media/sequence.hpp"
 
+#include <cstdio>
+#include <map>
+#include <mutex>
+
+#include "rudra/platform/hash.hpp"
+#include "rudra/platform/process.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -104,6 +111,23 @@ bool natural_less(const std::string& a, const std::string& b) {
     return pa.size() < pb.size();
 }
 
+namespace {
+std::mutex g_videos_mu;
+std::map<fs::path, FrameSequence> g_videos;   // cache folder -> the video it holds frames of
+
+void register_video(const FrameSequence& seq) {
+    std::lock_guard lk(g_videos_mu);
+    g_videos[seq.cache] = seq;
+}
+
+std::optional<FrameSequence> video_of(const fs::path& frame) {
+    std::lock_guard lk(g_videos_mu);
+    const auto it = g_videos.find(frame.parent_path());
+    if (it == g_videos.end()) return std::nullopt;
+    return it->second;
+}
+}  // namespace
+
 Result<FrameSequence> open_sequence(const std::string& raw) {
     std::string s = strip(raw, " \t\r\n\v\f");
     if (s.empty()) return make_error(ErrorCode::InvalidArgument, "No path given.");
@@ -145,9 +169,99 @@ Result<FrameSequence> open_sequence(const std::string& raw) {
                                                       " is not a folder or a video RUDRA can read. Point at a folder of "
                                                       "frames, or a " + list + " file.");
     }
-    return make_error(ErrorCode::Unsupported,
-                      "Video opens natively once libav is in (Phase 4); point at a folder of frames for now.",
-                      path.string());
+    if (!find_executable("ffmpeg") || !find_executable("ffprobe"))
+        return make_error(ErrorCode::Unsupported,
+                          "ffmpeg is not on PATH, so video cannot be read. Install it (winget install Gyan.FFmpeg) and "
+                          "restart the server, or point at a folder of frames instead.");
+    seq.kind = "video";
+    auto first_line = [&](std::vector<std::string> extra) -> std::string {
+        std::vector<std::string> argv = {"ffprobe", "-v", "error", "-select_streams", "v:0"};
+        argv.insert(argv.end(), extra.begin(), extra.end());
+        argv.insert(argv.end(), {"-of", "default=nokey=1:noprint_wrappers=1", path.string()});
+        auto r = run_process(argv);
+        if (!r) return {};
+        const std::string out = strip(r->out, " \t\r\n");
+        return out.substr(0, out.find_first_of("\r\n"));
+    };
+    // _probe: the rate as a float (24 when it cannot be read), the count by packets.
+    double fps = 24.0;
+    const std::string rate = first_line({"-show_entries", "stream=avg_frame_rate"});
+    if (const auto slash = rate.find('/'); slash != std::string::npos) {
+        char* e1 = nullptr;
+        char* e2 = nullptr;
+        const std::string a = rate.substr(0, slash), b = rate.substr(slash + 1);
+        const double num = std::strtod(a.c_str(), &e1), den = std::strtod(b.c_str(), &e2);
+        if (e1 && *e1 == '\0' && e2 && *e2 == '\0' && !a.empty() && !b.empty()) fps = den != 0 ? num / den : 24.0;
+    }
+    int count = 0;
+    {
+        const std::string counted = first_line({"-count_packets", "-show_entries", "stream=nb_read_packets"});
+        char* e = nullptr;
+        const long n = std::strtol(counted.c_str(), &e, 10);
+        if (!counted.empty() && e && *e == '\0') count = int(n);
+    }
+    if (!count) return make_error(ErrorCode::NotFound, "ffprobe found no video frames in " + path.filename().string());
+    seq.fps = fps;
+    const std::string resolved = fs::weakly_canonical(fs::absolute(path, ec), ec).string();
+    const std::string token = sha1_hex(std::as_bytes(std::span(resolved.data(), resolved.size()))).substr(0, 12);
+    seq.cache = fs::temp_directory_path() / "rudra_seq" / token;
+    fs::create_directories(seq.cache, ec);
+    for (int i = 0; i < count; ++i) {
+        char name[32];
+        std::snprintf(name, sizeof name, "%06d.png", i);
+        seq.frames.push_back(seq.cache / name);
+    }
+    register_video(seq);
+    return seq;
+}
+
+std::string FrameSequence::name_of(int index) const {
+    if (kind == "frames") return frames.at(std::size_t(index)).filename().string();
+    char n[16];
+    std::snprintf(n, sizeof n, "_%06d", index + 1);
+    return path.stem().string() + n;
+}
+
+Result<fs::path> sequence_frame_file(const FrameSequence& seq, int index) {
+    if (index < 0 || index >= seq.count())
+        return make_error(ErrorCode::InvalidArgument,
+                          "frame " + std::to_string(index) + " is outside 0.." + std::to_string(seq.count() - 1));
+    const fs::path cached = seq.frames[std::size_t(index)];
+    if (seq.kind == "frames") return cached;
+    std::error_code ec;
+    if (fs::is_regular_file(cached, ec)) return cached;
+    // _extract: one frame, by seeking rather than decoding everything before it.
+    const double when = index / std::max(seq.fps.value_or(24.0), 1e-6);
+    char ss[64];
+    std::snprintf(ss, sizeof ss, "%.6f", when);
+    fs::path partial = cached;
+    partial.replace_extension(".tmp.png");
+    auto r = run_process({"ffmpeg", "-v", "error", "-y", "-accurate_seek", "-ss", ss, "-i", seq.path.string(),
+                          "-frames:v", "1", partial.string()});
+    if (!r || r->exit_code != 0 || !fs::is_regular_file(partial, ec)) {
+        fs::remove(partial, ec);
+        std::string last = "unknown error";
+        if (r) {
+            const std::string e = strip(r->err, " \t\r\n");
+            if (!e.empty()) last = strip(e.substr(e.find_last_of('\n') == std::string::npos ? 0 : e.find_last_of('\n') + 1), "\r");
+        }
+        return make_error(ErrorCode::IoError, "ffmpeg could not read frame " + std::to_string(index) + ": " + last);
+    }
+    // Renamed last, so a cache entry never exists half-written.
+    fs::rename(partial, cached, ec);
+    if (ec) return make_error(ErrorCode::IoError, "ffmpeg could not read frame " + std::to_string(index) + ": " + ec.message());
+    return cached;
+}
+
+Result<fs::path> ensure_frame_file(const fs::path& frame) {
+    std::error_code ec;
+    if (fs::is_regular_file(frame, ec)) return frame;
+    if (auto v = video_of(frame)) {
+        int index = 0;
+        std::sscanf(frame.stem().string().c_str(), "%d", &index);
+        return sequence_frame_file(*v, index);
+    }
+    return frame;   // the decoder reports what is wrong with it
 }
 
 }  // namespace rudra

@@ -49,7 +49,7 @@ def test_the_weights_licence_actually_restricts_commercial_use():
 
 def test_the_notice_carries_the_required_attribution():
     notice = REPO / "NOTICE"
-    assert notice.is_file(), "NOTICE is gone; Apache 2.0 section 4(d) wants it"
+    assert notice.is_file(), "NOTICE is gone; it carries the licence's Required Notice"
     body = notice.read_text(encoding="utf-8")
     assert "Netflix" in body, "the Chimera CC BY 4.0 attribution is required"
     assert "checkpoints/LICENSE" in body, "NOTICE must point at the weights licence"
@@ -58,9 +58,9 @@ def test_the_notice_carries_the_required_attribution():
 def test_the_model_card_does_not_claim_apache():
     meta = frontmatter(CARD)
     assert meta["license"] != "apache-2.0", (
-        "the HuggingFace card claims Apache 2.0 for the weights again. It is "
-        "the code that is Apache 2.0; the weights carry an HdM restriction "
-        "FXTD Studios cannot waive. See checkpoints/LICENSE.")
+        "the HuggingFace card claims Apache 2.0 for the weights again. They "
+        "carry an HdM restriction FXTD Studios cannot waive, and since 24 Sep "
+        "2026 the code is non-commercial too. See checkpoints/LICENSE.")
     assert meta["license"] == "other"
     assert "noncommercial" in meta.get("license_name", ""), (
         f"license_name is {meta.get('license_name')!r}; it should say "
@@ -74,3 +74,17 @@ def test_the_readme_separates_the_two():
         "the README's licence section no longer points at the weights licence")
     assert "non-commercial" in body.lower(), (
         "the README no longer says the weights are non-commercial")
+
+
+def test_the_code_is_non_commercial():
+    """24 Sep 2026: the code moved from Apache 2.0 to PolyForm Noncommercial 1.0.0."""
+    body = (REPO / "LICENSE").read_text(encoding="utf-8")
+    assert body.startswith("# PolyForm Noncommercial License 1.0.0"), "LICENSE is no longer PolyForm Noncommercial 1.0.0"
+    assert "https://polyformproject.org/licenses/noncommercial/1.0.0" in body
+    notice = (REPO / "NOTICE").read_text(encoding="utf-8")
+    assert "Required Notice: Copyright 2026 FXTD Studios" in notice, "the licence's Required Notice line is gone"
+    for path in ("README.md", "docs/HUB_MODEL_CARD.md", "checkpoints/LICENSE"):
+        text = (REPO / path).read_text(encoding="utf-8")
+        assert "PolyForm Noncommercial" in text, f"{path} does not name the code's licence"
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "Code is Apache 2.0" not in readme

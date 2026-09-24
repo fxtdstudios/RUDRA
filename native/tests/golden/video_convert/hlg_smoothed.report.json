@@ -1,0 +1,220 @@
+{
+  "source": "/home/claude/rudra/native/tests/golden/video/clips/bars_709.mp4",
+  "output": "/home/claude/rudra/native/tests/golden/video_convert/hlg_smoothed.mp4",
+  "input_contract": {
+    "transfer": "rec709",
+    "primaries": "rec709",
+    "matrix": "bt709",
+    "range": "limited"
+  },
+  "timing": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+  },
+  "delivery_format": "hlg",
+  "alpha_mode": null,
+  "encoder_input_precision_bits": 10,
+  "alpha_preserved": false,
+  "checkpoint": "/home/claude/rudra/checkpoints/sdr2hdr_shadow_v1.pt",
+  "checkpoint_sha256": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9",
+  "mastering_peak_nits": 1200.0,
+  "mastering_min_nits": null,
+  "audio_mode": "copy",
+  "shadow_smoothing": 0.5,
+  "cut_threshold": 0.15,
+  "preserve_outside": true,
+  "recovery_mode": "all",
+  "tile_size": 32,
+  "tile_overlap": 8,
+  "timestamp_policy": "Video begins at zero; audio retains relative offset, clipped to video interval",
+  "scene_cuts": [
+    0
+  ],
+  "frames": [
+    {
+      "index": 0,
+      "shadow_weight": 0.6826550960540771,
+      "max_cll": 1198.8411865234375,
+      "frame_average": 161.37884521484375
+    },
+    {
+      "index": 1,
+      "shadow_weight": 0.6826550960540771,
+      "max_cll": 1198.8411865234375,
+      "frame_average": 161.37884521484375
+    },
+    {
+      "index": 2,
+      "shadow_weight": 0.6826550960540771,
+      "max_cll": 1198.8411865234375,
+      "frame_average": 161.37884521484375
+    },
+    {
+      "index": 3,
+      "shadow_weight": 0.6826470494270325,
+      "max_cll": 1198.8443603515625,
+      "frame_average": 161.3994903564453
+    },
+    {
+      "index": 4,
+      "shadow_weight": 0.6855447888374329,
+      "max_cll": 1199.51513671875,
+      "frame_average": 161.5129852294922
+    },
+    {
+      "index": 5,
+      "shadow_weight": 0.687311202287674,
+      "max_cll": 1199.565185546875,
+      "frame_average": 161.5335235595703
+    }
+  ],
+  "warnings": [
+    "Scalar shadow smoothing is not validated temporal reconstruction"
+  ],
+  "encode_command": [
+    "/usr/bin/ffmpeg",
+    "-hide_banner",
+    "-v",
+    "error",
+    "-nostdin",
+    "-n",
+    "-copyts",
+    "-framerate",
+    "24000/1001",
+    "-i",
+    "/home/claude/rudra/native/tests/golden/video_convert/rudra-video-agr80u0v/%08d.png",
+    "-itsoffset",
+    "-0.0",
+    "-i",
+    "/home/claude/rudra/native/tests/golden/video/clips/bars_709.mp4",
+    "-map",
+    "0:v:0",
+    "-map",
+    "1:a?",
+    "-c:a",
+    "copy",
+    "-map_metadata",
+    "1",
+    "-map_chapters",
+    "-1",
+    "-vf",
+    "zscale=matrixin=gbr:transferin=arib-std-b67:primariesin=2020:rangein=full:matrix=2020_ncl:transfer=arib-std-b67:primaries=2020:range=limited,format=yuv420p10le",
+    "-c:v",
+    "libx265",
+    "-preset",
+    "medium",
+    "-crf",
+    "12",
+    "-x265-params",
+    "repeat-headers=1:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc",
+    "-tag:v",
+    "hvc1",
+    "-color_primaries",
+    "bt2020",
+    "-color_trc",
+    "arib-std-b67",
+    "-colorspace",
+    "bt2020nc",
+    "-color_range",
+    "tv",
+    "-fps_mode",
+    "passthrough",
+    "-frames:v",
+    "6",
+    "-t",
+    "0.25025",
+    "-avoid_negative_ts",
+    "disabled",
+    "-movflags",
+    "+faststart+write_colr",
+    "/home/claude/rudra/native/tests/golden/video_convert/rudra-master-_usjg1v9/hlg_smoothed.mp4"
+  ],
+  "qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+      "index": 0,
+      "codec_name": "hevc",
+      "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+      "profile": "Main 10",
+      "codec_type": "video",
+      "codec_tag_string": "hvc1",
+      "codec_tag": "0x31637668",
+      "width": 64,
+      "height": 36,
+      "coded_width": 64,
+      "coded_height": 40,
+      "closed_captions": 0,
+      "film_grain": 0,
+      "has_b_frames": 2,
+      "pix_fmt": "yuv420p10le",
+      "level": 30,
+      "color_range": "tv",
+      "color_space": "bt2020nc",
+      "color_transfer": "arib-std-b67",
+      "color_primaries": "bt2020",
+      "chroma_location": "left",
+      "field_order": "progressive",
+      "refs": 1,
+      "id": "0x1",
+      "r_frame_rate": "24000/1001",
+      "avg_frame_rate": "24000/1001",
+      "time_base": "1/24000",
+      "start_pts": 0,
+      "start_time": "0.000000",
+      "duration_ts": 6006,
+      "duration": "0.250250",
+      "bit_rate": "100475",
+      "nb_frames": "6",
+      "extradata_size": 2404,
+      "disposition": {
+        "default": 1,
+        "dub": 0,
+        "original": 0,
+        "comment": 0,
+        "lyrics": 0,
+        "karaoke": 0,
+        "forced": 0,
+        "hearing_impaired": 0,
+        "visual_impaired": 0,
+        "clean_effects": 0,
+        "attached_pic": 0,
+        "timed_thumbnails": 0,
+        "non_diegetic": 0,
+        "captions": 0,
+        "descriptions": 0,
+        "metadata": 0,
+        "dependent": 0,
+        "still_image": 0
+      },
+      "tags": {
+        "language": "und",
+        "handler_name": "VideoHandler",
+        "vendor_id": "[0][0][0][0]",
+        "encoder": "Lavc60.31.102 libx265"
+      }
+    },
+    "hdr_side_data": [
+      {
+        "side_data_type": "H.26[45] User Data Unregistered SEI message"
+      },
+      {
+        "side_data_type": "H.26[45] User Data Unregistered SEI message"
+      }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+  },
+  "hlg_reference": {
+    "display_peak_nits": 1200.0,
+    "black_nits": 0,
+    "system_gamma": 1.2332561233400023
+  },
+  "max_cll": 1200,
+  "max_fall": 162,
+  "elapsed_seconds": 1.0564977889998772
+}

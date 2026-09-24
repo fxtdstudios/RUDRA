@@ -348,6 +348,13 @@ Result<int> run_queue(const fs::path& queue_in, bool retry_failed, const QueueRu
             return true;
         };
         auto r = attempt();
+        if (!r && r.error().code == ErrorCode::Cancelled) {
+            // The Python's KeyboardInterrupt: this clip restarts on the next run, the queue stops.
+            pyjson::set(record, "status", "interrupted");
+            pyjson::set(record, "error", "Interrupted; restart this clip on next run");
+            if (auto s = save(state_path, state); !s) return s.error();
+            return r.error();
+        }
         if (!r) {
             pyjson::set(record, "status", "failed");
             pyjson::set(record, "error", r.error().message);

@@ -1,0 +1,325 @@
+{
+ "oracle": "rudra/video.py probe, input_contract, timing, has_alpha, decoder_filter",
+ "args": {
+  "default": {},
+  "prores4444": {
+   "format": "prores4444"
+  },
+  "prores4444_straight": {
+   "format": "prores4444",
+   "alpha_mode": "straight"
+  },
+  "prores4444_straight_limited": {
+   "format": "prores4444",
+   "alpha_mode": "straight",
+   "input_range": "limited"
+  },
+  "srgb_709": {
+   "input_transfer": "srgb",
+   "input_primaries": "rec709"
+  },
+  "srgb_709_limited": {
+   "input_transfer": "srgb",
+   "input_primaries": "rec709",
+   "input_range": "limited"
+  },
+  "explicit_709": {
+   "input_transfer": "rec709",
+   "input_primaries": "rec709",
+   "input_matrix": "bt709",
+   "input_range": "limited"
+  },
+  "gamma24": {
+   "input_transfer": "gamma24"
+  }
+ },
+ "cases": [
+  {
+   "clip": "h264_709.mp4",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 10.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "h264_709.mp4",
+   "args": "gamma24",
+   "ok": {
+    "contract": {
+     "transfer": "gamma24",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 10.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "bars_709.mp4",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "h264_709_audio.mp4",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 10.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "untagged.mp4",
+   "args": "default",
+   "error": "Missing/unsupported colour transfer; specify --input-transfer"
+  },
+  {
+   "clip": "untagged.mp4",
+   "args": "srgb_709",
+   "error": "Missing/unsupported colour matrix; specify --input-matrix"
+  },
+  {
+   "clip": "untagged.mp4",
+   "args": "explicit_709",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "srgb_full.mp4",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "srgb",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "full"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=full:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "bt2020.mkv",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec2020",
+     "matrix": "bt2020nc",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25025,
+     "tolerance": 0.0015
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=2020_ncl:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "pq.mkv",
+   "args": "default",
+   "error": "Input is already HDR; this command accepts SDR only"
+  },
+  {
+   "clip": "pq.mkv",
+   "args": "explicit_709",
+   "error": "Input is already HDR; this command accepts SDR only"
+  },
+  {
+   "clip": "hlg.mkv",
+   "args": "default",
+   "error": "Input is already HDR; this command accepts SDR only"
+  },
+  {
+   "clip": "prores4444_alpha.mov",
+   "args": "default",
+   "error": "Alpha input requires --format prores4444"
+  },
+  {
+   "clip": "prores4444_alpha.mov",
+   "args": "prores4444",
+   "error": "Declare --alpha-mode straight; premultiplied input must be unpremultiplied first"
+  },
+  {
+   "clip": "prores4444_alpha.mov",
+   "args": "prores4444_straight",
+   "error": "Missing/unsupported colour range; specify --input-range"
+  },
+  {
+   "clip": "prores4444_alpha.mov",
+   "args": "prores4444_straight_limited",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25,
+     "tolerance": 0.0001220703125
+    },
+    "alpha": true,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrap16le,format=rgba64le"
+   }
+  },
+  {
+   "clip": "interlaced.mp4",
+   "args": "default",
+   "error": "Interlaced input must be deinterlaced explicitly"
+  },
+  {
+   "clip": "rotated.mp4",
+   "args": "default",
+   "error": "Bake the input display rotation before conversion"
+  },
+  {
+   "clip": "anamorphic.mp4",
+   "args": "default",
+   "error": "Anamorphic input must be converted to square pixels explicitly"
+  },
+  {
+   "clip": "odd_width.mkv",
+   "args": "default",
+   "error": "HDR10 4:2:0 requires even dimensions; crop or pad explicitly"
+  },
+  {
+   "clip": "vfr.mkv",
+   "args": "default",
+   "error": "Variable frame rate or discontinuous timestamps: normalize explicitly before conversion"
+  },
+  {
+   "clip": "rgb_png.mov",
+   "args": "default",
+   "error": "Missing/unsupported colour transfer; specify --input-transfer"
+  },
+  {
+   "clip": "rgb_png.mov",
+   "args": "srgb_709",
+   "ok": {
+    "contract": {
+     "transfer": "srgb",
+     "primaries": "rec709",
+     "matrix": "gbr",
+     "range": "full"
+    },
+    "clock": {
+     "fps": "24",
+     "frames": 6,
+     "start": 0.0,
+     "duration": 0.25,
+     "tolerance": 0.0001220703125
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=gbr:rangein=full:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
+   "clip": "rgb_png.mov",
+   "args": "srgb_709_limited",
+   "error": "RGB input requires full range and GBR matrix"
+  },
+  {
+   "clip": "two_video.mkv",
+   "args": "default",
+   "error": "Select a source containing exactly one video stream"
+  }
+ ]
+}

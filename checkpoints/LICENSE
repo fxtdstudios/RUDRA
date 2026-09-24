@@ -3,8 +3,9 @@ RUDRA TRAINED WEIGHTS -- NON-COMMERCIAL LICENCE
 
 Copyright 2026 FXTD Studios. All rights reserved.
 
-The CODE in this repository is Apache License 2.0 (see ../LICENSE).
-The WEIGHTS in this directory are NOT. They are licensed as below.
+The CODE in this repository is licensed under the PolyForm Noncommercial
+License 1.0.0 (see ../LICENSE). The WEIGHTS in this directory are licensed
+separately, as below.
 
 
 1. GRANT
@@ -59,8 +60,8 @@ alone could grant.
 
 `pipeline/render_hdri_moves.py` builds training pairs from the CC0 Poly Haven
 panoramas alone. Weights retrained on CC0 material plus FXTD's own footage
-carry no upstream condition, and are intended to be released under Apache 2.0
-as an unrestricted replacement for these. See STATUS.md.
+carry no upstream condition, so FXTD Studios could license them commercially
+without anyone else's agreement. See STATUS.md.
 
 
 4. ATTRIBUTION
@@ -87,8 +88,8 @@ does not depend on anyone's permission.
 --------------------------
 Every .pt file in this directory, and the corresponding weight files
 published at https://huggingface.co/fxtdstudios/RUDRA. The .json files, the
-checksums and README.md in this directory are Apache 2.0 with the rest of
-the repository.
+checksums and README.md in this directory are under the repository's
+licence (PolyForm Noncommercial 1.0.0).
 
 
 7. NO WARRANTY

@@ -567,6 +567,7 @@ private:
 #if QT_CONFIG(vulkan)
                 vk_ = std::make_unique<QVulkanInstance>();
                 vk_->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
+                vk_->setApiVersion(vk_->supportedApiVersion());
                 if (vk_->create()) {
                     QRhiVulkanInitParams p;
                     p.inst = vk_.get();

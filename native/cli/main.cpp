@@ -6,6 +6,9 @@
 //   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080] [--iters 5]
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
+//   rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]
+//   rudra-native deliver <frames> --output <stem> [rudra deliver options]
+//   rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]
 //   rudra-native bench-scopes [--iters 7]
 //
 // `diff` is the native half of Gate A (NATIVE_ARCHITECTURE.md 12): it runs the
@@ -41,12 +44,17 @@
 #include "rudra/core/scopes.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
+#include "rudra/infer/self_test.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/platform/npy.hpp"
 
 #ifdef RUDRA_HAVE_STILL_DECODE
+#include "batch.hpp"
 #include "master.hpp"
+#include "video.hpp"
 #endif
+#include "deliver.hpp"
+#include "ffmpeg_check.hpp"
 
 using namespace rudra;
 namespace fs = std::filesystem;
@@ -56,41 +64,6 @@ namespace {
 int fail(const Error& e) {
     std::fprintf(stderr, "error [%s]: %s\n  %s\n", to_string(e.code), e.message.c_str(), e.detail.c_str());
     return 2;
-}
-
-Result<SdrImage> load_sdr(const fs::path& file) {
-    auto a = read_npy(file);
-    if (!a) return a.error();
-    if (a->shape.size() != 3 || a->shape[2] != 3)
-        return make_error(ErrorCode::ParseError, "A golden input is not an H x W x 3 image.", file.string());
-    const int h = static_cast<int>(a->shape[0]), w = static_cast<int>(a->shape[1]);
-    PlanarBuffer b(3, h, w);
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-            for (int c = 0; c < 3; ++c)
-                b.at(c, y, x) = a->data[(static_cast<std::size_t>(y) * w + x) * 3 + c];
-    return SdrImage(std::move(b));
-}
-
-struct Stat {
-    double max_abs = 0.0;
-    double excess = -1e300;   // max(|d| - (atol + rtol |ref|)); <= 0 passes
-    void add(double ref, double got, const Tolerance& t) {
-        const double d = std::abs(ref - got);
-        max_abs = std::max(max_abs, d);
-        excess = std::max(excess, d - (t.atol + t.rtol * std::abs(ref)));
-    }
-};
-
-Result<void> compare(const fs::path& file, std::span<const float> got, const Tolerance& tol, Stat& s) {
-    auto a = read_npy(file);
-    if (!a) return a.error();
-    if (static_cast<std::size_t>(a->size()) != got.size())
-        return make_error(ErrorCode::ParityError, "An output has the wrong size.",
-                          file.string() + ": expected " + std::to_string(a->size()) + " values, got " +
-                              std::to_string(got.size()));
-    for (std::size_t i = 0; i < got.size(); ++i) s.add(a->data[i], got[i], tol);
-    return {};
 }
 
 Result<Device> parse_device(const std::string& s) {
@@ -125,15 +98,6 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     if (!m) return fail(m.error());
     if (auto v = verify_package_files(*m); !v) return fail(v.error());
 
-    std::ifstream in(m->root / m->golden);
-    nlohmann::json g;
-    try {
-        in >> g;
-    } catch (const std::exception& e) {
-        return fail(make_error(ErrorCode::ParseError, "The golden index could not be read.", e.what()));
-    }
-    const fs::path gdir = (m->root / m->golden).parent_path();
-
     std::vector<Runtime> runtimes;
     for (auto r : compiled_runtimes())
         if (which == "all" || which == to_string(r)) runtimes.push_back(r);
@@ -144,60 +108,15 @@ int cmd_diff(const fs::path& pkg, const std::string& which, Device device) {
     for (auto rt : runtimes) {
         auto backend = rt == Runtime::LibTorch ? make_libtorch_backend(*m, device) : make_onnxruntime_backend(*m, device);
         if (!backend) return fail(backend.error());
-        const auto info = (*backend)->info();
-        // CPU LibTorch runs eager's own kernels: held to bit-exact-grade 1e-5.
-        // LibTorch on a GPU is true fp32 with the vendor's summation order;
-        // ONNX Runtime is a different graph compiler on any device.
-        const char* tol_key = rt == Runtime::OnnxRuntime ? "onnx" : device == Device::Cpu ? "torchscript" : "gpu_fp32";
-        const Tolerance tol = m->tolerance.at(tol_key);
-        std::map<std::string, Stat> stats;
-        int frames = 0;
-
-        for (const auto& f : g.at("frames")) {
-            auto sdr = load_sdr(gdir / f.at("sdr").at("file").get<std::string>());
-            if (!sdr) return fail(sdr.error());
-            auto r = infer_frame(**backend, *sdr, TileConfig{0, 0});
-            if (!r) return fail(r.error());
-            const float scale = r->scalars.residual_scale, weight = r->scalars.shadow_weight;
-            const std::vector<std::pair<std::string, std::span<const float>>> outs{
-                {"residual_scale", std::span<const float>(&scale, 1)},
-                {"shadow_weight", std::span<const float>(&weight, 1)},
-                {"curve_params", r->scalars.curve_params},
-                {"residual", r->fields.residual.span()},
-                {"highlight", r->fields.highlight.span()},
-                {"shadow", r->fields.shadow.span()}};
-            for (const auto& [key, span] : outs)
-                if (auto c = compare(gdir / f.at(key).at("file").get<std::string>(), span, tol, stats[key]); !c)
-                    return fail(c.error());
-            ++frames;
-        }
-
-        if (g.contains("stitch") && !g.at("stitch").is_null()) {
-            const auto& s = g.at("stitch");
-            auto sdr = load_sdr(gdir / s.at("sdr").at("file").get<std::string>());
-            if (!sdr) return fail(sdr.error());
-            auto r = infer_frame(**backend, *sdr, TileConfig{s.at("tile_size").get<int>(), s.at("overlap").get<int>()});
-            if (!r) return fail(r.error());
-            for (const auto& [key, buf] : std::vector<std::pair<std::string, const PlanarBuffer*>>{
-                     {"stitched residual", &r->fields.residual},
-                     {"stitched highlight", &r->fields.highlight},
-                     {"stitched shadow", &r->fields.shadow}}) {
-                const std::string field = key.substr(key.find(' ') + 1);
-                if (auto c = compare(gdir / s.at(field).at("file").get<std::string>(), buf->span(), tol, stats[key]); !c)
-                    return fail(c.error());
-            }
-        }
-
-        bool pass = true;
-        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n", to_string(info.runtime),
-                    info.version.c_str(), to_string(info.device), info.detail.c_str(), frames, tol.atol, tol.rtol, tol_key);
-        for (const auto& [key, st] : stats) {
-            const bool ok = st.excess <= 0.0;
-            pass = pass && ok;
-            std::printf("  %-20s max |d| %.3e  %s\n", key.c_str(), st.max_abs, ok ? "pass" : "FAIL");
-        }
-        std::printf("  => %s\n\n", pass ? "PASS" : "FAIL");
-        all_pass = all_pass && pass;
+        auto r = self_test(*m, **backend);   // infer/self_test, shared with the app's first load
+        if (!r) return fail(r.error());
+        std::printf("%s %s on %s (%s): %d golden frames + stitch, atol %.0e rtol %.0e (%s)\n",
+                    to_string(r->backend.runtime), r->backend.version.c_str(), to_string(r->backend.device),
+                    r->backend.detail.c_str(), r->frames, r->tolerance.atol, r->tolerance.rtol, r->tolerance_key.c_str());
+        for (const auto& [key, st] : r->outputs)
+            std::printf("  %-20s max |d| %.3e  %s\n", key.c_str(), st.max_abs, st.pass() ? "pass" : "FAIL");
+        std::printf("  => %s\n\n", r->pass() ? "PASS" : "FAIL");
+        all_pass = all_pass && r->pass();
     }
     return all_pass ? 0 : 1;
 }
@@ -297,6 +216,63 @@ std::string read_text(const fs::path& p) {
 // Every golden master from tools/emit_master_golden.py, rendered here and
 // compared: EXR pixels within 1 half-float ulp, every EXR header attribute
 // equal, every sidecar field equal (peak within its 0.1-nit rounding).
+// A UTF-8 path from a JSON string (Windows paths may hold any character).
+fs::path utf8_path(const std::string& s) { return fs::path(std::u8string(s.begin(), s.end())); }
+
+struct MasterDiff {
+    bool ok = false, bytes_equal = false;
+    int worst = 0;
+    std::size_t off = 0, total = 0;
+    std::string header_diff, side_diff;
+};
+
+// A master against a reference: pixels within 1 half ulp, the header's
+// attributes equal, every sidecar key equal (peak_nits within 0.1).
+Result<MasterDiff> diff_master(const fs::path& got_exr, const fs::path& got_side, const fs::path& want_exr,
+                               const fs::path& want_side) {
+    auto got = read_exr(got_exr), want = read_exr(want_exr);
+    if (!got) return got.error();
+    if (!want) return want.error();
+    MasterDiff d;
+    for (std::size_t i = 0; i < want->half_bits.size() && i < got->half_bits.size(); ++i) {
+        const int u = half_ulp(got->half_bits[i], want->half_bits[i]);
+        d.worst = std::max(d.worst, u);
+        d.off += u != 0;
+    }
+    d.total = want->half_bits.size();
+    const bool same_shape = got->half_bits.size() == want->half_bits.size() && !want->half_bits.empty();
+    if (got->attributes.size() != want->attributes.size()) d.header_diff = "attribute count";
+    for (std::size_t i = 0; d.header_diff.empty() && i < want->attributes.size(); ++i)
+        if (got->attributes[i] != want->attributes[i] || got->attribute_types[i] != want->attribute_types[i])
+            d.header_diff = want->attributes[i].first;
+    try {
+        const auto gs = nlohmann::json::parse(read_text(got_side));
+        const auto ws = nlohmann::json::parse(read_text(want_side));
+        for (const auto& [k, v] : ws.items()) {
+            if (!gs.contains(k)) { d.side_diff = k; break; }
+            if (k == "peak_nits") {
+                if (std::abs(gs[k].get<double>() - v.get<double>()) > 0.1 + 1e-9) d.side_diff = k;
+            } else if (gs[k] != v) {
+                d.side_diff = k;
+            }
+            if (!d.side_diff.empty()) break;
+        }
+    } catch (const std::exception& e) {
+        d.side_diff = std::string("unreadable: ") + e.what();
+    }
+    d.bytes_equal = read_text(got_side) == read_text(want_side);
+    d.ok = same_shape && d.worst <= 1 && d.header_diff.empty() && d.side_diff.empty();
+    return d;
+}
+
+void print_diff(const std::string& name, int w, int h, const MasterDiff& d) {
+    std::printf("  %-18s %dx%d  pixels %s (worst %d half ulp, %zu of %zu off)  header %s  sidecar %s%s  => %s\n",
+                name.c_str(), w, h, d.worst <= 1 ? "ok" : "FAIL", d.worst, d.off, d.total,
+                d.header_diff.empty() ? "equal" : ("differs at " + d.header_diff).c_str(),
+                d.side_diff.empty() ? "equal" : ("differs at " + d.side_diff).c_str(),
+                d.bytes_equal ? ", byte-identical" : "", d.ok ? "PASS" : "FAIL");
+}
+
 int cmd_master_check(const fs::path& pkg, const fs::path& dir, const std::string& runtime, Device device) {
     auto m = read_manifest(pkg);
     if (!m) return fail(m.error());
@@ -318,43 +294,50 @@ int cmd_master_check(const fs::path& pkg, const fs::path& dir, const std::string
         const fs::path out = tmp / c.at("exr").get<std::string>();
         auto r = render_master(*m, **b, dir / c.at("image").get<std::string>(), *q, out);
         if (!r) return fail(r.error());
-        auto got = read_exr(out), want = read_exr(dir / c.at("exr").get<std::string>());
-        if (!got || !want) return fail(!got ? got.error() : want.error());
+        auto d = diff_master(out, r->sidecar, dir / c.at("exr").get<std::string>(), dir / c.at("sidecar").get<std::string>());
+        if (!d) return fail(d.error());
+        print_diff(name, r->width, r->height, *d);
+        all = all && d->ok;
+    }
+    std::printf("  => %s\n", all ? "PASS" : "FAIL");
+    return all ? 0 : 1;
+}
 
-        int worst = 0;
-        std::size_t off = 0;
-        for (std::size_t i = 0; i < want->half_bits.size() && i < got->half_bits.size(); ++i) {
-            const int d = half_ulp(got->half_bits[i], want->half_bits[i]);
-            worst = std::max(worst, d);
-            off += d != 0;
-        }
-        const bool same_shape = got->half_bits.size() == want->half_bits.size() && !want->half_bits.empty();
-        std::string header_diff;
-        if (got->attributes.size() != want->attributes.size()) header_diff = "attribute count";
-        for (std::size_t i = 0; header_diff.empty() && i < want->attributes.size(); ++i)
-            if (got->attributes[i] != want->attributes[i] || got->attribute_types[i] != want->attribute_types[i])
-                header_diff = want->attributes[i].first;
-
-        const auto gs = nlohmann::json::parse(read_text(r->sidecar));
-        const auto ws = nlohmann::json::parse(read_text(dir / c.at("sidecar").get<std::string>()));
-        std::string side_diff;
-        for (const auto& [k, v] : ws.items()) {
-            if (!gs.contains(k)) { side_diff = k; break; }
-            if (k == "peak_nits") {
-                if (std::abs(gs[k].get<double>() - v.get<double>()) > 0.1 + 1e-9) side_diff = k;
-            } else if (gs[k] != v) {
-                side_diff = k;
-            }
-            if (!side_diff.empty()) break;
-        }
-        const bool bytes_equal = read_text(r->sidecar) == read_text(dir / c.at("sidecar").get<std::string>());
-        const bool ok = same_shape && worst <= 1 && header_diff.empty() && side_diff.empty();
-        all = all && ok;
-        std::printf("  %-18s %dx%d  pixels %s (worst %d half ulp, %zu of %zu off)  header %s  sidecar %s%s  => %s\n",
-                    name.c_str(), r->width, r->height, worst <= 1 ? "ok" : "FAIL", worst, off, want->half_bits.size(),
-                    header_diff.empty() ? "equal" : ("differs at " + header_diff).c_str(),
-                    side_diff.empty() ? "equal" : ("differs at " + side_diff).c_str(),
-                    bytes_equal ? ", byte-identical" : "", ok ? "PASS" : "FAIL");
+// The app's masters from RUDRA --workflow-check, against this CLI's own
+// master of the same frame with the same parameters (the path master-check
+// holds to the Studio).
+int cmd_master_compare(const fs::path& pkg, const fs::path& report, const std::string& runtime, Device device) {
+    auto m = read_manifest(pkg);
+    if (!m) return fail(m.error());
+    auto b = backend_for(*m, runtime, device);
+    if (!b) return fail(b.error());
+    nlohmann::json rep;
+    try {
+        rep = nlohmann::json::parse(read_text(report));
+    } catch (const std::exception& e) {
+        return fail(make_error(ErrorCode::ParseError, "The workflow report could not be read.", e.what()));
+    }
+    if (!rep.contains("master") || !rep["master"].contains("masters"))
+        return fail(make_error(ErrorCode::NotFound, "The workflow report has no masters.", report.string()));
+    const fs::path tmp = fs::temp_directory_path() / "rudra_master_compare";
+    fs::remove_all(tmp);
+    fs::create_directories(tmp);
+    const auto info = (*b)->info();
+    std::printf("app masters against rudra-native master: %s %s on %s, %zu frames\n", to_string(info.runtime),
+                info.version.c_str(), to_string(info.device), rep["master"]["masters"].size());
+    bool all = !rep["master"]["masters"].empty();
+    int i = 0;
+    for (const auto& c : rep["master"]["masters"]) {
+        auto q = master_request_from_json(c.at("params").get<std::string>());
+        if (!q) return fail(q.error());
+        const fs::path out = tmp / ("cli_" + std::to_string(i++) + ".exr");
+        auto r = render_master(*m, **b, utf8_path(c.at("frame").get<std::string>()), *q, out);
+        if (!r) return fail(r.error());
+        auto d = diff_master(utf8_path(c.at("exr").get<std::string>()), utf8_path(c.at("sidecar").get<std::string>()),
+                             out, r->sidecar);
+        if (!d) return fail(d.error());
+        print_diff(utf8_path(c.at("frame").get<std::string>()).filename().string(), r->width, r->height, *d);
+        all = all && d->ok;
     }
     std::printf("  => %s\n", all ? "PASS" : "FAIL");
     return all ? 0 : 1;
@@ -407,6 +390,13 @@ void usage() {
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH] [--iters N]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
+                 "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
+                 "       rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]\n"
+                 "       rudra-native batch run <queue.json> [--retry-failed] [--package DIR] [--runtime ...] [--device ...]\n"
+                 "       rudra-native batch status <queue.json>\n"
+                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
+                 "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
+                 "       rudra-native ffmpeg-check [--ffmpeg PATH] [--ffprobe PATH] [--force] [--no-self-test]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
 }
 
@@ -419,12 +409,18 @@ int main(int argc, char** argv) {
         std::printf("rudra-native 0.1.0 (model contract %d.x)\n", kSupportedContractMajor);
         return 0;
     }
+    if (args[0] == "ffmpeg-check") return cmd_ffmpeg_check(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "bench-scopes") {
         int iters = 7;
         if (args.size() == 3 && args[1] == "--iters") iters = std::max(1, std::atoi(args[2].c_str()));
         return cmd_bench_scopes(iters);
     }
     if (args.size() < 2) { usage(); return 64; }
+    if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
+#ifdef RUDRA_HAVE_STILL_DECODE
+    if (args[0] == "batch") return cmd_batch(std::vector<std::string>(args.begin() + 1, args.end()));
+    if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
+#endif
     const fs::path pkg = args[1];
     if (args[0] == "info") return cmd_info(pkg);
     if (args[0] == "diff") {
@@ -439,7 +435,7 @@ int main(int argc, char** argv) {
         return cmd_diff(pkg, runtime, *d);
     }
 #ifdef RUDRA_HAVE_STILL_DECODE
-    if (args[0] == "master" || args[0] == "master-check") {
+    if (args[0] == "master" || args[0] == "master-check" || args[0] == "master-compare") {
         if (args.size() < 3) { usage(); return 64; }
         std::string runtime = "auto", device = "cpu", out, params;
         for (std::size_t i = 3; i + 1 < args.size(); i += 2) {
@@ -452,6 +448,7 @@ int main(int argc, char** argv) {
         auto d = parse_device(device);
         if (!d) return fail(d.error());
         if (args[0] == "master-check") return cmd_master_check(pkg, args[2], runtime, *d);
+        if (args[0] == "master-compare") return cmd_master_compare(pkg, args[2], runtime, *d);
         if (out.empty()) { usage(); return 64; }
         return cmd_master(pkg, args[2], out, runtime, *d, params);
     }

@@ -1,0 +1,255 @@
+{
+ "frames": [
+  {
+   "best_effort_timestamp_time": "0.000000",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "H.26[45] User Data Unregistered SEI message"
+    },
+    {
+     "side_data_type": "H.26[45] User Data Unregistered SEI message"
+    },
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  },
+  {
+   "best_effort_timestamp_time": "0.041708",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  },
+  {
+   "best_effort_timestamp_time": "0.083417",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  },
+  {
+   "best_effort_timestamp_time": "0.125125",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  },
+  {
+   "best_effort_timestamp_time": "0.166833",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  },
+  {
+   "best_effort_timestamp_time": "0.208542",
+   "pkt_duration_time": "0.041708",
+   "duration_time": "0.041708",
+   "width": 64,
+   "height": 36,
+   "side_data_list": [
+    {
+     "side_data_type": "Mastering display metadata",
+     "red_x": "35400/50000",
+     "red_y": "14600/50000",
+     "green_x": "8500/50000",
+     "green_y": "39850/50000",
+     "blue_x": "6550/50000",
+     "blue_y": "2300/50000",
+     "white_point_x": "15635/50000",
+     "white_point_y": "16450/50000",
+     "min_luminance": "50/10000",
+     "max_luminance": "10000000/10000"
+    },
+    {
+     "side_data_type": "Content light level metadata",
+     "max_content": 1000,
+     "max_average": 155
+    }
+   ]
+  }
+ ],
+ "streams": [
+  {
+   "index": 0,
+   "codec_name": "hevc",
+   "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+   "profile": "Main 10",
+   "codec_type": "video",
+   "codec_tag_string": "hvc1",
+   "codec_tag": "0x31637668",
+   "width": 64,
+   "height": 36,
+   "coded_width": 64,
+   "coded_height": 40,
+   "closed_captions": 0,
+   "film_grain": 0,
+   "has_b_frames": 2,
+   "pix_fmt": "yuv420p10le",
+   "level": 30,
+   "color_range": "tv",
+   "color_space": "bt2020nc",
+   "color_transfer": "smpte2084",
+   "color_primaries": "bt2020",
+   "chroma_location": "left",
+   "field_order": "progressive",
+   "refs": 1,
+   "id": "0x1",
+   "r_frame_rate": "24000/1001",
+   "avg_frame_rate": "24000/1001",
+   "time_base": "1/24000",
+   "start_pts": 0,
+   "start_time": "0.000000",
+   "duration_ts": 6006,
+   "duration": "0.250250",
+   "bit_rate": "125442",
+   "nb_frames": "6",
+   "nb_read_frames": "6",
+   "extradata_size": 2531,
+   "disposition": {
+    "default": 1,
+    "dub": 0,
+    "original": 0,
+    "comment": 0,
+    "lyrics": 0,
+    "karaoke": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "visual_impaired": 0,
+    "clean_effects": 0,
+    "attached_pic": 0,
+    "timed_thumbnails": 0,
+    "non_diegetic": 0,
+    "captions": 0,
+    "descriptions": 0,
+    "metadata": 0,
+    "dependent": 0,
+    "still_image": 0
+   },
+   "tags": {
+    "language": "und",
+    "handler_name": "VideoHandler",
+    "vendor_id": "[0][0][0][0]",
+    "encoder": "Lavc60.31.102 libx265"
+   }
+  }
+ ],
+ "format": {
+  "filename": "hdr10_audio_copy.mp4",
+  "nb_streams": 2,
+  "nb_programs": 0,
+  "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+  "format_long_name": "QuickTime / MOV",
+  "start_time": "0.000000",
+  "duration": "0.250250",
+  "size": "12044",
+  "bit_rate": "385022",
+  "probe_score": 100,
+  "tags": {
+   "major_brand": "isom",
+   "minor_version": "512",
+   "compatible_brands": "isomiso2mp41",
+   "encoder": "Lavf60.16.100"
+  }
+ }
+}

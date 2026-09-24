@@ -26,6 +26,11 @@ set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime package root (include/, lib/)")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(RudraDeps)
 include(RudraWarnings)
+include(RudraTheme)
+
+if(RUDRA_BUILD_TESTS)
+  enable_testing()   # before app/, which adds its own Qt tests
+endif()
 
 add_subdirectory(platform)
 add_subdirectory(core)
@@ -33,6 +38,7 @@ add_subdirectory(infer)
 add_subdirectory(media)
 add_subdirectory(render)
 add_subdirectory(deliver)
+add_subdirectory(video)
 add_subdirectory(engine)
 
 if(RUDRA_BUILD_CLI)
@@ -42,7 +48,6 @@ if(RUDRA_BUILD_APP)
   add_subdirectory(app)
 endif()
 if(RUDRA_BUILD_TESTS)
-  enable_testing()
   add_subdirectory(tests)
 endif()
 

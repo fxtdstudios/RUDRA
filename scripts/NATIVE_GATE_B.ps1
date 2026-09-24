@@ -76,17 +76,18 @@ if (-not $SkipBuild) {
     $cmake = $tc.CMake
     Reset-StaleCMakeCache $Build $tc.Generator
     & $cmake -S native -B $Build -G $tc.Generator -A x64 `
-        -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=OFF `
+        -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_APP=ON `
         -DRUDRA_BUILD_HDR_PROBE=ON "-DCMAKE_PREFIX_PATH=$QtRoot"
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
-    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check
+    & $cmake --build $Build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
     if ($LASTEXITCODE -ne 0) { Fail "build" }
 }
 $Exe = Join-Path $Build "render\probe\Release\rudra-hdr-probe.exe"
 if (-not (Test-Path $Exe)) { Fail "probe not built: $Exe" }
 $Parity = Join-Path (Split-Path $Exe) "rudra-gpu-parity.exe"
 $Viewer = Join-Path (Split-Path $Exe) "rudra-viewer-check.exe"
-foreach ($e in @($Exe, $Parity, $Viewer)) {
+$App = Join-Path $Build "app\Release\RUDRA.exe"
+foreach ($e in @($Exe, $Parity, $Viewer, $App)) {
     if (Test-Path $e) { & (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --no-compiler-runtime $e | Out-Null }
 }
 
@@ -179,14 +180,14 @@ if (Test-Path $Viewer) {
             $text = & $Viewer @vargs 2>&1 | ForEach-Object { "$_" }
             $code = $LASTEXITCODE
             $ErrorActionPreference = $prev
-            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>|FAIL$" } | Write-Host
+            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>|FAIL$|^rudra-viewer-check" } | Write-Host
             if (Test-Path $json) {
                 $d = Get-Content $json -Raw | ConvertFrom-Json
                 $worst = if ($d.cases) { ($d.cases | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
                 $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Backend = $d.backend; Swapchain = $d.swapchain;
                                                   Peak = [math]::Round([double]$d.peak_nits); From = $d.peak_from;
-                                                  DPR = $d.device_pixel_ratio; "max code" = $worst;
+                                                  DPR = $d.device_pixel_ratio; "max code" = $worst; Nudges = $d.nudges;
                                                   "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"]; Verdict = $d.verdict }
             } else {
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Verdict = $(if ($code -eq 2) { "n/a" } else { "ERROR" }) }
@@ -197,4 +198,27 @@ if (Test-Path $Viewer) {
 }
 $viewerOk = [bool]($viewerRows | Where-Object { $_.API -eq "d3d12" -and $_.Check -eq "parity" -and $_.Verdict -eq "PASS" }) -and
             [bool]($viewerRows | Where-Object { $_.API -eq "d3d12" -and $_.Check -eq "card" -and $_.Verdict -eq "PASS" })
-if ($gateB -and $parityOk -and $viewerOk) { exit 0 } else { exit 1 }
+
+# ---------------------------------------------------------------------------
+# Phase 3 step 1: the app's look as this machine resolves it. Plex must
+# register under its typographic family with every weight (GDI groups faces
+# by their legacy names), under Fusion, with the sheet from ui/theme.css.
+Say "Theme (Phase 3 step 1)"
+$themeOk = $false
+if (Test-Path $App) {
+    $json = Join-Path $Reports "native_theme_$Stamp.json"
+    $p = Start-Process -FilePath $App -ArgumentList @("--theme-check", $json) -Wait -PassThru
+    if (Test-Path $json) {
+        $d = Get-Content $json -Raw | ConvertFrom-Json
+        $w = @(); foreach ($f in $d.weights.PSObject.Properties) { $w += "$($f.Name): $($f.Value -join ' ')" }
+        Write-Host ("style {0}; {1} fonts; {2}" -f $d.style, @($d.fonts_loaded).Count, ($w -join "; "))
+        foreach ($x in $d.problems) { Write-Host "  problem: $x" -ForegroundColor Yellow }
+        $themeOk = [bool]$d.ok
+        Write-Host ("  => " + $(if ($themeOk) { "PASS" } else { "FAIL" }))
+    } else {
+        Write-Host "  => ERROR (exit $($p.ExitCode), no report)"
+    }
+} else {
+    Write-Host "RUDRA.exe not built"
+}
+if ($gateB -and $parityOk -and $viewerOk -and $themeOk) { exit 0 } else { exit 1 }

@@ -28,4 +28,11 @@ struct DecodedStill {
 Result<DecodedStill> decode_sdr(std::span<const std::uint8_t> bytes);
 Result<DecodedStill> decode_sdr_file(const std::filesystem::path& path);
 
+// The Studio's preview size (ui/server.py _fit): a frame larger than
+// `max_side` on its long side is scaled down to it with OpenCV's INTER_AREA in
+// float, so no depth is lost; smaller frames and max_side <= 0 are returned
+// as they are. The Studio previews at 1600 and masters at full size.
+inline constexpr int kPreviewMaxSide = 1600;
+SdrImage fit_max_side(const SdrImage& rgb, int max_side);
+
 }  // namespace rudra

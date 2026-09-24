@@ -31,6 +31,10 @@ private:
 
 std::string to_hex(std::span<const std::uint8_t> bytes);
 std::string sha256_hex(std::span<const std::byte> data);
+
+// SHA-1 (FIPS 180-4), for the names the Python derives with hashlib.sha1
+// (ui/sequence.py's video frame cache). Not for integrity.
+std::string sha1_hex(std::span<const std::byte> data);
 Result<std::string> sha256_file(const std::filesystem::path& path);
 
 }  // namespace rudra

@@ -1,0 +1,78 @@
+{
+ "format": {
+  "bit_rate": "91665",
+  "duration": "0.251000",
+  "filename": "hlg.mkv",
+  "format_long_name": "Matroska / WebM",
+  "format_name": "matroska,webm",
+  "nb_programs": 0,
+  "nb_streams": 1,
+  "probe_score": 100,
+  "size": "2876",
+  "tags": {
+   "encoder": "Lavf"
+  }
+ },
+ "streams": [
+  {
+   "avg_frame_rate": "24000/1001",
+   "bits_per_raw_sample": "8",
+   "chroma_location": "left",
+   "closed_captions": 0,
+   "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+   "codec_name": "h264",
+   "codec_tag": "0x0000",
+   "codec_tag_string": "[0][0][0][0]",
+   "codec_type": "video",
+   "coded_height": 36,
+   "coded_width": 64,
+   "color_primaries": "bt2020",
+   "color_range": "tv",
+   "color_space": "bt2020nc",
+   "color_transfer": "arib-std-b67",
+   "display_aspect_ratio": "16:9",
+   "disposition": {
+    "attached_pic": 0,
+    "captions": 0,
+    "clean_effects": 0,
+    "comment": 0,
+    "default": 0,
+    "dependent": 0,
+    "descriptions": 0,
+    "dub": 0,
+    "forced": 0,
+    "hearing_impaired": 0,
+    "karaoke": 0,
+    "lyrics": 0,
+    "metadata": 0,
+    "non_diegetic": 0,
+    "original": 0,
+    "still_image": 0,
+    "timed_thumbnails": 0,
+    "visual_impaired": 0
+   },
+   "duration": "0.251000",
+   "duration_ts": 251,
+   "extradata_size": 40,
+   "field_order": "progressive",
+   "film_grain": 0,
+   "has_b_frames": 0,
+   "height": 36,
+   "index": 0,
+   "is_avc": "true",
+   "level": 10,
+   "nal_length_size": "4",
+   "pix_fmt": "yuv420p",
+   "profile": "Constrained Baseline",
+   "r_frame_rate": "24000/1001",
+   "refs": 1,
+   "sample_aspect_ratio": "1:1",
+   "tags": {
+    "DURATION": "00:00:00.251000000",
+    "ENCODER": "Lavc libx264"
+   },
+   "time_base": "1/1000",
+   "width": 64
+  }
+ ]
+}

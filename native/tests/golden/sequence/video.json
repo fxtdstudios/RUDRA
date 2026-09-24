@@ -1,0 +1,54 @@
+{
+  "oracle": "ui/sequence.py",
+  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "clips": {
+    "real.mp4": "h264_709.mp4",
+    "alpha clip.mov": "prores4444_alpha.mov"
+  },
+  "cases": [
+    {
+      "name": "video_real",
+      "raw": "<root>/real.mp4",
+      "kind": "video",
+      "count": 6,
+      "name_field": "real.mp4",
+      "path": "<root>/real.mp4",
+      "names": [
+        "real_000001",
+        "real_000002",
+        "real_000003",
+        "real_000004",
+        "real_000005",
+        "real_000006"
+      ],
+      "fps": 23.976023976023978,
+      "frame_sha256": {
+        "0": "f1ed690ca69236e1e98c77005c5b973238ae4a4bd245cb2d1660ac94b81efb75",
+        "4": "b1f90290515293e5d502ac48a9ae220397239fd554ec0d6a94a997bf3ce28e3d"
+      },
+      "outside_error": "frame 6 is outside 0..5"
+    },
+    {
+      "name": "video_real_quoted",
+      "raw": "\"<root>/alpha clip.mov\"",
+      "kind": "video",
+      "count": 6,
+      "name_field": "alpha clip.mov",
+      "path": "<root>/alpha clip.mov",
+      "names": [
+        "alpha clip_000001",
+        "alpha clip_000002",
+        "alpha clip_000003",
+        "alpha clip_000004",
+        "alpha clip_000005",
+        "alpha clip_000006"
+      ],
+      "fps": 24.0,
+      "frame_sha256": {
+        "0": "600232545168676b7dafd20aa99ef3148d06c2f9aff80cbbee2937cb4066de9f",
+        "4": "1a68d083512bd26148a93434c4badfc37452d7ac565c499680ef301843356dbf"
+      },
+      "outside_error": "frame 6 is outside 0..5"
+    }
+  ]
+}

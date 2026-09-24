@@ -83,6 +83,7 @@ int main(int argc, char** argv) {
     QVulkanInstance inst;
     if (opt.api == Api::Vulkan) {
         inst.setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
+        inst.setApiVersion(inst.supportedApiVersion());
         if (!inst.create()) {
             QTextStream(stderr) << "rudra-hdr-probe: no Vulkan instance, falling back to OpenGL\n";
             opt.api = Api::OpenGL;

@@ -59,7 +59,7 @@ jobs:
         run: pip install playwright && python -m playwright install --with-deps chromium
       - name: GoogleTest, JSON, OpenCV (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
+        run: sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
       - name: GoogleTest, JSON, OpenCV (macOS)
         if: runner.os == 'macOS'
         run: brew install googletest nlohmann-json ninja opencv
@@ -79,10 +79,12 @@ jobs:
       - name: Every golden, from this Python
         # The viewer golden comes from the browser Studio on SwiftShader, which
         # the Linux runner has; macOS and Windows test against the committed one.
+        # The video clips are kept once made; ffprobe's JSON may vary by version,
+        # so only the Python's verdicts (video/index.json) must not move.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport; fi
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
+          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy sequence video video_predict video_master video_qc video_convert sequence_encode video_queue; fi
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy native/tests/golden/fit native/tests/golden/video/index.json
       - name: Configure
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}
@@ -105,7 +107,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[test]" onnx onnxruntime
-          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev
+          sudo apt-get update && sudo apt-get install -y libgtest-dev nlohmann-json3-dev ninja-build libopencv-dev ffmpeg
       - name: Every golden, from this Python
         # tools/emit_golden.py runs every emitter. Core, decode, queue and
         # sequence are exact and must not move; composite, delivery, master and qc are re-emitted, not diffed (torch on the
@@ -113,7 +115,7 @@ jobs:
         # against what the Python on this runner computes.
         run: |
           python tools/emit_golden.py
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence/index.json
       - name: Export the shipped model package
         run: python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: ONNX Runtime C API
@@ -141,14 +143,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y qt6-base-dev libgl-dev nlohmann-json3-dev ninja-build
-      - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=OFF
-      - run: cmake --build build --parallel
+      - run: cmake -S native -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=OFF
+      - run: cmake --build build --parallel --target RUDRA rudra_app_tests
+      - name: The window against the Studio page (menus, keys, actions), offscreen
+        run: ctest --test-dir build -R '^app\.' --output-on-failure
       - name: Starts headless
         run: |
           set +e
           QT_QPA_PLATFORM=offscreen timeout 5 build/app/RUDRA
           code=$?
           test "$code" = "124" || { echo "RUDRA exited with $code before the timeout"; exit 1; }
+      - name: The look resolves (Plex weights, Fusion, the sheet from ui/theme.css)
+        run: |
+          QT_QPA_PLATFORM=offscreen build/app/RUDRA --theme-check theme-check.json || { cat theme-check.json; exit 1; }
+          cat theme-check.json
 
   probe:
     name: Gate B probe, ${{ matrix.os }}
@@ -169,9 +177,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libxcb-cursor0 libgl-dev nlohmann-json3-dev mesa-vulkan-drivers libvulkan1
       - name: Configure
         shell: bash
-        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON
+        # The app too: the viewer build without still decode is the one the
+        # Windows gate script makes, and it must compile on every OS.
+        run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=OFF -DRUDRA_BUILD_CLI=OFF -DRUDRA_BUILD_HDR_PROBE=ON -DRUDRA_BUILD_APP=ON
       - name: Build
-        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check
+        run: cmake --build build --config Release --parallel --target rudra-hdr-probe rudra-gpu-parity rudra-viewer-check RUDRA
       - name: SDR fallback is reported, not hidden (Linux, llvmpipe)
         if: runner.os == 'Linux'
         run: |

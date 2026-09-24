@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 
@@ -62,3 +63,28 @@ TEST(Decode, RejectsGarbageAndEmpty) {
     EXPECT_EQ(r.error().code, ErrorCode::Unsupported);
     EXPECT_FALSE(decode_sdr_file(kDir / "does_not_exist.png"));
 }
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+// The preview size (ui/server.py _fit, tests/golden/fit): the same floats.
+TEST(Decode, FitIsTheStudiosPreviewDownscale) {
+    std::ifstream in(std::string(RUDRA_GOLDEN_DIR) + "/fit/index.json");
+    const auto idx = nlohmann::json::parse(in);
+    ASSERT_GE(idx["cases"].size(), 5u);
+    const std::string dir = std::string(RUDRA_GOLDEN_DIR);
+    for (const auto& c : idx["cases"]) {
+        auto a = read_npy(dir + "/decode/" + c["input"].get<std::string>());
+        auto e = read_npy(dir + "/fit/" + c["expected"].get<std::string>());
+        ASSERT_TRUE(a && e);
+        const int h = int(a->shape[1]), w = int(a->shape[2]);
+        PlanarBuffer b(3, h, w);
+        std::copy(a->data.begin(), a->data.end(), b.span().begin());
+        const SdrImage out = fit_max_side(SdrImage(std::move(b)), c["max_side"].get<int>());
+        ASSERT_EQ(out.buffer().height(), int(e->shape[1])) << c["expected"];
+        ASSERT_EQ(out.buffer().width(), int(e->shape[2])) << c["expected"];
+        double worst = 0;
+        const auto got = out.buffer().span();
+        for (std::size_t i = 0; i < got.size(); ++i) worst = std::max(worst, double(std::abs(got[i] - e->data[i])));
+        EXPECT_LE(worst, 1e-6) << c["expected"];   // OpenCV's float INTER_AREA, both sides
+    }
+}
+#endif

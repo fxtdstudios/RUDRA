@@ -1,0 +1,54 @@
+{
+ "oracle": "rudra/video.py convert_video, eager PyTorch 2.14.0+cpu on CPU",
+ "checkpoint": "sdr2hdr_shadow_v1.pt",
+ "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+ "cases": [
+  {
+   "name": "hdr10_audio",
+   "clip": "h264_709_audio.mp4",
+   "output": "hdr10_audio.mp4",
+   "flags": [
+    "--format",
+    "hdr10"
+   ],
+   "report": "hdr10_audio.report.json",
+   "master_sha256": "39e707473859f32938d8a3c91213bc3560d8fa59822fa056b110c1fdf2ce8739"
+  },
+  {
+   "name": "hlg_smoothed",
+   "clip": "bars_709.mp4",
+   "output": "hlg_smoothed.mp4",
+   "flags": [
+    "--format",
+    "hlg",
+    "--shadow-smoothing",
+    "0.5",
+    "--peak-nits",
+    "1200",
+    "--tile-size",
+    "32",
+    "--tile-overlap",
+    "8"
+   ],
+   "report": "hlg_smoothed.report.json",
+   "master_sha256": "0984ba94521601c5cdc1b4ac65a544da5fb147ac1b59ff84aebceefaa23b8342"
+  },
+  {
+   "name": "prores4444_alpha",
+   "clip": "prores4444_alpha.mov",
+   "output": "prores4444_alpha.mov",
+   "flags": [
+    "--format",
+    "prores4444",
+    "--alpha-mode",
+    "straight",
+    "--input-range",
+    "limited",
+    "--audio",
+    "none"
+   ],
+   "report": "prores4444_alpha.report.json",
+   "master_sha256": "5147dfaae84794e6a0bc379c167596a4fd70860246dcddfe77eb933597fa3043"
+  }
+ ]
+}

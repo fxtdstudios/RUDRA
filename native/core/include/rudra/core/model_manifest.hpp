@@ -24,6 +24,7 @@ struct ModelManifest {
     std::string contract;                // "1.0"
     std::string name;
     std::string source_file, source_sha256;
+    std::string exported;                // ISO 8601 UTC, when the package was written ("" if absent)
     float corpus_ev = -1.0f;
     float log_scale = 16.0f;
     float max_hdr = 4.0f;

@@ -10,14 +10,30 @@ tests instead of drifting silently.
     python tools/emit_golden.py --except viewer   # all but these
 
 Emitters, in order:
+    actions    tools/emit_actions_golden.py    the Studio's menus, actions, keys, shortcut sheet
+    copy       tools/emit_copy_golden.py       the Studio page's clipboard texts (needs Playwright)
     core       tools/emit_core_golden.py       baseline, curve, tile weights
+    catalog    tools/emit_catalog_golden.py    the Studio server's model discovery (find_checkpoint, /api/checkpoints)
     composite  tools/emit_composite_golden.py  composite, master chain, measure
     decode     tools/emit_decode_golden.py     still decode fixtures
     delivery   tools/emit_delivery_golden.py   grade, HDR10/HLG, sidecars, EXR/ACES/OCIO
+    fit        tools/emit_fit_golden.py        the Studio's preview downscale (max_side 1600)
+    layout     tools/emit_layout_golden.py     the Studio page's layout, words and states (needs Playwright)
     master     tools/emit_master_golden.py     the Studio's master of three stills
     qc         tools/emit_qc_golden.py         QC checks and report text
     queue      tools/emit_queue_golden.py      queue state files and refusals
+    render_plan tools/emit_render_plan_golden.py the Studio server's master targets and refusals
+    readouts   tools/emit_readouts_golden.py   the Studio page's probe, Frame panel and bars (needs Playwright)
+    scopes     tools/emit_scopes_golden.py     the Studio page's scope drawings and rasters (needs Playwright)
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
+    sequence_encode tools/emit_sequence_encode_golden.py a finished sequence to one file, `rudra deliver` (needs ffmpeg)
+    video      tools/emit_video_golden.py      video probe, input contract, clock and decode (needs ffmpeg)
+    video_predict tools/emit_video_predict_golden.py the video predictor and shadow smoother (needs ffmpeg)
+    video_master tools/emit_video_master_golden.py  video mastering, the PNG spool, MaxCLL and MaxFALL, the encoder command (needs ffmpeg)
+    video_qc   tools/emit_video_qc_golden.py   export QC and the alpha check on converted and broken masters (needs ffmpeg)
+    video_convert tools/emit_video_convert_golden.py convert_video end to end on the checkpoint (needs ffmpeg)
+    video_queue tools/emit_video_queue_golden.py  a three-clip video queue, full and stopped (needs ffmpeg)
+    session    tools/emit_session_golden.py    the Studio page's state, params() and undo (needs Playwright)
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
     viewport   tools/emit_viewport_golden.py   the Studio's fit, zoom and pan layout (needs Playwright)
 """
@@ -29,14 +45,30 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 EMITTERS = {
+    "actions": "emit_actions_golden.py",
+    "catalog": "emit_catalog_golden.py",
+    "copy": "emit_copy_golden.py",
     "core": "emit_core_golden.py",
     "composite": "emit_composite_golden.py",
     "decode": "emit_decode_golden.py",
     "delivery": "emit_delivery_golden.py",
+    "fit": "emit_fit_golden.py",
+    "layout": "emit_layout_golden.py",
     "master": "emit_master_golden.py",
     "qc": "emit_qc_golden.py",
     "queue": "emit_queue_golden.py",
+    "readouts": "emit_readouts_golden.py",
+    "render_plan": "emit_render_plan_golden.py",
+    "scopes": "emit_scopes_golden.py",
     "sequence": "emit_sequence_golden.py",
+    "sequence_encode": "emit_sequence_encode_golden.py",
+    "session": "emit_session_golden.py",
+    "video": "emit_video_golden.py",
+    "video_predict": "emit_video_predict_golden.py",
+    "video_master": "emit_video_master_golden.py",
+    "video_qc": "emit_video_qc_golden.py",
+    "video_convert": "emit_video_convert_golden.py",
+    "video_queue": "emit_video_queue_golden.py",
     "viewer": "emit_viewer_golden.py",
     "viewport": "emit_viewport_golden.py",
 }

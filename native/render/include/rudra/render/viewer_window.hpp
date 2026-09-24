@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "rudra/core/composite.hpp"
@@ -38,6 +39,13 @@ struct ViewerStatus {
     int zoom_percent = 100;          // in device pixels: 100 is one frame pixel per screen pixel
     bool has_frame = false;
     bool wiping = false;
+    // Frame accounting, for the check tools: where a stalled run stopped.
+    long long updates = 0;           // UpdateRequest and expose events seen
+    long long frames = 0;            // frames presented
+    long long begin_failures = 0;    // beginFrame results other than success
+    int last_begin = 0;              // the last QRhi::FrameOpResult
+    bool grab_waiting = false;       // a grab asked for and not yet read back
+    bool grab_pending = false;       // its readback is in flight
 };
 
 // One frame on the GPU: the SDR the network saw, its fields, and the
@@ -76,6 +84,19 @@ public:
 
     ViewerStatus status() const;
     void on_status(std::function<void(const ViewerStatus&)> cb);
+
+    // The pointer over the picture, in frame pixels (fractional; nullopt off
+    // the frame or out of the window), with the window position and whether
+    // Alt is held: the probe reads the frame there.
+    struct Hover {
+        std::optional<double> x, y;
+        QPointF window;
+        bool alt = false;
+    };
+    void on_hover(std::function<void(const Hover&)> cb);
+
+    // Files dropped on the picture (the page's window drop); local paths.
+    void on_drop(std::function<void(const QStringList&)> cb);
 
     // Off: mouse, wheel and keys do nothing (the check tools, so a wheel or a
     // click that lands on the window while it runs cannot move the picture).

@@ -427,7 +427,7 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
   unmodified in headless Chromium; its composite matches `composite.cpp`
 - [x] Display pass (image, false colour, difference, wipe) on the CPU, specified in
   [`docs/view.spec.md`](docs/view.spec.md): the browser's canvas to within one code
-- [ ] The display pass in GLSL 440 on every backend (OpenGL passes; Windows and Mac runs open)
+- [ ] The display pass in GLSL 440 on every backend (D3D12, D3D11, Vulkan and OpenGL pass; Metal open)
 - [x] HDR output from the display pass: scRGB, HDR10, EDR, from the source primaries
   (the glass check moves to the viewer window)
 - [x] GPU reductions and the probe equal to the browser's, bit for bit
@@ -442,6 +442,58 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 Then Phase 3 (the Qt UI, 15 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 16): the full
 Studio workflow with no Python installed, every number and file matching the Studio's.
+- [x] The look: the Pro-direction boards (unified toolbar, sidebar library, compare bar, inspector cards,
+  filmstrip with a clipping lane, welcome and export sheet), the sheet generated from `app/theme/pro.css`,
+  every grey neutral (a test), Geist embedded (OFL)
+- [x] Previews at the Studio's 1600 on the long side, masters at full size
+- [x] Actions: the page's 33 actions with its menus, labels, keys and check states, checked
+  against the page and in the app's real menubar (offscreen Qt tests)
+- [x] Session model with undo, the page's `params()` byte for byte (251 states of the page itself,
+  driven headless by real DOM events)
+- [x] Main window: the page's layout, words and states as widgets, the frame within 1 px of the
+  page's at 1600 x 1000 (and a Studio fix: the pipeline bar was a 26 px square, now the full-width foot)
+- [x] Scope widgets: the page's waveform and histogram SVG element for element, painted as a browser
+  paints it, and the vectorscope in its ring (rasters held to the page's own screenshots)
+- [x] Reconstruct and Grade panels with the Region EV editor: every one of the page's 251 recorded
+  gestures made on the widgets reaches its `params()`, undo and panel words
+- [x] Probe and frame measurements: the page's read-outs word for word, measured on the app's own
+  thread from the chain Phase 2 held to the browser, the probe at the pixel under the pointer
+- [x] Deliver tab: a master EXR of the frame or the sequence as a background job with progress and a
+  stop, the Studio server's render plan and refusals exactly, nothing ever replaced
+- [x] Checkpoint manager and first run: packages found as the Studio server finds checkpoints, switched mid-session
+  with the session kept, each checked against its goldens on first use; the first run shows the HDR card on the display
+  and says what that display can show
+- [x] The rest of the page: the copies (the page's clipboard bytes), the sheets, drop to open, Open recent, and the
+  window, rails, tab, container and Render fields kept between runs
+- [x] The whole workflow scripted (`RUDRA --workflow-check`, its masters held to the CLI's): passes on Linux on 240 frames
+- [ ] The same on Windows with no Python on the PATH, and by hand on the HDR display (`scripts/NATIVE_PHASE3_EXIT.ps1`)
+
+Then Phase 4 (video delivery, 12 days; plan in
+[`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 17): a movie in, an HDR10, HLG
+or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe run as programs as the Python runs them.
+- [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 25 clip and argument cases
+  (HDR, alpha, interlace, rotation, anamorphic, odd sizes, variable timing, RGB, colour tags and overrides)
+- [x] Decode on a pipe, bit for bit: the Python's decoder command, and every frame equal to the one `read_frame` returned
+- [x] The video predictor with the shadow smoother: the same cuts and weights as eager PyTorch and every HDR pixel
+  within 2.7e-6 of it, whole frames and tiles, on LibTorch and ONNX Runtime
+- [x] Mastering and the PNG spool: MaxCLL, frame averages, ceilings and HLG codes identical to the Python's, PQ codes
+  within one of 65535 (numpy's SIMD power is not correctly rounded)
+- [x] Encode and publish, argument for argument: the Python's command on ten runs over the five profiles, the
+  Python's spool encoding with it, nothing ever replaced
+- [x] QC and the alpha check: the Python's verdict and words on 14 checks of good and broken masters, each
+  passing record byte for byte
+- [x] `rudra-native video` end to end: the report key for key, HDR10 and HLG masters byte-identical to the Python's
+  on LibTorch and ONNX Runtime, ProRes 4444 within codec noise
+- [x] Frames to video (`encode_sequence`, `rudra-native deliver`): the Python's command, codes within one of 65535,
+  tags checked where each format keeps them, the report byte for byte
+- [x] Video jobs in the queue, resumable from either side (`rudra-native batch run`): a queue either side stopped
+  mid-clip finishes on the other
+- [x] ffmpeg capability probe and self-test (`rudra-native ffmpeg-check`): what the build lacks, in words, and a
+  16-frame HDR10 export through it, cached per build
+- [x] The app: movies open and scrub as shots, the HDR10, HLG and ProRes tiles export through the queue, a queue
+  window with Stop and Resume; the app's HDR10 master byte-identical to `rudra video`'s
+- [x] The review scripted (`scripts/NATIVE_PHASE4_EXIT.ps1`), passing on Linux
+- [ ] The same on Windows, and by hand on the HDR display
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) · build:
@@ -471,9 +523,17 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 
 ## Licence
 
-Code is Apache 2.0. **The weights are non-commercial.** The training corpus is
-why, and that is not a term FXTD Studios can waive for you. See
-[`checkpoints/LICENSE`](checkpoints/LICENSE) and [`NOTICE`](NOTICE).
+**RUDRA is non-commercial.** The code is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE): research, teaching,
+evaluation, personal projects and noncommercial organizations may use,
+change and share it. **The weights are non-commercial too**, under their own
+terms, because of their training corpus; that is a term FXTD Studios cannot
+waive for you. See [`checkpoints/LICENSE`](checkpoints/LICENSE) and
+[`NOTICE`](NOTICE).
+
+Commercial use of the code or the weights needs a licence from
+[FXTD Studios](https://fxtdstudios.com). Copies of the code obtained before
+24 September 2026 were released under Apache 2.0 and keep that licence.
 
 ---
 
