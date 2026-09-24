@@ -115,10 +115,18 @@ if (-not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) {
     if ($p.ExitCode -ne 0 -or -not (Test-Path (Join-Path $CvBuild "OpenCVConfig.cmake"))) { Fail "OpenCV extract" }
     Remove-Item $exe
 }
+# The pack's top-level OpenCVConfig.cmake picks binaries by MSVC_VERSION and
+# knows nothing newer than VS 2022 (19.4x), so VS 2026 (19.5x) finds "no
+# compatible binaries". The MSVC ABI is stable since 2015: use the newest vcNN
+# folder's own config directly.
+$CvLib = Get-ChildItem (Join-Path $CvBuild "x64") -Directory | Where-Object { $_.Name -match "^vc\d+$" } |
+         Sort-Object { [int]($_.Name.Substring(2)) } -Descending | Select-Object -First 1
+if (-not $CvLib -or -not (Test-Path (Join-Path $CvLib.FullName "lib\OpenCVConfig.cmake"))) { Fail "no vcNN\lib\OpenCVConfig.cmake under $CvBuild\x64" }
+$CvConfigDir = Join-Path $CvLib.FullName "lib"
 $CvDll = Get-ChildItem (Join-Path $CvBuild "x64") -Recurse -Filter "opencv_world*.dll" |
          Where-Object { $_.Name -notmatch "d\.dll$" } | Select-Object -First 1
 if (-not $CvDll) { Fail "opencv_world DLL not found under $CvBuild" }
-Write-Host "OpenCV $OpenCvVersion ($($CvDll.Name))"
+Write-Host "OpenCV $OpenCvVersion ($($CvDll.Name), $($CvLib.Name))"
 
 # ---------------------------------------------------------------------------
 if (-not $SkipBuild) {
@@ -134,7 +142,7 @@ if (-not $SkipBuild) {
     & $cmake -S native -B $Build -G $tc.Generator -A x64 `
         -DRUDRA_BUILD_TESTS=ON -DRUDRA_BUILD_CLI=ON -DRUDRA_BUILD_APP=ON -DRUDRA_BUILD_RENDER=ON `
         -DRUDRA_WITH_ONNXRUNTIME=ON "-DONNXRUNTIME_ROOT=$OrtRoot" -DRUDRA_WITH_LIBTORCH=OFF `
-        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvBuild" "-DCMAKE_PREFIX_PATH=$QtRoot"
+        -DRUDRA_WITH_OPENCV=ON "-DOpenCV_DIR=$CvConfigDir" "-DCMAKE_PREFIX_PATH=$QtRoot"
     if ($LASTEXITCODE -ne 0) { Fail "cmake configure" }
     & $cmake --build $Build --config Release --parallel --target RUDRA rudra-native rudra_app_tests
     if ($LASTEXITCODE -ne 0) { Fail "build" }
