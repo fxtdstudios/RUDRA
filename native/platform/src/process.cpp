@@ -397,4 +397,20 @@ Result<ProcessOutput> run_process(const std::vector<std::string>& argv) {
 
 #endif
 
+Result<std::filesystem::path> require_executable(const std::string& name) {
+    if (auto found = find_executable(name)) return *found;
+    return make_error(ErrorCode::NotFound, name + " is required on PATH");
+}
+
+Result<std::string> run_tool(const std::vector<std::string>& argv) {
+    auto r = run_process(argv);
+    if (!r) return r.error();
+    if (r->exit_code != 0) {
+        const std::string& err = r->err;
+        const std::string tail = err.size() > 4000 ? err.substr(err.size() - 4000) : err;
+        return make_error(ErrorCode::IoError, std::filesystem::path(argv.front()).filename().string() + " failed: " + tail);
+    }
+    return std::move(r->out);
+}
+
 }  // namespace rudra

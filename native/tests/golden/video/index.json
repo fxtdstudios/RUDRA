@@ -104,6 +104,29 @@
    }
   },
   {
+   "clip": "h264_709_audio.mp4",
+   "args": "default",
+   "ok": {
+    "contract": {
+     "transfer": "rec709",
+     "primaries": "rec709",
+     "matrix": "bt709",
+     "range": "limited"
+    },
+    "clock": {
+     "fps": "24000/1001",
+     "frames": 6,
+     "start": 10.0,
+     "duration": 0.25025,
+     "tolerance": 6.25e-05
+    },
+    "alpha": false,
+    "width": 64,
+    "height": 36,
+    "decoder_filter": "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le"
+   }
+  },
+  {
    "clip": "untagged.mp4",
    "args": "default",
    "error": "Missing/unsupported colour transfer; specify --input-transfer"

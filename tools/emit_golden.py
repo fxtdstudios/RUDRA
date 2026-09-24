@@ -28,7 +28,8 @@ Emitters, in order:
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
     video      tools/emit_video_golden.py      video probe, input contract, clock and decode (needs ffmpeg)
     video_predict tools/emit_video_predict_golden.py the video predictor and shadow smoother (needs ffmpeg)
-    video_master tools/emit_video_master_golden.py  video mastering, the PNG spool, MaxCLL and MaxFALL (needs ffmpeg)
+    video_master tools/emit_video_master_golden.py  video mastering, the PNG spool, MaxCLL and MaxFALL, the encoder command (needs ffmpeg)
+    video_qc   tools/emit_video_qc_golden.py   export QC and the alpha check on converted and broken masters (needs ffmpeg)
     session    tools/emit_session_golden.py    the Studio page's state, params() and undo (needs Playwright)
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
     viewport   tools/emit_viewport_golden.py   the Studio's fit, zoom and pan layout (needs Playwright)
@@ -61,6 +62,7 @@ EMITTERS = {
     "video": "emit_video_golden.py",
     "video_predict": "emit_video_predict_golden.py",
     "video_master": "emit_video_master_golden.py",
+    "video_qc": "emit_video_qc_golden.py",
     "viewer": "emit_viewer_golden.py",
     "viewport": "emit_viewport_golden.py",
 }

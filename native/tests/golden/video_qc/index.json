@@ -1,0 +1,1209 @@
+{
+ "oracle": "rudra/video.py quality_check and check_alpha (via convert_video's sidecar)",
+ "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+ "converted": [
+  {
+   "name": "hdr10_audio_copy",
+   "clip": "h264_709_audio.mp4",
+   "output": "hdr10_audio_copy.mp4",
+   "report_qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 1,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "125442",
+     "nb_frames": "6",
+     "extradata_size": 2531,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "Mastering display metadata",
+      "red_x": "35400/50000",
+      "red_y": "14600/50000",
+      "green_x": "8500/50000",
+      "green_y": "39850/50000",
+      "blue_x": "6550/50000",
+      "blue_y": "2300/50000",
+      "white_point_x": "15635/50000",
+      "white_point_y": "16450/50000",
+      "min_luminance": "50/10000",
+      "max_luminance": "10000000/10000"
+     },
+     {
+      "side_data_type": "Content light level metadata",
+      "max_content": 1000,
+      "max_average": 155
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "report_alpha_json": "null",
+   "max_cll": 1000,
+   "max_fall": 155,
+   "peak": 1000,
+   "minimum": 0.005,
+   "timing": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   }
+  },
+  {
+   "name": "hdr10_audio_aac",
+   "clip": "h264_709_audio.mp4",
+   "output": "hdr10_audio_aac.mp4",
+   "report_qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 1,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "125442",
+     "nb_frames": "6",
+     "extradata_size": 2531,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "Mastering display metadata",
+      "red_x": "35400/50000",
+      "red_y": "14600/50000",
+      "green_x": "8500/50000",
+      "green_y": "39850/50000",
+      "blue_x": "6550/50000",
+      "blue_y": "2300/50000",
+      "white_point_x": "15635/50000",
+      "white_point_y": "16450/50000",
+      "min_luminance": "50/10000",
+      "max_luminance": "10000000/10000"
+     },
+     {
+      "side_data_type": "Content light level metadata",
+      "max_content": 1000,
+      "max_average": 155
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "report_alpha_json": "null",
+   "max_cll": 1000,
+   "max_fall": 155,
+   "peak": 1000,
+   "minimum": 0.005,
+   "timing": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   }
+  },
+  {
+   "name": "hlg",
+   "clip": "h264_709.mp4",
+   "output": "hlg.mp4",
+   "report_qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "arib-std-b67",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "131772",
+     "nb_frames": "6",
+     "extradata_size": 2404,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "report_alpha_json": "null",
+   "max_cll": 1000,
+   "max_fall": 154,
+   "peak": 1000,
+   "minimum": 0.005,
+   "timing": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   }
+  },
+  {
+   "name": "prores422",
+   "clip": "bt2020.mkv",
+   "output": "prores422.mov",
+   "report_qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "prores",
+     "codec_long_name": "Apple ProRes (iCodec Pro)",
+     "profile": "Standard",
+     "codec_type": "video",
+     "codec_tag_string": "apcn",
+     "codec_tag": "0x6e637061",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 36,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 0,
+     "pix_fmt": "yuv422p10le",
+     "level": -99,
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "295480",
+     "bits_per_raw_sample": "10",
+     "nb_frames": "6",
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "handler_name": "VideoHandler",
+      "vendor_id": "FFMP",
+      "encoder": "Lavc60.31.102 prores_ks"
+     }
+    },
+    "hdr_side_data": [],
+    "decoded_without_errors": true,
+    "range_contract": "limited; ProRes MOV nclc may omit a separate range flag"
+   },
+   "report_alpha_json": "null",
+   "max_cll": 1000,
+   "max_fall": 155,
+   "peak": 1000,
+   "minimum": 0.005,
+   "timing": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25025,
+    "tolerance": 0.0015
+   }
+  },
+  {
+   "name": "prores4444_alpha",
+   "clip": "prores4444_alpha.mov",
+   "output": "prores4444_alpha.mov",
+   "report_qc": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "prores",
+     "codec_long_name": "Apple ProRes (iCodec Pro)",
+     "profile": "4444",
+     "codec_type": "video",
+     "codec_tag_string": "ap4h",
+     "codec_tag": "0x68347061",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 36,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 0,
+     "pix_fmt": "yuva444p12le",
+     "level": -99,
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24/1",
+     "avg_frame_rate": "24/1",
+     "time_base": "1/12288",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 3072,
+     "duration": "0.250000",
+     "bit_rate": "874336",
+     "bits_per_raw_sample": "12",
+     "nb_frames": "6",
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "handler_name": "VideoHandler",
+      "vendor_id": "FFMP",
+      "encoder": "Lavc60.31.102 prores_ks"
+     }
+    },
+    "hdr_side_data": [],
+    "decoded_without_errors": true,
+    "range_contract": "limited; ProRes MOV nclc may omit a separate range flag",
+    "alpha": {
+     "passed": true,
+     "max_error_16bit_codes": 0,
+     "tolerance_16bit_codes": 128,
+     "note": "Source alpha bypasses grading; encoder input quantizes to 10 bits"
+    }
+   },
+   "report_alpha_json": "{\n  \"passed\": true,\n  \"max_error_16bit_codes\": 0,\n  \"tolerance_16bit_codes\": 128,\n  \"note\": \"Source alpha bypasses grading; encoder input quantizes to 10 bits\"\n}",
+   "max_cll": 1000,
+   "max_fall": 155,
+   "peak": 1000,
+   "minimum": 0.005,
+   "timing": {
+    "fps": "24",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25,
+    "tolerance": 0.0001220703125
+   }
+  }
+ ],
+ "checks": [
+  {
+   "name": "hdr10_audio_copy",
+   "master": "hdr10_audio_copy.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "ok": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 1,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "125442",
+     "nb_frames": "6",
+     "extradata_size": 2531,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "Mastering display metadata",
+      "red_x": "35400/50000",
+      "red_y": "14600/50000",
+      "green_x": "8500/50000",
+      "green_y": "39850/50000",
+      "blue_x": "6550/50000",
+      "blue_y": "2300/50000",
+      "white_point_x": "15635/50000",
+      "white_point_y": "16450/50000",
+      "min_luminance": "50/10000",
+      "max_luminance": "10000000/10000"
+     },
+     {
+      "side_data_type": "Content light level metadata",
+      "max_content": 1000,
+      "max_average": 155
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "ok_json": "{\n  \"passed\": true,\n  \"video_frames\": 6,\n  \"audio_streams\": 1,\n  \"video\": {\n    \"index\": 0,\n    \"codec_name\": \"hevc\",\n    \"codec_long_name\": \"H.265 / HEVC (High Efficiency Video Coding)\",\n    \"profile\": \"Main 10\",\n    \"codec_type\": \"video\",\n    \"codec_tag_string\": \"hvc1\",\n    \"codec_tag\": \"0x31637668\",\n    \"width\": 64,\n    \"height\": 36,\n    \"coded_width\": 64,\n    \"coded_height\": 40,\n    \"closed_captions\": 0,\n    \"film_grain\": 0,\n    \"has_b_frames\": 2,\n    \"pix_fmt\": \"yuv420p10le\",\n    \"level\": 30,\n    \"color_range\": \"tv\",\n    \"color_space\": \"bt2020nc\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_primaries\": \"bt2020\",\n    \"chroma_location\": \"left\",\n    \"field_order\": \"progressive\",\n    \"refs\": 1,\n    \"id\": \"0x1\",\n    \"r_frame_rate\": \"24000/1001\",\n    \"avg_frame_rate\": \"24000/1001\",\n    \"time_base\": \"1/24000\",\n    \"start_pts\": 0,\n    \"start_time\": \"0.000000\",\n    \"duration_ts\": 6006,\n    \"duration\": \"0.250250\",\n    \"bit_rate\": \"125442\",\n    \"nb_frames\": \"6\",\n    \"extradata_size\": 2531,\n    \"disposition\": {\n      \"default\": 1,\n      \"dub\": 0,\n      \"original\": 0,\n      \"comment\": 0,\n      \"lyrics\": 0,\n      \"karaoke\": 0,\n      \"forced\": 0,\n      \"hearing_impaired\": 0,\n      \"visual_impaired\": 0,\n      \"clean_effects\": 0,\n      \"attached_pic\": 0,\n      \"timed_thumbnails\": 0,\n      \"non_diegetic\": 0,\n      \"captions\": 0,\n      \"descriptions\": 0,\n      \"metadata\": 0,\n      \"dependent\": 0,\n      \"still_image\": 0\n    },\n    \"tags\": {\n      \"language\": \"und\",\n      \"handler_name\": \"VideoHandler\",\n      \"vendor_id\": \"[0][0][0][0]\",\n      \"encoder\": \"Lavc60.31.102 libx265\"\n    }\n  },\n  \"hdr_side_data\": [\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    },\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    },\n    {\n      \"side_data_type\": \"Mastering display metadata\",\n      \"red_x\": \"35400/50000\",\n      \"red_y\": \"14600/50000\",\n      \"green_x\": \"8500/50000\",\n      \"green_y\": \"39850/50000\",\n      \"blue_x\": \"6550/50000\",\n      \"blue_y\": \"2300/50000\",\n      \"white_point_x\": \"15635/50000\",\n      \"white_point_y\": \"16450/50000\",\n      \"min_luminance\": \"50/10000\",\n      \"max_luminance\": \"10000000/10000\"\n    },\n    {\n      \"side_data_type\": \"Content light level metadata\",\n      \"max_content\": 1000,\n      \"max_average\": 155\n    }\n  ],\n  \"decoded_without_errors\": true,\n  \"range_contract\": \"limited, signalled\"\n}"
+  },
+  {
+   "name": "hdr10_audio_aac",
+   "master": "hdr10_audio_aac.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "aac",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "ok": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 1,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "125442",
+     "nb_frames": "6",
+     "extradata_size": 2531,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "Mastering display metadata",
+      "red_x": "35400/50000",
+      "red_y": "14600/50000",
+      "green_x": "8500/50000",
+      "green_y": "39850/50000",
+      "blue_x": "6550/50000",
+      "blue_y": "2300/50000",
+      "white_point_x": "15635/50000",
+      "white_point_y": "16450/50000",
+      "min_luminance": "50/10000",
+      "max_luminance": "10000000/10000"
+     },
+     {
+      "side_data_type": "Content light level metadata",
+      "max_content": 1000,
+      "max_average": 155
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "ok_json": "{\n  \"passed\": true,\n  \"video_frames\": 6,\n  \"audio_streams\": 1,\n  \"video\": {\n    \"index\": 0,\n    \"codec_name\": \"hevc\",\n    \"codec_long_name\": \"H.265 / HEVC (High Efficiency Video Coding)\",\n    \"profile\": \"Main 10\",\n    \"codec_type\": \"video\",\n    \"codec_tag_string\": \"hvc1\",\n    \"codec_tag\": \"0x31637668\",\n    \"width\": 64,\n    \"height\": 36,\n    \"coded_width\": 64,\n    \"coded_height\": 40,\n    \"closed_captions\": 0,\n    \"film_grain\": 0,\n    \"has_b_frames\": 2,\n    \"pix_fmt\": \"yuv420p10le\",\n    \"level\": 30,\n    \"color_range\": \"tv\",\n    \"color_space\": \"bt2020nc\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_primaries\": \"bt2020\",\n    \"chroma_location\": \"left\",\n    \"field_order\": \"progressive\",\n    \"refs\": 1,\n    \"id\": \"0x1\",\n    \"r_frame_rate\": \"24000/1001\",\n    \"avg_frame_rate\": \"24000/1001\",\n    \"time_base\": \"1/24000\",\n    \"start_pts\": 0,\n    \"start_time\": \"0.000000\",\n    \"duration_ts\": 6006,\n    \"duration\": \"0.250250\",\n    \"bit_rate\": \"125442\",\n    \"nb_frames\": \"6\",\n    \"extradata_size\": 2531,\n    \"disposition\": {\n      \"default\": 1,\n      \"dub\": 0,\n      \"original\": 0,\n      \"comment\": 0,\n      \"lyrics\": 0,\n      \"karaoke\": 0,\n      \"forced\": 0,\n      \"hearing_impaired\": 0,\n      \"visual_impaired\": 0,\n      \"clean_effects\": 0,\n      \"attached_pic\": 0,\n      \"timed_thumbnails\": 0,\n      \"non_diegetic\": 0,\n      \"captions\": 0,\n      \"descriptions\": 0,\n      \"metadata\": 0,\n      \"dependent\": 0,\n      \"still_image\": 0\n    },\n    \"tags\": {\n      \"language\": \"und\",\n      \"handler_name\": \"VideoHandler\",\n      \"vendor_id\": \"[0][0][0][0]\",\n      \"encoder\": \"Lavc60.31.102 libx265\"\n    }\n  },\n  \"hdr_side_data\": [\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    },\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    },\n    {\n      \"side_data_type\": \"Mastering display metadata\",\n      \"red_x\": \"35400/50000\",\n      \"red_y\": \"14600/50000\",\n      \"green_x\": \"8500/50000\",\n      \"green_y\": \"39850/50000\",\n      \"blue_x\": \"6550/50000\",\n      \"blue_y\": \"2300/50000\",\n      \"white_point_x\": \"15635/50000\",\n      \"white_point_y\": \"16450/50000\",\n      \"min_luminance\": \"50/10000\",\n      \"max_luminance\": \"10000000/10000\"\n    },\n    {\n      \"side_data_type\": \"Content light level metadata\",\n      \"max_content\": 1000,\n      \"max_average\": 155\n    }\n  ],\n  \"decoded_without_errors\": true,\n  \"range_contract\": \"limited, signalled\"\n}"
+  },
+  {
+   "name": "hlg",
+   "master": "hlg.mp4",
+   "clip": "h264_709.mp4",
+   "audio": "copy",
+   "format": "hlg",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 154,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "ok": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "hevc",
+     "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+     "profile": "Main 10",
+     "codec_type": "video",
+     "codec_tag_string": "hvc1",
+     "codec_tag": "0x31637668",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 40,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 2,
+     "pix_fmt": "yuv420p10le",
+     "level": 30,
+     "color_range": "tv",
+     "color_space": "bt2020nc",
+     "color_transfer": "arib-std-b67",
+     "color_primaries": "bt2020",
+     "chroma_location": "left",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "131772",
+     "nb_frames": "6",
+     "extradata_size": 2404,
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "language": "und",
+      "handler_name": "VideoHandler",
+      "vendor_id": "[0][0][0][0]",
+      "encoder": "Lavc60.31.102 libx265"
+     }
+    },
+    "hdr_side_data": [
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     },
+     {
+      "side_data_type": "H.26[45] User Data Unregistered SEI message"
+     }
+    ],
+    "decoded_without_errors": true,
+    "range_contract": "limited, signalled"
+   },
+   "ok_json": "{\n  \"passed\": true,\n  \"video_frames\": 6,\n  \"audio_streams\": 0,\n  \"video\": {\n    \"index\": 0,\n    \"codec_name\": \"hevc\",\n    \"codec_long_name\": \"H.265 / HEVC (High Efficiency Video Coding)\",\n    \"profile\": \"Main 10\",\n    \"codec_type\": \"video\",\n    \"codec_tag_string\": \"hvc1\",\n    \"codec_tag\": \"0x31637668\",\n    \"width\": 64,\n    \"height\": 36,\n    \"coded_width\": 64,\n    \"coded_height\": 40,\n    \"closed_captions\": 0,\n    \"film_grain\": 0,\n    \"has_b_frames\": 2,\n    \"pix_fmt\": \"yuv420p10le\",\n    \"level\": 30,\n    \"color_range\": \"tv\",\n    \"color_space\": \"bt2020nc\",\n    \"color_transfer\": \"arib-std-b67\",\n    \"color_primaries\": \"bt2020\",\n    \"chroma_location\": \"left\",\n    \"field_order\": \"progressive\",\n    \"refs\": 1,\n    \"id\": \"0x1\",\n    \"r_frame_rate\": \"24000/1001\",\n    \"avg_frame_rate\": \"24000/1001\",\n    \"time_base\": \"1/24000\",\n    \"start_pts\": 0,\n    \"start_time\": \"0.000000\",\n    \"duration_ts\": 6006,\n    \"duration\": \"0.250250\",\n    \"bit_rate\": \"131772\",\n    \"nb_frames\": \"6\",\n    \"extradata_size\": 2404,\n    \"disposition\": {\n      \"default\": 1,\n      \"dub\": 0,\n      \"original\": 0,\n      \"comment\": 0,\n      \"lyrics\": 0,\n      \"karaoke\": 0,\n      \"forced\": 0,\n      \"hearing_impaired\": 0,\n      \"visual_impaired\": 0,\n      \"clean_effects\": 0,\n      \"attached_pic\": 0,\n      \"timed_thumbnails\": 0,\n      \"non_diegetic\": 0,\n      \"captions\": 0,\n      \"descriptions\": 0,\n      \"metadata\": 0,\n      \"dependent\": 0,\n      \"still_image\": 0\n    },\n    \"tags\": {\n      \"language\": \"und\",\n      \"handler_name\": \"VideoHandler\",\n      \"vendor_id\": \"[0][0][0][0]\",\n      \"encoder\": \"Lavc60.31.102 libx265\"\n    }\n  },\n  \"hdr_side_data\": [\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    },\n    {\n      \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n    }\n  ],\n  \"decoded_without_errors\": true,\n  \"range_contract\": \"limited, signalled\"\n}"
+  },
+  {
+   "name": "prores422",
+   "master": "prores422.mov",
+   "clip": "bt2020.mkv",
+   "audio": "copy",
+   "format": "prores422",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25025,
+    "tolerance": 0.0015
+   },
+   "ok": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "prores",
+     "codec_long_name": "Apple ProRes (iCodec Pro)",
+     "profile": "Standard",
+     "codec_type": "video",
+     "codec_tag_string": "apcn",
+     "codec_tag": "0x6e637061",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 36,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 0,
+     "pix_fmt": "yuv422p10le",
+     "level": -99,
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24000/1001",
+     "avg_frame_rate": "24000/1001",
+     "time_base": "1/24000",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 6006,
+     "duration": "0.250250",
+     "bit_rate": "295480",
+     "bits_per_raw_sample": "10",
+     "nb_frames": "6",
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "handler_name": "VideoHandler",
+      "vendor_id": "FFMP",
+      "encoder": "Lavc60.31.102 prores_ks"
+     }
+    },
+    "hdr_side_data": [],
+    "decoded_without_errors": true,
+    "range_contract": "limited; ProRes MOV nclc may omit a separate range flag"
+   },
+   "ok_json": "{\n  \"passed\": true,\n  \"video_frames\": 6,\n  \"audio_streams\": 0,\n  \"video\": {\n    \"index\": 0,\n    \"codec_name\": \"prores\",\n    \"codec_long_name\": \"Apple ProRes (iCodec Pro)\",\n    \"profile\": \"Standard\",\n    \"codec_type\": \"video\",\n    \"codec_tag_string\": \"apcn\",\n    \"codec_tag\": \"0x6e637061\",\n    \"width\": 64,\n    \"height\": 36,\n    \"coded_width\": 64,\n    \"coded_height\": 36,\n    \"closed_captions\": 0,\n    \"film_grain\": 0,\n    \"has_b_frames\": 0,\n    \"pix_fmt\": \"yuv422p10le\",\n    \"level\": -99,\n    \"color_space\": \"bt2020nc\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_primaries\": \"bt2020\",\n    \"field_order\": \"progressive\",\n    \"refs\": 1,\n    \"id\": \"0x1\",\n    \"r_frame_rate\": \"24000/1001\",\n    \"avg_frame_rate\": \"24000/1001\",\n    \"time_base\": \"1/24000\",\n    \"start_pts\": 0,\n    \"start_time\": \"0.000000\",\n    \"duration_ts\": 6006,\n    \"duration\": \"0.250250\",\n    \"bit_rate\": \"295480\",\n    \"bits_per_raw_sample\": \"10\",\n    \"nb_frames\": \"6\",\n    \"disposition\": {\n      \"default\": 1,\n      \"dub\": 0,\n      \"original\": 0,\n      \"comment\": 0,\n      \"lyrics\": 0,\n      \"karaoke\": 0,\n      \"forced\": 0,\n      \"hearing_impaired\": 0,\n      \"visual_impaired\": 0,\n      \"clean_effects\": 0,\n      \"attached_pic\": 0,\n      \"timed_thumbnails\": 0,\n      \"non_diegetic\": 0,\n      \"captions\": 0,\n      \"descriptions\": 0,\n      \"metadata\": 0,\n      \"dependent\": 0,\n      \"still_image\": 0\n    },\n    \"tags\": {\n      \"handler_name\": \"VideoHandler\",\n      \"vendor_id\": \"FFMP\",\n      \"encoder\": \"Lavc60.31.102 prores_ks\"\n    }\n  },\n  \"hdr_side_data\": [],\n  \"decoded_without_errors\": true,\n  \"range_contract\": \"limited; ProRes MOV nclc may omit a separate range flag\"\n}"
+  },
+  {
+   "name": "prores4444_alpha",
+   "master": "prores4444_alpha.mov",
+   "clip": "prores4444_alpha.mov",
+   "audio": "copy",
+   "format": "prores4444",
+   "alpha": true,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25,
+    "tolerance": 0.0001220703125
+   },
+   "ok": {
+    "passed": true,
+    "video_frames": 6,
+    "audio_streams": 0,
+    "video": {
+     "index": 0,
+     "codec_name": "prores",
+     "codec_long_name": "Apple ProRes (iCodec Pro)",
+     "profile": "4444",
+     "codec_type": "video",
+     "codec_tag_string": "ap4h",
+     "codec_tag": "0x68347061",
+     "width": 64,
+     "height": 36,
+     "coded_width": 64,
+     "coded_height": 36,
+     "closed_captions": 0,
+     "film_grain": 0,
+     "has_b_frames": 0,
+     "pix_fmt": "yuva444p12le",
+     "level": -99,
+     "color_space": "bt2020nc",
+     "color_transfer": "smpte2084",
+     "color_primaries": "bt2020",
+     "field_order": "progressive",
+     "refs": 1,
+     "id": "0x1",
+     "r_frame_rate": "24/1",
+     "avg_frame_rate": "24/1",
+     "time_base": "1/12288",
+     "start_pts": 0,
+     "start_time": "0.000000",
+     "duration_ts": 3072,
+     "duration": "0.250000",
+     "bit_rate": "874336",
+     "bits_per_raw_sample": "12",
+     "nb_frames": "6",
+     "disposition": {
+      "default": 1,
+      "dub": 0,
+      "original": 0,
+      "comment": 0,
+      "lyrics": 0,
+      "karaoke": 0,
+      "forced": 0,
+      "hearing_impaired": 0,
+      "visual_impaired": 0,
+      "clean_effects": 0,
+      "attached_pic": 0,
+      "timed_thumbnails": 0,
+      "non_diegetic": 0,
+      "captions": 0,
+      "descriptions": 0,
+      "metadata": 0,
+      "dependent": 0,
+      "still_image": 0
+     },
+     "tags": {
+      "handler_name": "VideoHandler",
+      "vendor_id": "FFMP",
+      "encoder": "Lavc60.31.102 prores_ks"
+     }
+    },
+    "hdr_side_data": [],
+    "decoded_without_errors": true,
+    "range_contract": "limited; ProRes MOV nclc may omit a separate range flag"
+   },
+   "ok_json": "{\n  \"passed\": true,\n  \"video_frames\": 6,\n  \"audio_streams\": 0,\n  \"video\": {\n    \"index\": 0,\n    \"codec_name\": \"prores\",\n    \"codec_long_name\": \"Apple ProRes (iCodec Pro)\",\n    \"profile\": \"4444\",\n    \"codec_type\": \"video\",\n    \"codec_tag_string\": \"ap4h\",\n    \"codec_tag\": \"0x68347061\",\n    \"width\": 64,\n    \"height\": 36,\n    \"coded_width\": 64,\n    \"coded_height\": 36,\n    \"closed_captions\": 0,\n    \"film_grain\": 0,\n    \"has_b_frames\": 0,\n    \"pix_fmt\": \"yuva444p12le\",\n    \"level\": -99,\n    \"color_space\": \"bt2020nc\",\n    \"color_transfer\": \"smpte2084\",\n    \"color_primaries\": \"bt2020\",\n    \"field_order\": \"progressive\",\n    \"refs\": 1,\n    \"id\": \"0x1\",\n    \"r_frame_rate\": \"24/1\",\n    \"avg_frame_rate\": \"24/1\",\n    \"time_base\": \"1/12288\",\n    \"start_pts\": 0,\n    \"start_time\": \"0.000000\",\n    \"duration_ts\": 3072,\n    \"duration\": \"0.250000\",\n    \"bit_rate\": \"874336\",\n    \"bits_per_raw_sample\": \"12\",\n    \"nb_frames\": \"6\",\n    \"disposition\": {\n      \"default\": 1,\n      \"dub\": 0,\n      \"original\": 0,\n      \"comment\": 0,\n      \"lyrics\": 0,\n      \"karaoke\": 0,\n      \"forced\": 0,\n      \"hearing_impaired\": 0,\n      \"visual_impaired\": 0,\n      \"clean_effects\": 0,\n      \"attached_pic\": 0,\n      \"timed_thumbnails\": 0,\n      \"non_diegetic\": 0,\n      \"captions\": 0,\n      \"descriptions\": 0,\n      \"metadata\": 0,\n      \"dependent\": 0,\n      \"still_image\": 0\n    },\n    \"tags\": {\n      \"handler_name\": \"VideoHandler\",\n      \"vendor_id\": \"FFMP\",\n      \"encoder\": \"Lavc60.31.102 prores_ks\"\n    }\n  },\n  \"hdr_side_data\": [],\n  \"decoded_without_errors\": true,\n  \"range_contract\": \"limited; ProRes MOV nclc may omit a separate range flag\"\n}"
+  },
+  {
+   "name": "wrong_transfer",
+   "master": "wrong_transfer.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: color_transfer: expected smpte2084, got bt709"
+  },
+  {
+   "name": "frame_dropped",
+   "master": "frame_dropped.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: Video frame count changed; Video duration changed"
+  },
+  {
+   "name": "audio_removed",
+   "master": "audio_removed.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: Audio stream count changed"
+  },
+  {
+   "name": "audio_none_requested",
+   "master": "hdr10_audio_copy.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "none",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: Audio stream count changed"
+  },
+  {
+   "name": "sei_stripped",
+   "master": "sei_stripped.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: Missing mastering display SEI; Missing MaxCLL/MaxFALL SEI"
+  },
+  {
+   "name": "prores_tag",
+   "master": "prores_tag.mov",
+   "clip": "bt2020.mkv",
+   "audio": "copy",
+   "format": "prores422",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25025,
+    "tolerance": 0.0015
+   },
+   "error": "Export QC failed: Incorrect ProRes profile tag"
+  },
+  {
+   "name": "hdr10_checked_as_hlg",
+   "master": "hdr10_audio_copy.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hlg",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: color_transfer: expected arib-std-b67, got smpte2084; HLG incorrectly contains HDR10 static metadata"
+  },
+  {
+   "name": "light_differs",
+   "master": "hdr10_audio_copy.mp4",
+   "clip": "h264_709_audio.mp4",
+   "audio": "copy",
+   "format": "hdr10",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1001,
+    "max_fall": 155,
+    "peak": 1001.5,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 10.0,
+    "duration": 0.25025,
+    "tolerance": 6.25e-05
+   },
+   "error": "Export QC failed: Wrong mastering max_luminance; Encoded content-light metadata differs from measured values"
+  },
+  {
+   "name": "prores_as_4444",
+   "master": "prores422.mov",
+   "clip": "bt2020.mkv",
+   "audio": "copy",
+   "format": "prores4444",
+   "alpha": false,
+   "expected_hdr": {
+    "max_cll": 1000,
+    "max_fall": 155,
+    "peak": 1000,
+    "minimum": 0.005
+   },
+   "clock": {
+    "fps": "24000/1001",
+    "frames": 6,
+    "start": 0.0,
+    "duration": 0.25025,
+    "tolerance": 0.0015
+   },
+   "error": "Export QC failed: pix_fmt: expected yuv444p12le, got yuv422p10le; Incorrect ProRes profile tag"
+  }
+ ]
+}

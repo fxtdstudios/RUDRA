@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "rudra/core/video_clock.hpp"
+#include "rudra/platform/process.hpp"
 #include "rudra/platform/result.hpp"
 
 namespace rudra {
@@ -49,6 +50,7 @@ struct VideoProbe {
     std::vector<VideoStreamInfo> video_streams;
     std::vector<VideoFrameInfo> frames;        // of v:0, when probed with frames
     std::string streams_json;                  // ffprobe's own output, for later steps (audio, format)
+    std::string frames_json;                   // and the frames probe's, for QC
 };
 
 struct InputContract {
@@ -65,13 +67,6 @@ struct VideoSource {
     std::string streams_json;
 };
 
-// A reduced fraction as Python's Fraction reads "n/d", "n" or a decimal.
-struct Fraction {
-    std::int64_t num = 0, den = 1;
-    std::string str() const;                   // str(Fraction)
-    double value() const;                      // float(Fraction), correctly rounded
-};
-Result<Fraction> parse_fraction(std::string_view text);
 
 // Reads ffprobe -of json output: -show_streams (and -show_frames for v:0).
 Result<VideoProbe> parse_video_probe(std::string_view streams_json, std::string_view frames_json = {});
@@ -89,9 +84,5 @@ std::string decoder_filter(const InputContract& contract, bool alpha);
 Result<VideoSource> open_video_source(const VideoProbe& probe, const VideoArgs& args);
 Result<VideoSource> open_video_source(const std::filesystem::path& file, const VideoArgs& args);
 
-// shutil.which or "<name> is required on PATH".
-Result<std::filesystem::path> require_executable(const std::string& name);
-// video.run: stdout, or "<program> failed: <last 4000 bytes of stderr>".
-Result<std::string> run_tool(const std::vector<std::string>& argv);
 
 }  // namespace rudra

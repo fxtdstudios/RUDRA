@@ -43,6 +43,9 @@ X264 = ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"]
 CLIPS = {
     "h264_709.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", *X264, *TAG709, "-output_ts_offset", "10"],
     "bars_709.mp4": ["-f", "lavfi", "-i", "smptebars=s=64x36:r=24000/1001", "-frames:v", "6", *X264, *TAG709],
+    "h264_709_audio.mp4": ["-f", "lavfi", "-i", SRC, "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
+                           "-frames:v", "6", "-t", "0.25025", *X264, *TAG709, "-c:a", "aac", "-ac", "2",
+                           "-output_ts_offset", "10"],
     "untagged.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", *X264],
     "srgb_full.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", "-c:v", "libx264", "-preset", "ultrafast",
                       "-pix_fmt", "yuvj420p", "-color_primaries", "bt709", "-color_trc", "iec61966-2-1",
@@ -87,6 +90,7 @@ ARGS = {
 CASES = [   # clip, argument variants
     ("h264_709.mp4", ["default", "gamma24"]),
     ("bars_709.mp4", ["default"]),
+    ("h264_709_audio.mp4", ["default"]),
     ("untagged.mp4", ["default", "srgb_709", "explicit_709"]),
     ("srgb_full.mp4", ["default"]),
     ("bt2020.mkv", ["default"]),

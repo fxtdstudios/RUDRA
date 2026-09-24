@@ -30,6 +30,11 @@ struct ProcessOutput {
 // it could not be started; a non-zero exit is in exit_code.
 Result<ProcessOutput> run_process(const std::vector<std::string>& argv);
 
+// video.executable: shutil.which or "<name> is required on PATH".
+Result<std::filesystem::path> require_executable(const std::string& name);
+// video.run: stdout, or "<program> failed: <last 4000 bytes of stderr>".
+Result<std::string> run_tool(const std::vector<std::string>& argv);
+
 // A running program whose stdout is read as it comes.
 class Process {
 public:
