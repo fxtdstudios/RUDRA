@@ -873,7 +873,9 @@ MasterFrame small_frame() {
 }
 
 std::filesystem::path fresh_dir(const std::string& name) {
-    const auto root = std::filesystem::temp_directory_path() / ("rudra-app-master-" + name);
+    // The temporary folder by its real path: on macOS /var is /private/var, and
+    // the app reports the paths it writes as they are.
+    const auto root = std::filesystem::canonical(std::filesystem::temp_directory_path()) / ("rudra-app-master-" + name);
     std::filesystem::remove_all(root);
     return root;
 }
@@ -1784,7 +1786,7 @@ TEST(AppVideo, TheExportTilesQueueAMovieAndTheQueueWindowFollowsIt) {
     sheet->export_now();
     // The queue file, in batch.py's format, beside the master to be.
     const auto queue = out / "sh010.hdr10.queue.json";
-    ASSERT_TRUE(std::filesystem::exists(queue));
+    ASSERT_TRUE(std::filesystem::exists(queue)) << status_of(w).toStdString();
     {
         std::ifstream in(queue);
         const json q = json::parse(in);

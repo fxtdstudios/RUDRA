@@ -125,7 +125,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         {"timestamp_policy", "Video begins at zero; audio retains relative offset, clipped to video interval"},
         {"scene_cuts", pyjson::List{}},
         {"frames", pyjson::List{}},
-        {"warnings", a.shadow_smoothing ? pyjson::List{"Scalar shadow smoothing is not validated temporal reconstruction"}
+        {"warnings", a.shadow_smoothing != 0.0 ? pyjson::List{"Scalar shadow smoothing is not validated temporal reconstruction"}
                                         : pyjson::List{}},
     };
     pyjson::List cuts, frames;
