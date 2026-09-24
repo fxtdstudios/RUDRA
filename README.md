@@ -444,7 +444,8 @@ Then Phase 3 (the Qt UI, 15 days; plan in
 Studio workflow with no Python installed, every number and file matching the Studio's.
 - [x] The look: the style sheet generated from `ui/theme.css` at build time, every
   colour the theme's and every grey neutral (a test), IBM Plex embedded (OFL)
-- [ ] Actions: the page's 33 `data-act` ids with its shortcuts and menus
+- [x] Actions: the page's 33 actions with its menus, labels, keys and check states, checked
+  against the page and in the app's real menubar (offscreen Qt tests)
 - [ ] Session model with undo, the page's `params()` byte for byte
 - [ ] Main window, scope widgets, Reconstruct and Grade panels, probe, measurements
 - [ ] Deliver tab, checkpoint manager and first run, the remaining sheets

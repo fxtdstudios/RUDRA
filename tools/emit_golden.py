@@ -10,6 +10,7 @@ tests instead of drifting silently.
     python tools/emit_golden.py --except viewer   # all but these
 
 Emitters, in order:
+    actions    tools/emit_actions_golden.py    the Studio's menus, actions, keys, shortcut sheet
     core       tools/emit_core_golden.py       baseline, curve, tile weights
     composite  tools/emit_composite_golden.py  composite, master chain, measure
     decode     tools/emit_decode_golden.py     still decode fixtures
@@ -29,6 +30,7 @@ from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
 EMITTERS = {
+    "actions": "emit_actions_golden.py",
     "core": "emit_core_golden.py",
     "composite": "emit_composite_golden.py",
     "decode": "emit_decode_golden.py",

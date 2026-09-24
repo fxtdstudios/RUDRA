@@ -25,11 +25,13 @@ render     the QRhi viewer: GpuCompositor and ViewerWindow (rudra_render_gpu);
 deliver    EXR/ACES/OCIO writers, metadata sidecars, QC, queue;
            encode later                                           (core)
 engine     FrameEngine: the InferActor, generations, cancellation,
-           read-ahead and the frame cache                         (below)
+           read-ahead and the frame cache; actions: the Studio's
+           menus, keys and commands                               (below)
 cli        rudra-native: version | info | diff | bench | master | master-check
            (never Qt, never render)
-app        the Qt application; theme.cpp puts the look of
-           ui/theme.css on it (fonts/ holds IBM Plex, OFL)        (everything)
+app        the Qt application: main_window.cpp (rudra_app_ui),
+           theme.cpp (the look of ui/theme.css; fonts/ holds IBM
+           Plex, OFL), tests/ (rudra_app_tests, offscreen Qt)      (everything)
 tests      GoogleTest against the goldens in tests/golden/
 ```
 
@@ -180,5 +182,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
 | Phase 2 (QRhi viewer) | steps 1 to 11 of 13 done: the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR, the reduction ladder, probe, measurements and scopes equal to the browser's, the viewer window in the app (Gate B through it passes on Windows), the frame path through the engine, and the guides (section 15) |
-| Phase 3 (Qt UI) | step 1 of 12 done: the style sheet generated from `ui/theme.css` (`cmake/rudra_theme.cmake`, the `rudra_theme` target), checked by `test_theme` (every colour the theme's, greys neutral, no colour in the app's C++), Plex embedded and checked at run time by `--theme-check`, which the Qt shell CI job and `NATIVE_GATE_B.ps1` run (section 16) |
+| Phase 3 (Qt UI) | steps 1 and 2 of 12 done: the Studio's actions, menus and keys (`engine/actions`, `test_actions`, and the real menubar in `rudra_app_tests`); the style sheet generated from `ui/theme.css` (`cmake/rudra_theme.cmake`, the `rudra_theme` target), checked by `test_theme` (every colour the theme's, greys neutral, no colour in the app's C++), Plex embedded and checked at run time by `--theme-check`, which the Qt shell CI job and `NATIVE_GATE_B.ps1` run (section 16) |
 | Video decode, encode | Phase 4 |

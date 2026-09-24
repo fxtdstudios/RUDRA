@@ -1,0 +1,409 @@
+{
+ "source": "ui/index.html (menubar) and ui/app.js (ACTIONS, keydown, SHORTCUTS, refreshMenu)",
+ "menus": [
+  {
+   "title": "File",
+   "items": [
+    {
+     "act": "open",
+     "label": "Open frames…",
+     "hint": "O",
+     "check": null
+    },
+    {
+     "act": "close",
+     "label": "Close all frames",
+     "hint": null,
+     "check": null
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "master",
+     "label": "Master EXR",
+     "hint": "M",
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Edit",
+   "items": [
+    {
+     "act": "undo",
+     "label": "Undo",
+     "hint": "Z",
+     "check": null
+    },
+    {
+     "act": "redo",
+     "label": "Redo",
+     "hint": "Y",
+     "check": null
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "reset-recon",
+     "label": "Reset reconstruction",
+     "hint": null,
+     "check": null
+    },
+    {
+     "act": "reset-regions",
+     "label": "Reset region EV",
+     "hint": null,
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Clip",
+   "items": [
+    {
+     "act": "first",
+     "label": "First frame",
+     "hint": "Home",
+     "check": null
+    },
+    {
+     "act": "prev",
+     "label": "Previous frame",
+     "hint": ",",
+     "check": null
+    },
+    {
+     "act": "next",
+     "label": "Next frame",
+     "hint": ".",
+     "check": null
+    },
+    {
+     "act": "last",
+     "label": "Last frame",
+     "hint": "End",
+     "check": null
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "play",
+     "label": "Play / pause",
+     "hint": "Space",
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Reconstruct",
+   "items": [
+    {
+     "act": "mode-all",
+     "label": "All",
+     "hint": null,
+     "check": "mode:all"
+    },
+    {
+     "act": "mode-highlights",
+     "label": "Highlights",
+     "hint": null,
+     "check": "mode:highlights"
+    },
+    {
+     "act": "mode-shadows",
+     "label": "Shadows",
+     "hint": null,
+     "check": "mode:shadows"
+    },
+    {
+     "act": "mode-off",
+     "label": "Off",
+     "hint": null,
+     "check": "mode:off"
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "preserve",
+     "label": "Preserve outside masks",
+     "hint": null,
+     "check": "preserve"
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "strength-down",
+     "label": "Weaker residual",
+     "hint": "[",
+     "check": null
+    },
+    {
+     "act": "strength-up",
+     "label": "Stronger residual",
+     "hint": "]",
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Measure",
+   "items": [
+    {
+     "act": "copy-metrics",
+     "label": "Copy measurements as JSON",
+     "hint": null,
+     "check": null
+    },
+    {
+     "act": "copy-scopes",
+     "label": "Copy scope data as JSON",
+     "hint": null,
+     "check": null
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "remeasure",
+     "label": "Re-measure this frame",
+     "hint": null,
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Deliver",
+   "items": [
+    {
+     "act": "master",
+     "label": "Master EXR",
+     "hint": "M",
+     "check": null
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "container-aces",
+     "label": "Container: ACES 2065-1",
+     "hint": null,
+     "check": "container:aces"
+    },
+    {
+     "act": "container-linear",
+     "label": "Container: linear Rec.2020",
+     "hint": null,
+     "check": "container:linear"
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "copy-delivery",
+     "label": "Copy delivery metadata",
+     "hint": null,
+     "check": null
+    }
+   ]
+  },
+  {
+   "title": "Window",
+   "items": [
+    {
+     "act": "rail-left",
+     "label": "Frames rail",
+     "hint": null,
+     "check": "railLeft"
+    },
+    {
+     "act": "rail-right",
+     "label": "Reconstruction rail",
+     "hint": null,
+     "check": "railRight"
+    },
+    {
+     "act": "scopes",
+     "label": "Scopes",
+     "hint": null,
+     "check": "scopesOpen"
+    },
+    {
+     "separator": true
+    },
+    {
+     "act": "zoom-fit",
+     "label": "Fit to window",
+     "hint": null,
+     "check": "zoom:fit"
+    },
+    {
+     "act": "zoom-actual",
+     "label": "Actual pixels",
+     "hint": null,
+     "check": "zoom:actual"
+    }
+   ]
+  },
+  {
+   "title": "Help",
+   "items": [
+    {
+     "act": "shortcuts",
+     "label": "Keyboard shortcuts",
+     "hint": "?",
+     "check": null
+    },
+    {
+     "act": "about",
+     "label": "About RUDRA Studio",
+     "hint": null,
+     "check": null
+    }
+   ]
+  }
+ ],
+ "actions": [
+  "about",
+  "close",
+  "container-aces",
+  "container-linear",
+  "copy-delivery",
+  "copy-metrics",
+  "copy-scopes",
+  "first",
+  "last",
+  "master",
+  "mode-all",
+  "mode-highlights",
+  "mode-off",
+  "mode-shadows",
+  "next",
+  "open",
+  "play",
+  "preserve",
+  "prev",
+  "rail-left",
+  "rail-right",
+  "redo",
+  "remeasure",
+  "reset-recon",
+  "reset-regions",
+  "scopes",
+  "shortcuts",
+  "strength-down",
+  "strength-up",
+  "undo",
+  "wipe",
+  "zoom-actual",
+  "zoom-fit"
+ ],
+ "keys": {
+  " ": "play",
+  ",": "prev",
+  ".": "next",
+  "1": "mode-all",
+  "2": "mode-highlights",
+  "3": "mode-shadows",
+  "4": "mode-off",
+  "?": "shortcuts",
+  "End": "last",
+  "Home": "first",
+  "M": "master",
+  "O": "open",
+  "P": "preserve",
+  "W": "wipe",
+  "Y": "redo",
+  "Z": "undo",
+  "[": "strength-down",
+  "]": "strength-up",
+  "m": "master",
+  "o": "open",
+  "p": "preserve",
+  "w": "wipe",
+  "y": "redo",
+  "z": "undo"
+ },
+ "special_keys": {
+  "modifiers_pass": true,
+  "hold_b_flips": true,
+  "wipe_nudge": {
+   "step": 0.05,
+   "shift_step": 0.01
+  },
+  "escape_leaves_wipe": true
+ },
+ "shortcuts": [
+  [
+   "B (hold)",
+   "Flip to the inverse-ACES baseline"
+  ],
+  [
+   "W",
+   "Wipe: baseline left, RUDRA right. Drag the image to move it."
+  ],
+  [
+   "← →",
+   "Nudge the wipe (Shift for fine)"
+  ],
+  [
+   "O",
+   "Open frames"
+  ],
+  [
+   "M",
+   "Master EXR"
+  ],
+  [
+   ", / .",
+   "Previous / next frame"
+  ],
+  [
+   "Home / End",
+   "First / last frame"
+  ],
+  [
+   "Space",
+   "Play / pause"
+  ],
+  [
+   "[ / ]",
+   "Weaker / stronger residual"
+  ],
+  [
+   "1 2 3 4",
+   "Recovery: all, highlights, shadows, off"
+  ],
+  [
+   "P",
+   "Preserve outside masks"
+  ],
+  [
+   "Z / Y",
+   "Undo / redo"
+  ],
+  [
+   "?",
+   "This list"
+  ]
+ ],
+ "enable_when": {
+  "close": "any",
+  "copy-delivery": "any",
+  "copy-metrics": "!!state.metrics",
+  "copy-scopes": "!!state.scopeData",
+  "first": "many",
+  "last": "many",
+  "master": "any && state.live && !state.busy",
+  "next": "many",
+  "play": "many",
+  "prev": "many",
+  "redo": "state.redo.length > 0",
+  "remeasure": "any",
+  "undo": "state.undo.length > 0"
+ }
+}

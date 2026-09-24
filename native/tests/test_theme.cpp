@@ -102,8 +102,10 @@ TEST(Theme, GreysAreNeutralAndHuesAreNamed) {
     std::set<std::string> hues = {"#dceaf5", "#a2b8c7"};
     for (const char* name : {"accent", "accent-dim", "accent-line", "gold", "ok", "warn", "bad"})
         hues.insert(normalise(t.at(name)));
-    for (const auto& c : colours_in(qss()))
-        if (!neutral(c)) EXPECT_TRUE(hues.count(c)) << c << " is a hue the theme does not name";
+    for (const auto& c : colours_in(qss())) {
+        if (neutral(c)) continue;
+        EXPECT_TRUE(hues.count(c)) << c << " is a hue the theme does not name";
+    }
 }
 
 TEST(Theme, SurroundIsNeutral) {

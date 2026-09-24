@@ -28,6 +28,10 @@ include(RudraDeps)
 include(RudraWarnings)
 include(RudraTheme)
 
+if(RUDRA_BUILD_TESTS)
+  enable_testing()   # before app/, which adds its own Qt tests
+endif()
+
 add_subdirectory(platform)
 add_subdirectory(core)
 add_subdirectory(infer)
@@ -43,7 +47,6 @@ if(RUDRA_BUILD_APP)
   add_subdirectory(app)
 endif()
 if(RUDRA_BUILD_TESTS)
-  enable_testing()
   add_subdirectory(tests)
 endif()
 
