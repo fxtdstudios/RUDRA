@@ -12,6 +12,13 @@ with or without ffprobe on the machine.
 
     python tools/emit_video_golden.py            # writes native/tests/golden/video/
     python tools/emit_video_golden.py --remake   # also rebuilds the clips
+
+Step 2 (decode.json): convert_video itself is run on the clips the contract
+accepts, with the predictor stubbed and stopped after the last frame, and the
+decoder's command and every raw frame read_frame returns are recorded (the
+command with the program and the clip's path made portable, each frame as its
+SHA-256). The frame bytes depend on the ffmpeg build, so its version line is
+recorded with them.
 """
 from __future__ import annotations
 
@@ -131,6 +138,66 @@ def open_source(info: dict, frame_info: dict, args) -> dict:
             "decoder_filter": decoder_filter(contract, alpha)}
 
 
+DECODE_CASES = [("h264_709.mp4", "default"), ("untagged.mp4", "explicit_709"), ("srgb_full.mp4", "default"),
+                ("bt2020.mkv", "default"), ("rgb_png.mov", "srgb_709"),
+                ("prores4444_alpha.mov", "prores4444_straight_limited")]
+
+
+class _Stop(Exception):
+    pass
+
+
+def decode_record(clip: str, variant: str) -> dict:
+    """Runs convert_video to the end of its decode loop and records what it read."""
+    import hashlib
+    import subprocess
+    import tempfile
+    import rudra.video as video
+
+    path = OUT / "clips" / clip
+    seen: dict = {"frames": []}
+    real_popen, real_read = subprocess.Popen, video.read_frame
+
+    def popen(cmd, *a, **k):
+        seen["command"] = [Path(cmd[0]).stem, *[clip if c == str(path.resolve()) else c for c in cmd[1:]]]
+        return real_popen(cmd, *a, **k)
+
+    def read_frame(stream, count):
+        data = real_read(stream, count)
+        if data:
+            seen["frames"].append(hashlib.sha256(data).hexdigest())
+        return data
+
+    class Predictor:
+        def __init__(self, *a):
+            pass
+
+        def predict(self, rgb, contract, smoother):
+            if len(seen["frames"]) == seen["total"]:
+                raise _Stop
+            return rgb, 0.0, False
+
+    info = video.probe(path)
+    seen["total"] = int(video.timing([s for s in info["streams"] if s["codec_type"] == "video"][0],
+                                     video.probe(path, frames=True)["frames"])["frames"])
+    parser = argparse.ArgumentParser()
+    video.add_arguments(parser)
+    flags = []
+    for key, value in ARGS[variant].items():
+        flags += ["--" + key.replace("_", "-"), value]
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / ("out.mov" if "prores" in variant else "out.mp4")
+        args = parser.parse_args([str(path), "--output", str(out), "--checkpoint", str(path), *flags])
+        video.subprocess.Popen, video.read_frame, video.Predictor = popen, read_frame, Predictor
+        try:
+            video.convert_video(args)
+        except _Stop:
+            pass
+        finally:
+            video.subprocess.Popen, video.read_frame = real_popen, real_read
+    return {"clip": clip, "args": variant, "command": seen["command"], "frames": seen["frames"]}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--remake", action="store_true")
@@ -162,7 +229,14 @@ def main() -> int:
         json.dump({"oracle": "rudra/video.py probe, input_contract, timing, has_alpha, decoder_filter",
                    "args": ARGS, "cases": cases}, f, indent=1)
         f.write("\n")
-    print(f"video: {len(cases)} cases on {len(CASES)} clips -> {OUT}")
+    ffmpeg_version = subprocess.run([shutil.which("ffmpeg"), "-version"], capture_output=True,
+                                    text=True).stdout.splitlines()[0]
+    decodes = [decode_record(clip, variant) for clip, variant in DECODE_CASES]
+    with open(OUT / "decode.json", "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"oracle": "rudra/video.py convert_video decode loop (decoder command, read_frame)",
+                   "ffmpeg": ffmpeg_version, "cases": decodes}, f, indent=1)
+        f.write("\n")
+    print(f"video: {len(cases)} cases on {len(CASES)} clips, {len(decodes)} decodes -> {OUT}")
     return 0
 
 

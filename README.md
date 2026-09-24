@@ -473,7 +473,7 @@ Then Phase 4 (video delivery, 12 days; plan in
 or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe run as programs as the Python runs them.
 - [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 23 clip and argument cases
   (HDR, alpha, interlace, rotation, anamorphic, odd sizes, variable timing, RGB, colour tags and overrides)
-- [ ] Decode on a pipe, bit for bit
+- [x] Decode on a pipe, bit for bit: the Python's decoder command, and every frame equal to the one `read_frame` returned
 - [ ] The video predictor with the shadow smoother
 - [ ] Mastering and the PNG spool
 - [ ] Encode and publish, argument for argument
