@@ -415,8 +415,8 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; composite + display pass together: `rudra-gpu-parity --bench` "+view" column, from the next `NATIVE_GATE_B.ps1` run |
-| composite + view, 4K, GPU | ≤ 12 ms | composite pass 0.505 ms (D3D12), 0.508 (Vulkan), 0.507 (D3D11), 0.366 (OpenGL) |
+| composite + view, 1080p, GPU | ≤ 4 ms | **composite + display pass 0.240 ms (D3D12), 0.248 (D3D11), 0.244 (Vulkan), 0.219 (OpenGL)**, RTX 4080 SUPER, GPU timestamps, 24 Sep; the composite alone 0.118 ms |
+| composite + view, 4K, GPU | ≤ 12 ms | **composite + display pass 1.156 ms (D3D12), 1.154 (D3D11), 1.167 (Vulkan), 1.030 (OpenGL)**; the composite alone 0.49 ms |
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
@@ -666,11 +666,11 @@ Backend matrix for the viewer (step 12), from the gate scripts and CI:
 | Backend | Composite (fp32 / fp16) | Display pass (SDR, 7 views) | HDR paths (40 cases) | Reductions | Window readback (fit, 2x, 1:1, guides) | Gate B through the viewer |
 |---|---|---|---|---|---|---|
 | OpenGL, llvmpipe (Linux, CI) | pass | exact | pass (2.8e-5, 1 ulp) | exact | pass at device pixel ratios 1 to 2 | n/a: no HDR swapchain |
-| D3D12, RTX 4080 SUPER | pass (Phase 0) | from the next gate run | from the next gate run | from the next gate run | from the next gate run | **pass**, scRGB, 203 exact, clipped at 418 |
-| D3D11, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | **pass**, scRGB, as D3D12 |
-| Vulkan, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | **pass**, scRGB, the display's 418 nits from DXGI (Qt reports a placeholder 1 000) |
+| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | fails; diagnosed from the next run's dumps | **pass**, scRGB, 203 exact, clipped at 418 |
+| D3D11, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | fails at 1:1 only | **pass**, scRGB, as D3D12 |
+| Vulkan, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, the display's 418 nits from DXGI (Qt reports a placeholder 1 000) |
 | Vulkan, lavapipe (Linux, CI) | pass | exact | pass | exact | pass at device pixel ratios 1 and 1.5 | n/a: no HDR swapchain |
-| OpenGL, RTX 4080 SUPER | pass (Phase 0) | as above | as above | as above | as above | n/a: Qt's OpenGL swapchain is SDR on Windows |
+| OpenGL, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | fails at 1:1 only | n/a: Qt's OpenGL swapchain is SDR on Windows |
 | Metal, Apple Silicon | open | open | open | open | open | open (the XDR Mac run) |
 
 Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws

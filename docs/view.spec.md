@@ -181,7 +181,7 @@ each rounded half to even into 8 bits.
 | peak (step 6) | exact against the same target | a maximum |
 | sum (step 6) | exact when evaluated in the ladder's order; measured: equal to the browser's and the shader's | the order is specified, so no bound is needed |
 | waveform, histogram, vectorscope bins (step 8) | exact; measured: equal, and every `computeStats` number too | integer counts on the same sample |
-| HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|; measured 2.8e-5 relative on llvmpipe | GPU `pow`, amplified by PQ's exponent of 78.84 |
+| HDR paths, shader vs C++, RGBA32F (step 5) | 1e-5 + 2e-4 \|ref\|, and for HDR10 codes at least 1/20 of a 10-bit step; measured 2.8e-5 relative on llvmpipe, 1.4e-5 absolute near black on an RTX 4080 SUPER | GPU `pow` on a tiny base is not correctly rounded, and PQ's exponents amplify it |
 | HDR paths, shader vs C++, RGBA16F (step 5) | 2 half-float ulp; measured 1 | the swapchain format |
 | viewport vs the browser's layout (step 9) | scale and readout exact; rectangle within 1/64 px; pan within 1e-3 px | Chromium lays out in 1/64 px and reads transforms back in float32 |
 | guides, shader vs `core/guides.cpp` (step 11) | 1 code in 8 bits, in the same readback | the same pixel rules in fp32 |
