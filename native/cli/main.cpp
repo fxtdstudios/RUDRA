@@ -7,6 +7,7 @@
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
 //   rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]
+//   rudra-native deliver <frames> --output <stem> [rudra deliver options]
 //   rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]
 //   rudra-native bench-scopes [--iters 7]
 //
@@ -51,6 +52,7 @@
 #include "master.hpp"
 #include "video.hpp"
 #endif
+#include "deliver.hpp"
 
 using namespace rudra;
 namespace fs = std::filesystem;
@@ -388,6 +390,8 @@ void usage() {
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
                  "       rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]\n"
+                 "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
+                 "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
 }
 
@@ -406,6 +410,7 @@ int main(int argc, char** argv) {
         return cmd_bench_scopes(iters);
     }
     if (args.size() < 2) { usage(); return 64; }
+    if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
 #ifdef RUDRA_HAVE_STILL_DECODE
     if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
 #endif

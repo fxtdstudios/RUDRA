@@ -45,6 +45,14 @@ public:
     // stderr goes to `stderr_file` (truncated), or is discarded when empty.
     static Result<std::unique_ptr<Process>> start(const std::vector<std::string>& argv,
                                                   const std::filesystem::path& stderr_file = {});
+    // A program fed on stdin (an encoder reading raw frames, as the Python's
+    // Popen(stdin=PIPE) is); its stdout is discarded, stderr to the file.
+    static Result<std::unique_ptr<Process>> start_writer(const std::vector<std::string>& argv,
+                                                         const std::filesystem::path& stderr_file = {});
+    // Writes all of `in`; false when the program has closed its input (a broken pipe).
+    bool write(std::span<const std::uint8_t> in);
+    // Closes stdin so the program sees the end of its input.
+    void close_input();
     // Reads up to out.size() bytes, looping until the buffer is full or the
     // stream ends; returns how many were read (less only at the end).
     std::size_t read(std::span<std::uint8_t> out);

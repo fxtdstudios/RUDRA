@@ -68,7 +68,9 @@ TEST(VideoPredict, LinspaceIsTorchs) {
 }
 
 TEST(VideoPredict, AreaResizeIsTorchs) {
-    for (const auto& c : index()["area"]) {
+    const json idx = index();
+    ASSERT_EQ(idx["area"].size(), 4u);
+    for (const auto& c : idx["area"]) {
         const PlanarBuffer in = planar(npy(c["input"].get<std::string>()));
         const NpyArray want = npy(c["output"].get<std::string>());
         const PlanarBuffer got = area_resize(in, c["size"][0].get<int>(), c["size"][1].get<int>());

@@ -119,9 +119,61 @@ std::string drain(HANDLE h) {
 struct Process::Impl {
     PROCESS_INFORMATION pi{};
     HANDLE out = nullptr;
+    HANDLE in = nullptr;
     bool done = false;
     int code = -1;
 };
+
+Result<std::unique_ptr<Process>> Process::start_writer(const std::vector<std::string>& argv, const fs::path& stderr_file) {
+    if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
+    SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
+    HANDLE rd = nullptr, wr = nullptr;
+    if (!CreatePipe(&rd, &wr, &sa, 1 << 20)) return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    SetHandleInformation(wr, HANDLE_FLAG_INHERIT, 0);
+    HANDLE err = !stderr_file.empty()
+                     ? CreateFileW(stderr_file.wstring().c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+                                   FILE_ATTRIBUTE_NORMAL, nullptr)
+                     : CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    HANDLE out = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+    STARTUPINFOW si{};
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = rd;
+    si.hStdOutput = out;
+    si.hStdError = err;
+    std::wstring cmd = command_line(argv);
+    auto impl = std::make_unique<Impl>();
+    const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si,
+                                   &impl->pi);
+    CloseHandle(rd);
+    if (err != INVALID_HANDLE_VALUE) CloseHandle(err);
+    if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (!ok) {
+        CloseHandle(wr);
+        return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0]);
+    }
+    impl->in = wr;
+    std::unique_ptr<Process> p(new Process());
+    p->d_ = std::move(impl);
+    return p;
+}
+
+bool Process::write(std::span<const std::uint8_t> data) {
+    if (!d_->in) return false;
+    std::size_t put = 0;
+    while (put < data.size()) {
+        DWORD n = 0;
+        if (!WriteFile(d_->in, data.data() + put, DWORD(std::min<std::size_t>(data.size() - put, 1u << 30)), &n, nullptr))
+            return false;
+        put += n;
+    }
+    return true;
+}
+
+void Process::close_input() {
+    if (d_->in) CloseHandle(d_->in);
+    d_->in = nullptr;
+}
 
 Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& argv, const fs::path& stderr_file) {
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
@@ -195,6 +247,7 @@ Process::~Process() {
     if (running()) kill();
     wait();
     if (d_->out) CloseHandle(d_->out);
+    if (d_->in) CloseHandle(d_->in);
     CloseHandle(d_->pi.hThread);
     CloseHandle(d_->pi.hProcess);
 }
@@ -274,9 +327,59 @@ int exit_code_of(int status) {
 struct Process::Impl {
     pid_t pid = -1;
     int out = -1;
+    int in = -1;
     bool done = false;
     int code = -1;
 };
+
+Result<std::unique_ptr<Process>> Process::start_writer(const std::vector<std::string>& argv, const fs::path& stderr_file) {
+    if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
+    // A reader that quits early must give this side EPIPE, not kill it
+    // (the Python's BrokenPipeError).
+    std::signal(SIGPIPE, SIG_IGN);
+    int fds[2];
+    if (::pipe(fds) != 0) return make_error(ErrorCode::IoError, "Could not create a pipe.");
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_addclose(&fa, fds[1]);
+    posix_spawn_file_actions_adddup2(&fa, fds[0], 0);
+    posix_spawn_file_actions_addclose(&fa, fds[0]);
+    posix_spawn_file_actions_addopen(&fa, 1, "/dev/null", O_WRONLY, 0);
+    const std::string err = stderr_file.empty() ? std::string("/dev/null") : stderr_file.string();
+    posix_spawn_file_actions_addopen(&fa, 2, err.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    auto args = c_argv(argv);
+    pid_t pid = -1;
+    const int rc = posix_spawnp(&pid, argv[0].c_str(), &fa, nullptr, args.data(), environ);
+    posix_spawn_file_actions_destroy(&fa);
+    ::close(fds[0]);
+    if (rc != 0) {
+        ::close(fds[1]);
+        return make_error(ErrorCode::NotFound, "Could not start the program.", argv[0] + ": " + std::strerror(rc));
+    }
+    ::fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+    std::unique_ptr<Process> p(new Process());
+    p->d_ = std::make_unique<Impl>();
+    p->d_->pid = pid;
+    p->d_->in = fds[1];
+    return p;
+}
+
+bool Process::write(std::span<const std::uint8_t> data) {
+    if (d_->in < 0) return false;
+    std::size_t put = 0;
+    while (put < data.size()) {
+        const ssize_t n = ::write(d_->in, data.data() + put, data.size() - put);
+        if (n > 0) put += std::size_t(n);
+        else if (n < 0 && errno == EINTR) continue;
+        else return false;
+    }
+    return true;
+}
+
+void Process::close_input() {
+    if (d_->in >= 0) ::close(d_->in);
+    d_->in = -1;
+}
 
 Result<std::unique_ptr<Process>> Process::start(const std::vector<std::string>& argv, const fs::path& stderr_file) {
     if (argv.empty()) return make_error(ErrorCode::InvalidArgument, "No program to run.");
@@ -347,6 +450,7 @@ bool Process::running() const {
 Process::~Process() {
     if (!d_) return;
     if (d_->out >= 0) ::close(d_->out);   // a writer blocked on a full pipe gets SIGPIPE
+    if (d_->in >= 0) ::close(d_->in);
     if (!d_->done) {
         kill();
         wait();

@@ -26,6 +26,7 @@ Emitters, in order:
     readouts   tools/emit_readouts_golden.py   the Studio page's probe, Frame panel and bars (needs Playwright)
     scopes     tools/emit_scopes_golden.py     the Studio page's scope drawings and rasters (needs Playwright)
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
+    sequence_encode tools/emit_sequence_encode_golden.py a finished sequence to one file, `rudra deliver` (needs ffmpeg)
     video      tools/emit_video_golden.py      video probe, input contract, clock and decode (needs ffmpeg)
     video_predict tools/emit_video_predict_golden.py the video predictor and shadow smoother (needs ffmpeg)
     video_master tools/emit_video_master_golden.py  video mastering, the PNG spool, MaxCLL and MaxFALL, the encoder command (needs ffmpeg)
@@ -59,6 +60,7 @@ EMITTERS = {
     "render_plan": "emit_render_plan_golden.py",
     "scopes": "emit_scopes_golden.py",
     "sequence": "emit_sequence_golden.py",
+    "sequence_encode": "emit_sequence_encode_golden.py",
     "session": "emit_session_golden.py",
     "video": "emit_video_golden.py",
     "video_predict": "emit_video_predict_golden.py",

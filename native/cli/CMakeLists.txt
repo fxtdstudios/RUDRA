@@ -1,5 +1,5 @@
 # cli: rudra-native. Core, infer, media and deliver; must link without Qt.
-add_executable(rudra-native main.cpp)
+add_executable(rudra-native main.cpp deliver.cpp)
 target_link_libraries(rudra-native PRIVATE rudra::rudra_infer rudra::rudra_deliver nlohmann_json::nlohmann_json)
 if(RUDRA_WITH_OPENCV)
   # `master`, `master-check` and `video` need still decode (the spool is PNG).
