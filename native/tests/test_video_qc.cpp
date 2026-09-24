@@ -12,7 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/deliver/video_qc.hpp"
-#include "rudra/engine/video_qc.hpp"
+#include "rudra/video/qc.hpp"
 #include "rudra/platform/process.hpp"
 
 using namespace rudra;

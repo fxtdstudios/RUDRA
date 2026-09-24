@@ -1,4 +1,4 @@
-#include "rudra/engine/video_predictor.hpp"
+#include "rudra/video/predictor.hpp"
 
 #include <algorithm>
 #include <tuple>

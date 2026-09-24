@@ -38,6 +38,7 @@ add_subdirectory(infer)
 add_subdirectory(media)
 add_subdirectory(render)
 add_subdirectory(deliver)
+add_subdirectory(video)
 add_subdirectory(engine)
 
 if(RUDRA_BUILD_CLI)

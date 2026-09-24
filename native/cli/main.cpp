@@ -7,6 +7,7 @@
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
 //   rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]
+//   rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]
 //   rudra-native bench-scopes [--iters 7]
 //
 // `diff` is the native half of Gate A (NATIVE_ARCHITECTURE.md 12): it runs the
@@ -48,6 +49,7 @@
 
 #ifdef RUDRA_HAVE_STILL_DECODE
 #include "master.hpp"
+#include "video.hpp"
 #endif
 
 using namespace rudra;
@@ -385,6 +387,7 @@ void usage() {
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
+                 "       rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
 }
 
@@ -403,6 +406,9 @@ int main(int argc, char** argv) {
         return cmd_bench_scopes(iters);
     }
     if (args.size() < 2) { usage(); return 64; }
+#ifdef RUDRA_HAVE_STILL_DECODE
+    if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
+#endif
     const fs::path pkg = args[1];
     if (args[0] == "info") return cmd_info(pkg);
     if (args[0] == "diff") {

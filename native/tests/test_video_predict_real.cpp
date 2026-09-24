@@ -14,7 +14,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/core/model_manifest.hpp"
-#include "rudra/engine/video_predictor.hpp"
+#include "rudra/video/predictor.hpp"
 #include "rudra/media/video_decode.hpp"
 #include "rudra/platform/npy.hpp"
 

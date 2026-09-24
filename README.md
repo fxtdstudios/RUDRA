@@ -482,7 +482,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   Python's spool encoding with it, nothing ever replaced
 - [x] QC and the alpha check: the Python's verdict and words on 14 checks of good and broken masters, each
   passing record byte for byte
-- [ ] `rudra-native video` end to end
+- [x] `rudra-native video` end to end: the report key for key, HDR10 and HLG masters byte-identical to the Python's
+  on LibTorch and ONNX Runtime, ProRes 4444 within codec noise
 - [ ] Frames to video (`encode_sequence`)
 - [ ] Video jobs in the queue, resumable from either side
 - [ ] ffmpeg capability probe and self-test
