@@ -16,6 +16,22 @@
 >
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
 >
+> **25 Sep 2026, native app: macOS and the beta (line F).** On a MacBook Pro
+> (Apple silicon, macOS 27) the app builds with `scripts/native_app.sh` and
+> its 36 Qt tests pass, the scripted workflow and a movie's HDR10 export
+> included; the model exports there with TorchScript exact and ONNX at
+> 5.4e-5. What the Mac showed and was fixed: Qt 6.8 linking AGL (gone from
+> the macOS 15+ SDK), OpenGL needing a 4.1 core profile, ONNX Runtime's
+> environment made before a Core ML session and destroyed in order at exit,
+> a detached measurement thread, `/var` being `/private/var`. CI's goldens
+> check failed on every OS on one line (the fit golden recorded OpenCV's
+> version; pip now installs 5.0); fixed, and failing steps now publish
+> their output as annotations. The beta is packaged: 0.9.0-beta.1,
+> `scripts/package_mac.sh` (DMG), `scripts/PACKAGE_WINDOWS.ps1` (ZIP),
+> `release.yml` on a `v*` tag, notes in `docs/BETA.md`. Open before the tag:
+> the probe builds in CI, Gate A on MPS and Core ML, Gate B on Metal EDR,
+> and each package built and opened on its OS.
+>
 > **24 Sep 2026, native app: Phase 4, video delivery (line F).** `rudra video`,
 > `rudra deliver` and `rudra batch run` now exist without Python:
 > `rudra-native video` is convert_video (the same checks and words, decode,
