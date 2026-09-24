@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "defaults": {
+    "checkpoint": "sdr2hdr_shadow_v1.pt",
+    "device": "cpu"
+  },
+  "jobs": [
+    {
+      "input": "h264_709_audio.mp4",
+      "output": "out/a_hdr10.mp4",
+      "options": {
+        "format": "hdr10"
+      }
+    },
+    {
+      "input": "bars_709.mp4",
+      "output": "out/b_hlg.mp4",
+      "options": {
+        "format": "hlg",
+        "shadow_smoothing": 0.5
+      }
+    },
+    {
+      "input": "prores4444_alpha.mov",
+      "output": "out/c_prores.mov",
+      "options": {
+        "format": "prores4444",
+        "alpha_mode": "straight",
+        "input_range": "limited",
+        "audio": "none"
+      }
+    }
+  ]
+}

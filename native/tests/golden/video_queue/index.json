@@ -1,0 +1,87 @@
+{
+ "oracle": "rudra/batch.py run_queue with rudra/video.py convert_video",
+ "checkpoint": "sdr2hdr_shadow_v1.pt",
+ "full_exit": 0,
+ "full": {
+  "version": 1,
+  "queue_sha256": "2428880574e2f76ce16a814ff4216bb205dc9907880c3814fdec179481b63a9c",
+  "jobs": [
+   {
+    "status": "complete",
+    "identity": {
+     "source": "fcd8f0daddf82dea1d65817281753f4f38a853d69c83199da3f5b3344d9c47c9",
+     "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+    },
+    "progress": {
+     "phase": "complete"
+    },
+    "artifacts": [
+     "39e707473859f32938d8a3c91213bc3560d8fa59822fa056b110c1fdf2ce8739",
+     "cbd6a56e09c156b50694a239c1a61d959925679d280cf70d9b9b16da2ca261bb"
+    ]
+   },
+   {
+    "status": "complete",
+    "identity": {
+     "source": "110320b4a99e477474a04c7707d4cf826c13cd68a482f0152419cb8be830edd2",
+     "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+    },
+    "progress": {
+     "phase": "complete"
+    },
+    "artifacts": [
+     "7a1c5394bd2854fc9b30d9d9faca9a57876ab8af1366dd65aca1d7a75d69403d",
+     "20f31f62d9632a7d5abf9910ba3ca0a883985017fbeb2c21050308e8259b6d33"
+    ]
+   },
+   {
+    "status": "complete",
+    "identity": {
+     "source": "57695c73196efe96ba0546e88e1093e18e2402494b1a285244d47e1e4528731c",
+     "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+    },
+    "progress": {
+     "phase": "complete"
+    },
+    "artifacts": [
+     "6e9fab6792e8129888d8e514410ae6cc1378fac61a42d2330ccfcd5000a2d122",
+     "1f6845072e4b9ef7a7b370563f5f132c9283e867b8f6aab5a89f71f8bb1c15d2"
+    ]
+   }
+  ]
+ },
+ "interrupted": {
+  "version": 1,
+  "queue_sha256": "2428880574e2f76ce16a814ff4216bb205dc9907880c3814fdec179481b63a9c",
+  "jobs": [
+   {
+    "status": "complete",
+    "identity": {
+     "source": "fcd8f0daddf82dea1d65817281753f4f38a853d69c83199da3f5b3344d9c47c9",
+     "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+    },
+    "progress": {
+     "phase": "complete"
+    },
+    "artifacts": [
+     "39e707473859f32938d8a3c91213bc3560d8fa59822fa056b110c1fdf2ce8739",
+     "cd4de2581975ff2ee5632d0859eff68fcbc607fa6898e725e65d7d5dd4548442"
+    ]
+   },
+   {
+    "status": "interrupted",
+    "identity": {
+     "source": "110320b4a99e477474a04c7707d4cf826c13cd68a482f0152419cb8be830edd2",
+     "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+    },
+    "progress": {
+     "phase": "starting"
+    },
+    "error": "Interrupted; restart this clip on next run"
+   },
+   {
+    "status": "pending"
+   }
+  ]
+ }
+}

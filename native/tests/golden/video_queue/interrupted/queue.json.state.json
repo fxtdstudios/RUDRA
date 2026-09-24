@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "queue_sha256": "2428880574e2f76ce16a814ff4216bb205dc9907880c3814fdec179481b63a9c",
+  "jobs": [
+    {
+      "status": "complete",
+      "identity": {
+        "source": "fcd8f0daddf82dea1d65817281753f4f38a853d69c83199da3f5b3344d9c47c9",
+        "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+      },
+      "progress": {
+        "phase": "complete"
+      },
+      "artifacts": [
+        "39e707473859f32938d8a3c91213bc3560d8fa59822fa056b110c1fdf2ce8739",
+        "cd4de2581975ff2ee5632d0859eff68fcbc607fa6898e725e65d7d5dd4548442"
+      ]
+    },
+    {
+      "status": "interrupted",
+      "identity": {
+        "source": "110320b4a99e477474a04c7707d4cf826c13cd68a482f0152419cb8be830edd2",
+        "checkpoint": "6b7f73f0b44a6edc3e117373f7397ae3a8df12cb398ec4815597b6e2ebeb63f9"
+      },
+      "progress": {
+        "phase": "starting"
+      },
+      "error": "Interrupted; restart this clip on next run"
+    },
+    {
+      "status": "pending"
+    }
+  ]
+}

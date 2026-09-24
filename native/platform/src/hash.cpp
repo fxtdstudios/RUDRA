@@ -191,6 +191,7 @@ const char* to_string(ErrorCode code) noexcept {
         case ErrorCode::BackendError: return "backend-error";
         case ErrorCode::ParityError: return "parity-error";
         case ErrorCode::Busy: return "busy";
+        case ErrorCode::Cancelled: return "cancelled";
     }
     return "unknown";
 }

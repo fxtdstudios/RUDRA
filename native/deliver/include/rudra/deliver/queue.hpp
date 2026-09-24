@@ -3,8 +3,8 @@
 // (version 1, defaults, jobs), the same <queue>.state.json written the same
 // way (atomic replace, key order and all), the same <queue>.lock, the same
 // refusals. A queue started by `rudra batch run` resumes here and the other
-// way round (ADR-008). What a job DOES is the runner's business: video
-// export arrives with libav in Phase 4.
+// way round (ADR-008). What a job DOES is the runner's business: video/
+// queue_runner runs convert_video (Phase 4, step 9).
 
 #include <filesystem>
 #include <functional>
@@ -35,7 +35,9 @@ using QueueProgress = std::function<void(pyjson::Value)>;
 using QueueRunner = std::function<Result<void>(const QueueJob&, const QueueProgress&)>;
 using QueueLog = std::function<void(const std::string&)>;
 
-// run_queue: 0 when every job is complete, 1 otherwise.
+// run_queue: 0 when every job is complete, 1 otherwise. A runner that returns
+// ErrorCode::Cancelled stops the queue with that job interrupted, as the
+// Python's KeyboardInterrupt does.
 Result<int> run_queue(const std::filesystem::path& queue, bool retry_failed, const QueueRunner& runner,
                       const QueueLog& log = {});
 

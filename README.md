@@ -486,7 +486,8 @@ or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe ru
   on LibTorch and ONNX Runtime, ProRes 4444 within codec noise
 - [x] Frames to video (`encode_sequence`, `rudra-native deliver`): the Python's command, codes within one of 65535,
   tags checked where each format keeps them, the report byte for byte
-- [ ] Video jobs in the queue, resumable from either side
+- [x] Video jobs in the queue, resumable from either side (`rudra-native batch run`): a queue either side stopped
+  mid-clip finishes on the other
 - [ ] ffmpeg capability probe and self-test
 - [ ] The app: movies open, export tiles live, a queue window
 - [ ] The Windows review

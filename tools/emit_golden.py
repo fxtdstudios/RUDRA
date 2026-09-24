@@ -32,6 +32,7 @@ Emitters, in order:
     video_master tools/emit_video_master_golden.py  video mastering, the PNG spool, MaxCLL and MaxFALL, the encoder command (needs ffmpeg)
     video_qc   tools/emit_video_qc_golden.py   export QC and the alpha check on converted and broken masters (needs ffmpeg)
     video_convert tools/emit_video_convert_golden.py convert_video end to end on the checkpoint (needs ffmpeg)
+    video_queue tools/emit_video_queue_golden.py  a three-clip video queue, full and stopped (needs ffmpeg)
     session    tools/emit_session_golden.py    the Studio page's state, params() and undo (needs Playwright)
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
     viewport   tools/emit_viewport_golden.py   the Studio's fit, zoom and pan layout (needs Playwright)
@@ -67,6 +68,7 @@ EMITTERS = {
     "video_master": "emit_video_master_golden.py",
     "video_qc": "emit_video_qc_golden.py",
     "video_convert": "emit_video_convert_golden.py",
+    "video_queue": "emit_video_queue_golden.py",
     "viewer": "emit_viewer_golden.py",
     "viewport": "emit_viewport_golden.py",
 }

@@ -138,7 +138,7 @@ Result<VideoConvertResult> convert_video(const VideoConvertArgs& a, const ModelM
         auto decoder = VideoDecoder::open(source, *video, spool / "decode.log");
         if (!decoder) return decoder.error();
         for (int index = 0; index < total; ++index) {
-            if (hooks.cancel && hooks.cancel->load()) return make_error(ErrorCode::Busy, "Cancelled");
+            if (hooks.cancel && hooks.cancel->load()) return make_error(ErrorCode::Cancelled, "Cancelled");
             auto frame = (*decoder)->next();
             if (!frame) return frame.error();
             auto pred = predictor.predict(rgb_from_frame(*frame), c.transfer, c.primaries, smoother);

@@ -49,6 +49,7 @@
 #include "rudra/platform/npy.hpp"
 
 #ifdef RUDRA_HAVE_STILL_DECODE
+#include "batch.hpp"
 #include "master.hpp"
 #include "video.hpp"
 #endif
@@ -390,6 +391,8 @@ void usage() {
                  "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
                  "       rudra-native master-compare <package> <workflow-report.json> [--runtime ...] [--device ...]\n"
                  "       rudra-native video <package> <input> --output <file> [rudra/video.py options] [--runtime ...] [--device ...]\n"
+                 "       rudra-native batch run <queue.json> [--retry-failed] [--package DIR] [--runtime ...] [--device ...]\n"
+                 "       rudra-native batch status <queue.json>\n"
                  "       rudra-native deliver <frames> --output <stem> [--target hdr10|hlg|prores422hq|prores4444] [--fps N]\n"
                  "                            [--peak-nits N] [--min-nits N] [--source-space rec709|rec2020|p3d65] [--nits-scale N] [--no-verify-tags]\n"
                  "       rudra-native bench-scopes [--iters N]\n");
@@ -412,6 +415,7 @@ int main(int argc, char** argv) {
     if (args.size() < 2) { usage(); return 64; }
     if (args[0] == "deliver") return cmd_deliver(std::vector<std::string>(args.begin() + 1, args.end()));
 #ifdef RUDRA_HAVE_STILL_DECODE
+    if (args[0] == "batch") return cmd_batch(std::vector<std::string>(args.begin() + 1, args.end()));
     if (args[0] == "video") return cmd_video(std::vector<std::string>(args.begin() + 1, args.end()));
 #endif
     const fs::path pkg = args[1];
