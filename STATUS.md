@@ -28,6 +28,14 @@
 > the page's clipboard texts byte for byte, drop to open, Open recent, and
 > settings kept between runs. 138 app and engine tests on Linux.
 >
+> **Revision after the first Windows run (24 Sep).** The window now has the
+> Pro-direction look (the boards on the RUDRA Studio Desktop canvas) instead
+> of a copy of the browser page, with every control, handler and number as
+> before, and it previews at the Studio's 1600 on the long side (it was
+> previewing 2560 x 1440 at full size). The Windows scripted exit had passed
+> every workflow step (240 frames on DirectML, masters byte-identical to the
+> CLI's); its FAIL was the app tests, whose output the script now keeps.
+>
 > **Phase 3 exit.** Scripted: `RUDRA --workflow-check` opens a package and a
 > folder, scrubs every frame, grades and undoes, compares, probes, measures
 > and masters three frames in the real window; `rudra-native master-compare`

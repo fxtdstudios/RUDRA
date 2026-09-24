@@ -37,6 +37,7 @@
 #include <QStyle>
 #include <QVBoxLayout>
 
+#include "export_sheet.hpp"
 #include "model_dialogs.hpp"
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
@@ -642,7 +643,12 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     log("model " + describe(m));
     log("device " + device_->text());
     if (had_frames) start_engine(frames_, current_);
-    else log("drop frames — the network runs once each, then the grade is local");
+    else if (!pending_source_) log("drop frames — the network runs once each, then the grade is local");
+    if (pending_source_) {
+        const auto [path, folder] = *pending_source_;
+        pending_source_.reset();
+        QTimer::singleShot(0, this, [this, path, folder] { open_source(path, folder); });
+    }
     sync_ui();
     refresh_enabled();
     if (done) done(true, {});
@@ -660,6 +666,13 @@ void MainWindow::set_model_pills() {
                             QString::fromStdString(info.version) + (info.detail.empty() ? "" : " (" + QString::fromStdString(info.detail) + ")"));
     } else {
         device_->setText("—");
+    }
+    if (auto* st = findChild<QLabel*>("modelCardState")) {
+        st->setText(on ? QStringLiteral("Verified \u00b7 ") + QString::fromStdString(backend_choice_ ? backend_choice_->label() : "")
+                       : QStringLiteral("File > Model packages\u2026"));
+        st->setProperty("state", on ? "ok" : "");
+        st->style()->unpolish(st);
+        st->style()->polish(st);
     }
     lamp_->setProperty("state", on ? "on" : "off");
     lamp_->style()->unpolish(lamp_);
@@ -691,6 +704,10 @@ void MainWindow::boot() {
 
 void MainWindow::open_source(const QString& preset, bool folder) {
 #if defined(RUDRA_APP_VIEWER) && defined(RUDRA_HAVE_STILL_DECODE)
+    if (!backend_ && loading_model_ && !preset.isEmpty()) {
+        pending_source_ = {preset, folder};   // opened when the model is in
+        return;
+    }
     if (!backend_) {
         log("Open a model package first.");
         return;
@@ -734,6 +751,8 @@ void MainWindow::close_frames() {
     ++stats_gen_;
     clear_scopes();
     clip_bar_->hide();
+    scrub_->set_count(0);
+    refresh_library();
     probe_pixel(std::nullopt);
     update_pipe();
 #ifdef RUDRA_APP_VIEWER
@@ -788,6 +807,9 @@ void MainWindow::start_engine(std::vector<std::filesystem::path> frames, int at)
         });
     });
     engine_->set_sequence(int(frames_.size()));
+    scrub_->set_count(int(frames_.size()));
+    first_thumb_ = QImage();
+    refresh_library();
     refresh_enabled();
     sync_ui();
     step_to(at);
@@ -865,6 +887,7 @@ void MainWindow::show_status() {
     }
 #endif
     src_info_->setText(frame_info_.isEmpty() ? QStringLiteral("—") : frame_info_);
+    update_badges();
 }
 
 // The page's timecode(): non-drop, from 01:00:00:00.
@@ -909,10 +932,29 @@ void MainWindow::sync_ui() {
     i_scopes_->set_on(session_.scopes_open && workspace_ != "simple");
     ws_->set_on(workspace_);
     tabs_->set_on(tab_);
-    panels_->setCurrentIndex(tab_ == "grade" ? 1 : tab_ == "deliver" ? 2 : 0);
+    const int page = tab_ == "grade" ? 1 : tab_ == "deliver" ? 2 : 0;
+    for (int i = 0; i < int(pages_.size()); ++i) pages_[std::size_t(i)]->setVisible(i == page);
     for (auto* n : notes_) n->setVisible(workspace_ != "simple");
     // Frames (drawFrames)
     const int n = int(frames_.size());
+    {
+        auto* title = findChild<QLabel*>("shotTitle");
+        auto* sub = findChild<QLabel*>("shotSub");
+        if (n == 0) {
+            title->setText("No shot open");
+            sub->setText("Drop frames, or open a folder");
+        } else {
+            const auto& first = frames_.front();
+            const bool folder = n > 1;
+            title->setText(QString::fromStdString(folder ? first.parent_path().filename().string()
+                                                         : first.filename().string()));
+            QString res;
+            if (current_frame_ && current_frame_->header.source_resolution)
+                res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7)) +
+                      QStringLiteral(" \u00b7 ");
+            sub->setText(res + QStringLiteral("%1 frame%2 \u00b7 24 fps \u00b7 Rec.709").arg(n).arg(n == 1 ? "" : "s"));
+        }
+    }
     shot_count_->setText(QString::number(n));
     frames_empty_->setVisible(n == 0);
     if (auto* dz = findChild<QWidget*>("dropzone")) dz->setVisible(n == 0);   // shell.js: tucked once frames open
@@ -988,6 +1030,7 @@ void MainWindow::present_frame(SdrImage sdr, Fields fields, FrameScalars scalars
     cur->model = model;
     cur->header = std::move(header);
     current_frame_ = std::move(cur);
+    note_frame_in_strip(current_);
     run_stats();   // adopt(): computeStats at once for a new frame
 }
 
@@ -1071,7 +1114,23 @@ void MainWindow::apply_measure(std::shared_ptr<const FrameMeasure> m) {
     clip_bar_->set(f.coverage.clipped_pct, f.coverage.highlight_pct);
     clip_bar_->show();
     show_scopes(f.measured.scopes, f.measured.metrics.maxcll, f.vector_rgba);
+    // The clipping lane: gold where the SDR clipped, violet where the network
+    // found crushed shadows (its shadow mask over 1 % of the frame).
+    if (!frames_.empty()) {
+        const auto lane = f.coverage.clipped_pct > 0.01 ? ScrubBar::Lane::Highlights
+                          : f.coverage.shadow_pct > 1.0 ? ScrubBar::Lane::Shadows
+                                                        : ScrubBar::Lane::None;
+        scrub_->set_lane(current_, lane);
+        int hi = 0, sh = 0;
+        for (int i = 0; i < scrub_->count(); ++i) {
+            hi += scrub_->lane(i) == ScrubBar::Lane::Highlights;
+            sh += scrub_->lane(i) == ScrubBar::Lane::Shadows;
+        }
+        findChild<QLabel*>("colHighlights")->setText(QString::number(hi));
+        findChild<QLabel*>("colShadows")->setText(QString::number(sh));
+    }
     update_pipe();
+    update_badges();
     refresh_enabled();
 }
 
@@ -1251,6 +1310,8 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
         status->setText(QStringLiteral("Rendered %1 frame(s) to %2").arg(o.completed).arg(folder));
     }
     status->show();
+    delivered_ += int(o.completed);
+    findChild<QLabel*>("colDelivered")->setText(QString::number(delivered_));
     btn_master_->setText("Master EXR");   // busy(false)
     btn_master_->setToolTip({});
     refresh_enabled();
@@ -1426,6 +1487,164 @@ void MainWindow::restore_settings() {
 void MainWindow::closeEvent(QCloseEvent* e) {
     save_settings();
     QMainWindow::closeEvent(e);
+}
+
+
+// ---------------------------------------------------------------------------
+// The Pro chrome
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// A small picture of an SDR frame: its display-encoded codes as they are.
+QImage sdr_thumb(const SdrImage& sdr, int height) {
+    const auto& b = sdr.buffer();
+    if (b.width() <= 0 || b.height() <= 0) return {};
+    const int h = std::max(1, std::min(height, b.height()));
+    const int w = std::max(1, int(std::lround(double(b.width()) * h / b.height())));
+    QImage img(w, h, QImage::Format_RGB888);
+    for (int y = 0; y < h; ++y) {
+        uchar* row = img.scanLine(y);
+        const int sy = std::min(b.height() - 1, int((y + 0.5) * b.height() / h));
+        for (int x = 0; x < w; ++x) {
+            const int sx = std::min(b.width() - 1, int((x + 0.5) * b.width() / w));
+            for (int c = 0; c < 3; ++c)
+                row[x * 3 + c] = uchar(std::clamp(int(std::lround(b.at(c, sy, sx) * 255.0f)), 0, 255));
+        }
+    }
+    return img;
+}
+
+}  // namespace
+
+void MainWindow::note_frame_in_strip(int index) {
+    if (!current_frame_ || index < 0 || index >= scrub_->count()) return;
+    const QImage t = sdr_thumb(current_frame_->sdr, 88);
+    scrub_->set_thumb(index, t);
+    if (index == 0 || first_thumb_.isNull()) first_thumb_ = t;
+    if (index == 0 || scrub_->count() == 1) refresh_library();   // the shot row's picture
+}
+
+void MainWindow::refresh_library() {
+    auto* shots = findChild<QWidget*>("shots");
+    if (!shots) return;
+    for (auto* c : shots->findChildren<QWidget*>(Qt::FindDirectChildrenOnly)) c->deleteLater();
+    auto* v = static_cast<QVBoxLayout*>(shots->layout());
+    auto add_row = [&](const QString& name, const QString& sub, const QImage& thumb, bool sel, bool hdr,
+                       const QString& open) {
+        auto* r = new QWidget(shots);
+        r->setProperty("role", "shot");
+        r->setProperty("sel", sel);
+        r->setAttribute(Qt::WA_StyledBackground, true);
+        auto* h = new QHBoxLayout(r);
+        h->setContentsMargins(8, 6, 8, 6);
+        h->setSpacing(10);
+        auto* pic = new QLabel(r);
+        pic->setFixedSize(46, 30);
+        if (!thumb.isNull())
+            pic->setPixmap(QPixmap::fromImage(thumb.scaled(46, 30, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation)
+                                                  .copy(0, 0, 46, 30)));
+        else pic->setStyleSheet({});
+        h->addWidget(pic);
+        auto* text = new QWidget(r);
+        auto* tv = new QVBoxLayout(text);
+        tv->setContentsMargins(0, 0, 0, 0);
+        tv->setSpacing(0);
+        auto* n = new QLabel(name, text);
+        n->setProperty("role", "shot-name");
+        auto* s = new QLabel(sub, text);
+        s->setProperty("role", "shot-sub");
+        tv->addWidget(n);
+        tv->addWidget(s);
+        h->addWidget(text, 1);
+        if (hdr) {
+            auto* tag = new QLabel("HDR", r);
+            tag->setProperty("role", "hdr-tag");
+            h->addWidget(tag);
+        }
+        if (!open.isEmpty()) {
+            r->setCursor(Qt::PointingHandCursor);
+            r->setToolTip(open);
+            r->installEventFilter(this);
+            r->setProperty("open", open);
+        }
+        v->addWidget(r);
+    };
+    int rows = 0;
+    QString current;
+    if (!frames_.empty()) {
+        const bool folder = frames_.size() > 1;
+        const auto& first = frames_.front();
+        current = QString::fromStdString((folder ? first.parent_path() : first).string());
+        QString res;
+        if (current_frame_ && current_frame_->header.source_resolution)
+            res = QString::fromStdString(*current_frame_->header.source_resolution).replace('x', QChar(0xd7)) + " · ";
+        const bool hdr = measure_ && measure_->measured.metrics.maxcll > 203.0;
+        add_row(QString::fromStdString(folder ? first.parent_path().filename().string() : first.filename().string()),
+                res + QStringLiteral("%1 f").arg(frames_.size()), scrub_->count() ? thumb_of_first() : QImage(), true,
+                hdr, {});
+        ++rows;
+    }
+    // Then the shots opened before (Open recent), to reopen with a click.
+    for (const auto& p : recent_sources()) {
+        if (rows >= 6) break;
+        if (QDir::cleanPath(p) == QDir::cleanPath(current)) continue;
+        const QFileInfo fi(p);
+        if (!fi.exists()) continue;
+        add_row(fi.fileName(), fi.isDir() ? QStringLiteral("folder") : fi.suffix().toUpper(), {}, false, false, p);
+        ++rows;
+    }
+    shots->setVisible(rows > 0);
+}
+
+QImage MainWindow::thumb_of_first() const {
+    return first_thumb_;
+}
+
+void MainWindow::update_badges() {
+    auto* text = findChild<QLabel*>("hdrBadgeText");
+    auto* sub = findChild<QLabel*>("hdrBadgeSub");
+    auto* dot = findChild<QLabel*>("hdrDot");
+    bool hdr = false;
+    QString what = "display not measured";
+#ifdef RUDRA_APP_VIEWER
+    if (viewer_) {
+        const ViewerStatus s = viewer_->status();
+        hdr = s.target.path != OutputPath::SdrPqSimulation;
+        what = hdr ? QLocale(QLocale::English).toString(qlonglong(std::lround(s.target.peak_nits))) + " nits headroom"
+                   : QStringLiteral("simulated at 203 nits");
+    }
+#endif
+    text->setText(hdr ? "HDR" : "SDR");
+    sub->setText(what);
+    if (dot->property("state").toString() != (hdr ? "hdr" : "sdr")) {
+        dot->setProperty("state", hdr ? "hdr" : "sdr");
+        dot->style()->unpolish(dot);
+        dot->style()->polish(dot);
+    }
+    auto* cll = findChild<QLabel*>("cllBadge");
+    if (measure_) {
+        const double maxcll = measure_->measured.metrics.maxcll;
+        const bool clipped = maxcll > session_.display_nits() + 0.5;
+        cll->setText(QStringLiteral("MaxCLL ") + QLocale(QLocale::English).toString(qlonglong(std::lround(maxcll))) +
+                     (clipped ? QStringLiteral(" · clipped on screen") : QString()));
+    } else {
+        cll->setText(QStringLiteral("MaxCLL —"));
+    }
+}
+
+bool MainWindow::eventFilter(QObject* o, QEvent* e) {
+    if (e->type() == QEvent::MouseButtonRelease) {
+        const QString p = o->property("open").toString();
+        if (!p.isEmpty()) {
+            QTimer::singleShot(0, this, [this, p] {
+                if (QFileInfo(p).isDir()) open_source(p, true);
+                else add_files({std::filesystem::path(p.toStdString())});
+            });
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(o, e);
 }
 
 void MainWindow::log(const QString& line) {

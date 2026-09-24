@@ -1,8 +1,8 @@
 #pragma once
-// The Studio's look (Phase 3 step 1): IBM Plex Sans Condensed and Plex Mono
-// from the resources, a palette and the style sheet generated from
-// ui/theme.css at build time (cmake/rudra_theme.cmake). No colour is written
-// in the app's sources; they all come from the tokens.
+// The app's look: the Pro boards (app/theme/pro.css). Geist and Geist Mono
+// from the resources (Plex too, for the scope labels), a palette and the
+// style sheet generated from pro.css at build time (cmake/rudra_theme.cmake).
+// No colour is written in the app's sources; they all come from the tokens.
 
 #include <QColor>
 #include <QMap>
@@ -27,6 +27,8 @@ ThemeReport apply_theme(QApplication& app);
 
 // One token as a colour (the scope and viewer painters use these).
 QColor token_colour(const ThemeReport& t, const QString& name);
+// The same from the embedded tokens, for painters that have no report.
+QColor theme_colour(const QString& name);
 
 // The report as JSON, for `RUDRA --theme-check out.json` (CI and the gates).
 QByteArray theme_report_json(const ThemeReport& t);

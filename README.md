@@ -442,8 +442,10 @@ Then Phase 2 (the QRhi viewer, 20 days; plan in
 Then Phase 3 (the Qt UI, 15 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 16): the full
 Studio workflow with no Python installed, every number and file matching the Studio's.
-- [x] The look: the style sheet generated from `ui/theme.css` at build time, every
-  colour the theme's and every grey neutral (a test), IBM Plex embedded (OFL)
+- [x] The look: the Pro-direction boards (unified toolbar, sidebar library, compare bar, inspector cards,
+  filmstrip with a clipping lane, welcome and export sheet), the sheet generated from `app/theme/pro.css`,
+  every grey neutral (a test), Geist embedded (OFL)
+- [x] Previews at the Studio's 1600 on the long side, masters at full size
 - [x] Actions: the page's 33 actions with its menus, labels, keys and check states, checked
   against the page and in the app's real menubar (offscreen Qt tests)
 - [x] Session model with undo, the page's `params()` byte for byte (251 states of the page itself,

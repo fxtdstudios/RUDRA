@@ -746,6 +746,39 @@ measurements and scopes as data, all equal to the Studio's.
 | 11 | The rest of the page: the sheets (shortcuts, about, copy metrics, scopes and delivery), drop to open, recent shots, settings kept between runs | `ui/app.js` | every remaining `data-act` works | 0.5 | **done** 24 Sep: Measure > Copy and Deliver > Copy write the page's bytes: `core/js_json` is `JSON.stringify(value, null, 2)` (insertion order, `String(x)` numbers, NaN as null, its escapes) and `core/copy_texts` builds `state.metrics`, `state.scopeData` and `deliveryRecord()` key for key, held to the page's own copy actions run headless with the clipboard recorded (`tools/emit_copy_golden.py`, 5 cases, `test_copy_texts`); `region_ev` only when a region is graded, as `graded()`. The sheets are the page's overlay: non-modal, "Esc, or click anywhere, to close", About's Device the `#device` pill. Open takes several stills and a drop brings frames as `addFiles` does (appended, the first of them shown, "added N frames"), a folder as a shot, a model package folder to the checkpoint manager; the drop zone lights while a drag is over the window, and the viewer's own window forwards drops. File > Open recent keeps the last ten shots, newest first, with Clear recent. The window's place and size, the workspace, the rails and scopes, the inspector tab, the container and the Render fields are kept between runs (`restore_settings` at start, saved on close; tests start clean). No page action waits on a later step now (`AppActions`, `AppCopy`, `AppOpen`, `AppSettings`). Adding frames restarts the engine on the longer list, so the cache is rebuilt; fine at this size, noted for Phase 4 |
 | 12 | Review: the whole workflow on Windows with no Python on the machine, scripted and by hand; Phase 3 exit in `STATUS.md` | | open, scrub, grade, compare, probe and master a 240-frame folder with the numbers matching the Studio's | 0.5 | **scripted, Linux passes** 24 Sep; the Windows run is `scripts/NATIVE_PHASE3_EXIT.ps1 -Frames <folder>`. `RUDRA --workflow-check` (`app/workflow_check`) drives the real window: the package on the backend asked for with its goldens checked, the folder, every frame scrubbed with the transport and every 24th compared with its own decode, a grade of five moves undone and redone to the same `params()`, the wipe, the flip and the layers, the probe and the measurements, and image masters of the first, middle and last frames; the report is JSON. `rudra-native master-compare` then renders each of those frames through the CLI master with the parameters the app used and holds the app's EXR and sidecar to it (1 half ulp, headers and sidecars; a moved strength fails it). On Linux, ONNX Runtime CPU, 240 frames of 480 x 270: all seven steps pass, 240 of 240 delivered as themselves (11 checked against their decode), median 933 ms per frame on two cores, and the three graded masters byte-identical to the CLI's (0 half ulp, sidecars byte for byte). The exit script builds RUDRA with ONNX Runtime (DirectML), OpenCV and Qt beside it, runs the app tests, runs the workflow with a PATH of the app's folder and Windows only, compares the masters on the same backend and prints the by-hand checklist (`STATUS.md`) |
 
+**Revision, 24 Sep: the Pro look and the Studio's preview size.** The first
+Windows run showed the window as a copy of the browser Studio, where the
+target was always the Pro-direction boards, and slow on 2560 x 1440 frames.
+Both changed without touching behaviour:
+
+- The look is now the boards' (`app/theme/pro.css`, the one source; the sheet
+  generated from it as before). Unified toolbar with the Reconstruct / Grade /
+  Deliver tabs in the middle and the machine pill, Probe, Scopes, inspector,
+  Export and Help on the right; the sidebar library (open by path, the shot
+  row with its picture, Open recent below it, collections counted from the
+  clipping lane, the probe card, the model card); the viewer's compare bar and
+  the HDR and MaxCLL badges on the surround (a strip rather than floating: a
+  widget cannot sit over the viewer's own swapchain window on every platform);
+  the colour pipeline as chips; the timeline with a 20 px timecode, round
+  transport and a filmstrip of the frames as they arrive over a clipping lane
+  (gold where the SDR clipped, violet where the shadow mask covers over 1 %);
+  the inspector's grouped cards (Reconstruction, Region exposure, Delivery with
+  the Render card and Master EXR, This frame, the scopes, the log); switches
+  for the check rows; the welcome and the export sheet from their boards. Type
+  is Geist and Geist Mono (OFL, embedded: the boards' named fallback for SF,
+  which cannot ship). Every grey stays neutral, R = G = B, where the boards
+  use Apple's blue greys: a tinted chrome biases the judgement of the
+  picture. The scopes keep the Studio page's plot greys and Plex labels, so
+  they stay held to its rasters. Every control keeps the page's id and
+  handler: the session, action, measurement, delivery, catalog and copy tests
+  pass unchanged; the layout tests now hold the window to the boards (the
+  frame, the badges either side of a centred compare bar) and list the few
+  words and placements the boards changed, each with its reason.
+- Frames preview at the Studio's 1600 on the long side (`media` `fit_max_side`,
+  `ui/server.py` `_fit`: INTER_AREA in float32, held to it on 7 cases,
+  `tools/emit_fit_golden.py`); the header keeps the source resolution; masters
+  still decode at full size.
+
 Order: 1 to 3 first (look, actions and state are what everything else binds
 to), then 4, then 5 to 8 in any order, then 9 and 10 (they need the engine
 jobs), 11, 12.

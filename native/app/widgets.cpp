@@ -1,5 +1,7 @@
 #include "widgets.hpp"
 
+#include "theme.hpp"
+
 #include <QButtonGroup>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -82,16 +84,21 @@ CheckRow::CheckRow(const QString& id, const QString& label, const QString& hint_
     setProperty("role", "check");
     setCursor(Qt::PointingHandCursor);
     auto* row = new QHBoxLayout(this);
-    row->setContentsMargins(18, 3, 0, 3);   // the box is painted in the first 18 px
-    row->setSpacing(6);
-    label_ = new QLabel(label, this);
+    row->setContentsMargins(0, 4, 50, 4);   // the switch is painted in the last 50 px
+    row->setSpacing(0);
+    auto* text = new QWidget(this);
+    auto* col = new QVBoxLayout(text);
+    col->setContentsMargins(0, 0, 0, 0);
+    col->setSpacing(1);
+    label_ = new QLabel(label, text);
     label_->setProperty("role", "check-lab");
-    hint_ = new QLabel(hint, this);
+    hint_ = new QLabel(hint, text);
     hint_->setObjectName(hint_id);
     hint_->setProperty("role", "check-hint");
-    row->addWidget(label_);
-    row->addStretch(1);
-    row->addWidget(hint_);
+    hint_->setWordWrap(true);
+    col->addWidget(label_);
+    col->addWidget(hint_);
+    row->addWidget(text, 1);
 }
 
 void CheckRow::set_on(bool on) {
@@ -111,22 +118,15 @@ void CheckRow::paintEvent(QPaintEvent*) {
     opt.initFrom(this);
     QPainter p(this);
     style()->drawPrimitive(QStyle::PE_Widget, &opt, &p, this);
-    const QRectF box(2.5, height() / 2.0 - 5.5, 11, 11);
     p.setRenderHint(QPainter::Antialiasing);
-    // .check.on .box: accent-dim with the accent line; off: the panel with line-2.
-    p.setPen(QPen(palette().color(on_ ? QPalette::Link : QPalette::Midlight), 1));
-    p.setBrush(on_ ? palette().color(QPalette::Highlight) : palette().color(QPalette::Base));
-    p.drawRoundedRect(box, 1, 1);
-    if (on_) {
-        QPainterPath tick;   // the page's check mark: M1 3 L2.8 4.8 L6 1.2 in a 7 x 6 box
-        const QPointF o = box.center() - QPointF(3.5, 3.0);
-        tick.moveTo(o + QPointF(1, 3));
-        tick.lineTo(o + QPointF(2.8, 4.8));
-        tick.lineTo(o + QPointF(6, 1.2));
-        p.setPen(QPen(palette().color(QPalette::HighlightedText), 1.2));
-        p.setBrush(Qt::NoBrush);
-        p.drawPath(tick);
-    }
+    // A 38 x 22 switch: the accent when on, the raised grey when off; a white knob.
+    const QRectF track(width() - 40.0, height() / 2.0 - 11.0, 38.0, 22.0);
+    p.setPen(Qt::NoPen);
+    p.setBrush(on_ ? palette().color(QPalette::Link) : palette().color(QPalette::Light));
+    p.drawRoundedRect(track, 11, 11);
+    const double kx = on_ ? track.right() - 20.0 : track.left() + 2.0;
+    p.setBrush(palette().color(QPalette::BrightText));
+    p.drawEllipse(QRectF(kx, track.top() + 2.0, 18.0, 18.0));
 }
 
 QWidget* panel_label(const QString& text, const QString& note, const QString& note_id, QWidget* parent) {
@@ -152,7 +152,7 @@ QWidget* panel_label(const QString& text, const QString& note, const QString& no
 
 ScrubBar::ScrubBar(QWidget* parent) : QWidget(parent) {
     setObjectName("scrub");
-    setMinimumHeight(14);
+    setMinimumHeight(58);
     setCursor(Qt::PointingHandCursor);
 }
 
@@ -161,12 +161,84 @@ void ScrubBar::set_position(double f) {
     update();
 }
 
+void ScrubBar::set_count(int n) {
+    count_ = std::max(0, n);
+    thumbs_.assign(std::size_t(count_), QImage());
+    lanes_.assign(std::size_t(count_), Lane::None);
+    update();
+}
+
+void ScrubBar::set_thumb(int frame, const QImage& small) {
+    if (frame < 0 || frame >= count_) return;
+    thumbs_[std::size_t(frame)] = small;
+    update();
+}
+
+void ScrubBar::set_lane(int frame, Lane l) {
+    if (frame < 0 || frame >= count_) return;
+    lanes_[std::size_t(frame)] = l;
+    update();
+}
+
+ScrubBar::Lane ScrubBar::lane(int frame) const {
+    return frame >= 0 && frame < count_ ? lanes_[std::size_t(frame)] : Lane::None;
+}
+
 void ScrubBar::paintEvent(QPaintEvent*) {
     QPainter p(this);
-    const double y = height() / 2.0;
-    p.fillRect(QRectF(0, y - 1.5, width(), 3), palette().color(QPalette::Mid));
-    const double x = pos_ * (width() - 2);
-    p.fillRect(QRectF(x, 1, 2, height() - 2), palette().color(QPalette::Link));
+    p.setRenderHint(QPainter::Antialiasing);
+    const double strip_h = std::max(10.0, height() - 14.0), lane_y = strip_h + 8.0;
+    const QRectF strip(0, 0, width(), strip_h);
+    // The strip: a rounded well, cells of the nearest frame that has a thumbnail.
+    QPainterPath well;
+    well.addRoundedRect(strip, 6, 6);
+    p.fillPath(well, palette().color(QPalette::Dark));
+    if (count_ > 0) {
+        p.save();
+        p.setClipPath(well);
+        const int cells = std::max(1, std::min(count_, int(width() / 64.0) + 1));
+        const double cw = double(width()) / cells;
+        for (int c = 0; c < cells; ++c) {
+            const int f = std::min(count_ - 1, int((c + 0.5) * count_ / cells));
+            const QImage* img = nullptr;   // this cell's frame, else the nearest with a picture
+            for (int d = 0; d < count_ && !img; ++d) {
+                for (int g : {f - d, f + d})
+                    if (g >= 0 && g < count_ && !thumbs_[std::size_t(g)].isNull()) {
+                        img = &thumbs_[std::size_t(g)];
+                        break;
+                    }
+                if (d > count_ / cells) break;   // no further than a cell away
+            }
+            const QRectF cell(c * cw, 0, cw - (c + 1 < cells ? 2.0 : 0.0), strip_h);
+            if (img) {
+                // cover: scale to fill, centred
+                const double s = std::max(cell.width() / img->width(), cell.height() / img->height());
+                const QSizeF sz(img->width() * s, img->height() * s);
+                p.drawImage(QRectF(cell.center() - QPointF(sz.width() / 2, sz.height() / 2), sz), *img);
+            } else {
+                p.fillRect(cell, palette().color(QPalette::Button));
+            }
+        }
+        p.restore();
+    }
+    // The clipping lane.
+    const QRectF lane(0, lane_y, width(), 6);
+    p.setPen(Qt::NoPen);
+    p.setBrush(palette().color(QPalette::Button));
+    p.drawRoundedRect(lane, 3, 3);
+    if (count_ > 0) {
+        static const QColor lane_gold = theme_colour("gold"), lane_violet = theme_colour("violet");
+        for (int f = 0; f < count_; ++f) {
+            const Lane l = lanes_[std::size_t(f)];
+            if (l == Lane::None) continue;
+            const double x0 = double(f) * width() / count_, x1 = double(f + 1) * width() / count_;
+            p.setBrush(l == Lane::Highlights ? lane_gold : lane_violet);
+            p.drawRect(QRectF(x0, lane.top(), std::max(1.5, x1 - x0), lane.height()));
+        }
+    }
+    // The playhead.
+    const double x = count_ > 1 || count_ == 0 ? pos_ * (width() - 2) : 0.0;
+    p.fillRect(QRectF(x, 0, 2, strip_h), palette().color(QPalette::Link));
 }
 
 void ScrubBar::mousePressEvent(QMouseEvent* e) {
@@ -232,15 +304,14 @@ void IconButton::paintEvent(QPaintEvent* e) {
     QToolButton::paintEvent(e);   // the sheet's background and border
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    // .ibtn: ink-3, the accent when on (with its 2 px bar), the ink on hover.
-    const bool rail = glyph_ == Glyph::Media || glyph_ == Glyph::Scopes || glyph_ == Glyph::Inspector ||
-                      glyph_ == Glyph::Help;
-    QColor ink = palette().color(QPalette::PlaceholderText);
-    if (!rail) ink = palette().color(QPalette::WindowText);
+    // The toolbar's icons: the secondary ink, the accent when on, the ink on hover.
+    const bool transport = glyph_ == Glyph::Prev || glyph_ == Glyph::Play || glyph_ == Glyph::Pause || glyph_ == Glyph::Next;
+    QColor ink = transport ? palette().color(QPalette::WindowText) : theme_colour("ink-2");
     if (on_) ink = palette().color(QPalette::Link);
-    else if (underMouse()) ink = palette().color(QPalette::Text);
+    else if (underMouse() && !transport) ink = palette().color(QPalette::Text);
+    // The play button is the white disc of the boards: its glyph is dark.
+    if (glyph_ == Glyph::Play || glyph_ == Glyph::Pause) ink = objectName() == "btnPlay" ? theme_colour("panel") : ink;
     if (!isEnabled()) ink = palette().color(QPalette::Disabled, QPalette::WindowText);
-    if (rail && on_) p.fillRect(QRectF(0, 0, 2, height()), palette().color(QPalette::Link));
     p.setPen(QPen(ink, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     auto box = [&](double w, double h) {   // centre a w x h drawing
@@ -298,6 +369,30 @@ void IconButton::paintEvent(QPaintEvent* e) {
             p.setPen(QPen(ink, 1));
             if (glyph_ == Glyph::Play) p.setBrush(ink);
             p.drawPath(t);
+            break;
+        }
+        case Glyph::Sidebar: {   // the boards' 18 x 14 sidebar glyph
+            p.translate(box(18, 14));
+            p.drawRoundedRect(QRectF(0.7, 0.7, 16.6, 12.6), 2.5, 2.5);
+            p.drawLine(QPointF(6, 1), QPointF(6, 13));
+            break;
+        }
+        case Glyph::Probe: {   // a reticle
+            p.translate(box(16, 16));
+            p.drawEllipse(QPointF(8, 8), 5.5, 5.5);
+            p.drawLine(QPointF(8, 0), QPointF(8, 4));
+            p.drawLine(QPointF(8, 12), QPointF(8, 16));
+            p.drawLine(QPointF(0, 8), QPointF(4, 8));
+            p.drawLine(QPointF(12, 8), QPointF(16, 8));
+            break;
+        }
+        case Glyph::Export: {   // share: an arrow out of a tray
+            p.translate(box(16, 16));
+            QPainterPath m;
+            m.moveTo(8, 10); m.lineTo(8, 1);
+            m.moveTo(4.5, 4.5); m.lineTo(8, 1); m.lineTo(11.5, 4.5);
+            m.moveTo(2, 8); m.lineTo(2, 14); m.lineTo(14, 14); m.lineTo(14, 8);
+            p.drawPath(m);
             break;
         }
         case Glyph::Pause: {

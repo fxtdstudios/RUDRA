@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <QDialog>
+#include <QImage>
 #include <QPointer>
 #include <QTimer>
 
@@ -98,6 +99,8 @@ public:
     // package used last (on its backend), else the catalog's pick.
     void boot();
     void open_model_manager();
+    // The export sheet (the Pro boards): format, frames, destination, then Master EXR.
+    void open_export_sheet();
     void open_first_run();
     // A still, or a folder of frames: both are a sequence to the engine.
     void open_source(const QString& preset = {}, bool folder = false);
@@ -186,6 +189,7 @@ protected:
     void dragLeaveEvent(class QDragLeaveEvent* e) override;
     void dropEvent(class QDropEvent* e) override;
     void closeEvent(class QCloseEvent* e) override;
+    bool eventFilter(QObject* o, QEvent* e) override;   // a shot row in the sidebar reopens its shot
 
 private:
     void build_menus();
@@ -199,7 +203,17 @@ private:
     QWidget* build_centre(bool with_viewer);
     QWidget* build_right_rail();
     QWidget* build_pipe();
-    void build_menubar_corners();
+    QWidget* build_toolbar();
+    // The Pro chrome: the toolbar's shot title, the sidebar's shot rows and
+    // collections, the viewer's badges, the filmstrip and its clipping lane.
+    void refresh_library();
+    void update_badges();
+    void note_frame_in_strip(int index);
+    int delivered_ = 0;
+    std::optional<std::pair<QString, bool>> pending_source_;   // a shot asked for while the model loads
+    QImage first_thumb_;
+    QImage thumb_of_first() const;
+    QPointer<QDialog> export_sheet_;
 
     void start_engine(std::vector<std::filesystem::path> frames, int at = 0);
     struct LoadedModel;
@@ -225,7 +239,9 @@ private:
     bool guides_on_ = false;
     // The widgets the state is drawn into (the page's ids).
     QWidget *rail_left_ = nullptr, *rail_right_ = nullptr, *scopes_ = nullptr;
-    QStackedWidget *viewer_stack_ = nullptr, *panels_ = nullptr;
+    QStackedWidget* viewer_stack_ = nullptr;
+    QWidget* panels_ = nullptr;          // the inspector's tab page (#ipanels)
+    std::vector<QWidget*> pages_;        // Reconstruct, Grade, Deliver
     Seg *view_mode_ = nullptr, *view_layer_ = nullptr, *zoom_seg_ = nullptr, *mode_seg_ = nullptr, *tabs_ = nullptr,
         *ws_ = nullptr;
     CheckRow *preserve_ = nullptr, *anchor_ = nullptr, *carry_chroma_ = nullptr;

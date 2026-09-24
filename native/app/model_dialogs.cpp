@@ -6,7 +6,9 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QPixmap>
 #include <QPointer>
+#include <QStyle>
 #include <QPushButton>
 #include <QSettings>
 #include <QTreeWidget>
@@ -182,15 +184,99 @@ void ModelManager::use_selected() {
 
 // ---------------------------------------------------------------------------
 
+namespace {
+
+// One "Getting ready" step of the welcome: a state dot, a name, what it found.
+QWidget* step(QWidget* parent, const QString& dot_id, const QString& name, QVBoxLayout*& body) {
+    auto* r = new QWidget(parent);
+    r->setProperty("role", "step");
+    r->setAttribute(Qt::WA_StyledBackground, true);
+    auto* h = new QHBoxLayout(r);
+    h->setContentsMargins(0, 12, 0, 12);
+    h->setSpacing(14);
+    auto* dot = label({}, dot_id, "step-dot", r);
+    dot->setFixedSize(26, 26);
+    dot->setAlignment(Qt::AlignCenter);
+    h->addWidget(dot, 0, Qt::AlignTop);
+    auto* col = new QWidget(r);
+    body = new QVBoxLayout(col);
+    body->setContentsMargins(0, 0, 0, 0);
+    body->setSpacing(4);
+    auto* n = label(name, {}, "step-name", col);
+    n->setWordWrap(false);
+    body->addWidget(n);
+    h->addWidget(col, 1);
+    return r;
+}
+
+void set_dot(QWidget* root, const char* id, const char* state) {
+    if (auto* d = root->findChild<QLabel*>(id)) {
+        d->setProperty("state", state);
+        d->setText(QString(state) == "done" ? QStringLiteral("✓") : QString(state) == "fail" ? QStringLiteral("!") : QString());
+        d->style()->unpolish(d);
+        d->style()->polish(d);
+    }
+}
+
+}  // namespace
+
 FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     setObjectName("firstRun");
     setWindowTitle("Welcome to RUDRA");
-    resize(820, 640);
-    auto* v = new QVBoxLayout(this);
-    v->addWidget(label("The display", "frDisplayHead", "plabel", this));
+    resize(980, 640);
+    auto* h = new QHBoxLayout(this);
+    h->setContentsMargins(0, 0, 0, 0);
+    h->setSpacing(0);
+
+    // The left: the app, its name and what it does.
+    auto* side = new QWidget(this);
+    side->setObjectName("welcomeSide");
+    side->setAttribute(Qt::WA_StyledBackground, true);
+    side->setFixedWidth(360);
+    auto* sv = new QVBoxLayout(side);
+    sv->setContentsMargins(24, 24, 24, 24);
+    sv->setSpacing(18);
+    sv->addStretch(1);
+    auto* icon = new QWidget(side);
+    icon->setObjectName("welcomeIcon");
+    icon->setAttribute(Qt::WA_StyledBackground, true);
+    icon->setFixedSize(128, 128);
+    auto* iv = new QVBoxLayout(icon);
+    auto* mark = new QLabel(icon);
+    mark->setPixmap(QPixmap(":/assets/rudra-mark.png").scaled(84, 84, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    mark->setAlignment(Qt::AlignCenter);
+    iv->addWidget(mark);
+    sv->addWidget(icon, 0, Qt::AlignHCenter);
+    auto* t = label("Welcome to RUDRA", "welcomeTitle", {}, side);
+    t->setAlignment(Qt::AlignCenter);
+    t->setWordWrap(false);
+    sv->addWidget(t);
+    auto* sub = label("SDR footage back to scene-linear HDR, and a record of where it did it.", "welcomeSub", {}, side);
+    sub->setAlignment(Qt::AlignCenter);
+    sv->addWidget(sub);
+    sv->addStretch(1);
+    auto* ver = label("FXTD Studios", "welcomeVersion", {}, side);
+    ver->setAlignment(Qt::AlignCenter);
+    sv->addWidget(ver);
+    h->addWidget(side);
+
+    // The right: getting ready.
+    auto* right = new QWidget(this);
+    auto* v = new QVBoxLayout(right);
+    v->setContentsMargins(36, 34, 36, 24);
+    v->setSpacing(2);
+    v->addWidget(label("Getting ready", "readyTitle", {}, right));
+    v->addSpacing(8);
+
+    QVBoxLayout* body = nullptr;
+    v->addWidget(step(right, "frDotDisplay", "Display", body));
+    display_ = label("", "frDisplay", "step-sub", right);
+    display_detail_ = label("", "frDisplayDetail", "step-sub", right);
+    body->addWidget(display_);
+    body->addWidget(display_detail_);
 #ifdef RUDRA_APP_VIEWER
     // The HDR card through the viewer's own passes, on this display, at its
-    // own peak: the patches say on the glass what the numbers below say.
+    // own peak: the patches say on the glass what the words say.
     if (with_card) {
         auto* win = new ViewerWindow();
         win->set_input_enabled(false);
@@ -199,10 +285,10 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
         ViewParams vp;
         vp.display_nits = 10000.0;   // the ceiling is the display's own peak
         win->set_view(vp);
-        card_ = QWidget::createWindowContainer(win, this);
+        card_ = QWidget::createWindowContainer(win, right);
         card_->setObjectName("frCard");
-        card_->setMinimumHeight(300);
-        v->addWidget(card_, 1);
+        card_->setFixedHeight(170);
+        body->addWidget(card_);
         QPointer<FirstRun> self(this);
         win->on_status([self](const ViewerStatus& s) {
             if (self) self->set_display(s.target, s.swapchain, s.peak_from);
@@ -210,46 +296,74 @@ FirstRun::FirstRun(MainWindow* w, bool with_card) : QDialog(w), w_(w) {
     }
 #endif
     (void)with_card;
-    display_ = label("", "frDisplay", "value", this);
-    display_detail_ = label("", "frDisplayDetail", "note", this);
-    v->addWidget(display_);
-    v->addWidget(display_detail_);
     if (!card_) {
         display_->setText("Display not checked");
         display_detail_->setText("This window has no viewer (a build without Qt 6.6 Shader Tools, or the tests): "
                                  "the HDR card cannot be shown.");
     }
 
-    v->addWidget(label("The model", "frModelHead", "plabel", this));
     w_->rescan_models();
     const Catalog& c = w_->catalog();
     const auto pick = c.pick();
-    model_ = label(pick ? q(c.entries[*pick].label()) + "  ·  " + q(c.entries[*pick].package.string())
-                        : QString("No model package found. Add one in File > Model packages… later."),
-                   "frModel", "value", this);
-    v->addWidget(model_);
-    auto* row = new QHBoxLayout;
-    backend_ = new QComboBox(this);
+    v->addWidget(step(right, "frDotBackend", "Acceleration", body));
+    auto* row = new QWidget(right);
+    auto* rh = new QHBoxLayout(row);
+    rh->setContentsMargins(0, 2, 0, 0);
+    rh->setSpacing(8);
+    backend_ = new QComboBox(row);
     backend_->setObjectName("frBackend");
     fill_backend_combo(backend_, w_->model_backend());
-    auto* test = button("Load and test", "frTest", this);
-    test->setEnabled(pick.has_value());
-    row->addWidget(backend_, 1);
-    row->addWidget(test);
-    v->addLayout(row);
-    model_status_ = label(pick ? "The package's golden frames run once on the backend you choose; a model that drifts "
-                                 "is refused."
+    auto* test = button("Load and test", "frTest", row);
+    test->setEnabled(pick.has_value() || !w_->model_package().empty());
+    rh->addWidget(backend_, 1);
+    rh->addWidget(test);
+    body->addWidget(row);
+
+    v->addWidget(step(right, "frDotModel", "Model", body));
+    // The package in use if there is one (opened on the command line, say), else the catalog's pick.
+    const bool in_use = !w_->model_package().empty();
+    model_ = label(in_use ? q(w_->model_package().filename().string()) + "  ·  in use"
+                   : pick ? q(c.entries[*pick].label()) + "  ·  " + q(c.entries[*pick].package.filename().string())
+                          : QString("No model package found. Add one in File > Model packages… later."),
+                   "frModel", "step-sub", right);
+    body->addWidget(model_);
+    model_status_ = label(pick ? "Verified against its hash, then its golden frames run once on the backend you choose; "
+                                 "a model that drifts is refused."
                                : QString(),
-                          "frModelStatus", "note", this);
-    v->addWidget(model_status_);
-    auto* start_btn = button("Start", "frStart", this);
-    start_btn->setProperty("role", "primary");
+                          "frModelStatus", "step-sub", right);
+    body->addWidget(model_status_);
+    v->addStretch(1);
+    auto* lic = label("The model weights are licensed for non-commercial use (checkpoints/LICENSE).", "licenceNote", {},
+                      right);
+    v->addWidget(lic);
+    v->addSpacing(14);
+
     auto* end = new QHBoxLayout;
+    end->setSpacing(10);
+    end->addWidget(label("You can start on the CPU and switch later.", {}, "step-sub", right));
     end->addStretch(1);
+    auto* cpu = button("Start on CPU", "frStartCpu", right);
+    auto* start_btn = button("Continue", "frStart", right);
+    start_btn->setProperty("role", "primary");
+    end->addWidget(cpu);
     end->addWidget(start_btn);
     v->addLayout(end);
+    h->addWidget(right, 1);
+
+    set_dot(this, "frDotDisplay", card_ ? "busy" : "");
+    set_dot(this, "frDotBackend", "");
+    set_dot(this, "frDotModel", in_use ? "done" : pick ? "" : "fail");
     connect(test, &QPushButton::clicked, this, [this] { test_model(); });
     connect(start_btn, &QPushButton::clicked, this, [this] { start(); });
+    connect(cpu, &QPushButton::clicked, this, [this] {
+        // The first CPU backend this build has.
+        for (int i = 0; i < backend_->count(); ++i)
+            if (backend_->itemData(i).toString().endsWith("/cpu")) {
+                backend_->setCurrentIndex(i);
+                break;
+            }
+        start();
+    });
 }
 
 void FirstRun::set_display(const DisplayTarget& target, const std::string& swapchain, const std::string& peak_from) {
@@ -257,16 +371,23 @@ void FirstRun::set_display(const DisplayTarget& target, const std::string& swapc
     display_->setText(q(r.headline));
     display_detail_->setText(q(r.detail));
     display_->setProperty("state", r.hdr ? "on" : "off");
+    set_dot(this, "frDotDisplay", "done");
 }
 
 void FirstRun::test_model() {
     const Catalog& c = w_->catalog();
     const auto pick = c.pick();
-    if (!pick) return;
+    const std::filesystem::path package = !w_->model_package().empty() ? w_->model_package()
+                                          : pick ? c.entries[*pick].package : std::filesystem::path();
+    if (package.empty()) return;
     model_status_->setText("Loading and checking…");
+    set_dot(this, "frDotBackend", "busy");
+    set_dot(this, "frDotModel", "busy");
     QPointer<FirstRun> self(this);
-    w_->use_model(c.entries[*pick].package, backend_from_combo(backend_), [self](bool ok, const QString& why) {
+    w_->use_model(package, backend_from_combo(backend_), [self](bool ok, const QString& why) {
         if (!self) return;
+        set_dot(self, "frDotBackend", ok ? "done" : "fail");
+        set_dot(self, "frDotModel", ok ? "done" : "fail");
         self->model_status_->setText(
             ok ? "Ready: " + q(self->w_->model_package().filename().string()) + " on " +
                      q(self->w_->model_backend() ? self->w_->model_backend()->label() : std::string())

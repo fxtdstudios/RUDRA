@@ -3,10 +3,12 @@
 // page's id as its object name and the page's class as its "role", so
 // app/theme/studio.qss styles it the way ui/theme.css styles the element.
 
+#include <QImage>
 #include <QPushButton>
 #include <QToolButton>
 #include <QWidget>
 
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -31,7 +33,8 @@ private:
     std::vector<QString> keys_;
 };
 
-// .check: the box, the label and the hint; clicking anywhere toggles.
+// .check, as the Pro boards draw it: the label, its hint under it, and a
+// switch on the right; clicking anywhere toggles.
 class CheckRow : public QWidget {
 public:
     CheckRow(const QString& id, const QString& label, const QString& hint_id, const QString& hint,
@@ -57,14 +60,23 @@ private:
 QWidget* panel_label(const QString& text, const QString& note = {}, const QString& note_id = {},
                      QWidget* parent = nullptr);
 
-// The transport's scrub bar: a track and a head at 0..1; a press or a drag seeks.
+// The timeline's filmstrip (the Pro boards): thumbnails of the shot across
+// its width as frames arrive, the playhead at 0..1, and under it the clipping
+// lane, a mark per measured frame (gold where the SDR clipped highlights,
+// violet where it crushed shadows). A press or a drag seeks.
 class ScrubBar : public QWidget {
 public:
     explicit ScrubBar(QWidget* parent = nullptr);
     void set_position(double f);
     double position() const { return pos_; }
+    void set_count(int n);                          // frames in the shot; clears thumbnails and marks
+    int count() const { return count_; }
+    void set_thumb(int frame, const QImage& small);
+    enum class Lane : std::uint8_t { None, Highlights, Shadows };
+    void set_lane(int frame, Lane l);
+    Lane lane(int frame) const;
     std::function<void(double)> seek;
-    QSize sizeHint() const override { return {200, 14}; }
+    QSize sizeHint() const override { return {400, 58}; }
 
 protected:
     void paintEvent(class QPaintEvent* e) override;
@@ -73,6 +85,9 @@ protected:
 
 private:
     double pos_ = 0.0;
+    int count_ = 0;
+    std::vector<QImage> thumbs_;
+    std::vector<Lane> lanes_;
 };
 
 // The clip bar under the frame stats (paintClipBar): red for what the SDR
@@ -96,7 +111,7 @@ private:
 // The icon rail's buttons and the transport's, drawn as the page's SVGs are.
 class IconButton : public QToolButton {
 public:
-    enum class Glyph { Media, Scopes, Inspector, Help, Prev, Play, Pause, Next };
+    enum class Glyph { Media, Scopes, Inspector, Help, Prev, Play, Pause, Next, Sidebar, Probe, Export };
     IconButton(const QString& id, Glyph g, const QString& title, QWidget* parent = nullptr);
     void set_glyph(Glyph g);
     void set_on(bool on);

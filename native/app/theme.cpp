@@ -39,6 +39,19 @@ QColor token_colour(const ThemeReport& t, const QString& name) {
     return QColor(t.tokens.value(name));
 }
 
+QColor theme_colour(const QString& name) {
+    static const QMap<QString, QString> tokens = [] {
+        QMap<QString, QString> m;
+        for (const QString& raw : read_resource(":/theme/tokens.txt").split('\n', Qt::SkipEmptyParts)) {
+            const QString line = raw.trimmed();
+            const qsizetype sp = line.indexOf(' ');
+            if (sp > 0) m.insert(line.left(sp), line.mid(sp + 1).trimmed());
+        }
+        return m;
+    }();
+    return QColor(tokens.value(name));
+}
+
 ThemeReport apply_theme(QApplication& app) {
     ThemeReport r;
 
@@ -52,7 +65,7 @@ ThemeReport apply_theme(QApplication& app) {
     r.ui_family = r.tokens.value("ui-family");
     r.mono_family = r.tokens.value("mono-family");
 
-    // Plex, embedded (OFL, app/fonts/OFL.txt), so the look does not depend
+    // Geist and Plex, embedded (OFL, app/fonts), so the look does not depend
     // on what the machine has installed.
     const QStringList fonts = QDir(":/fonts").entryList({"*.ttf"}, QDir::Files, QDir::Name);
     for (const QString& f : fonts) {
@@ -91,30 +104,30 @@ ThemeReport apply_theme(QApplication& app) {
     QPalette p;
     p.setColor(QPalette::Window, c("bg"));
     p.setColor(QPalette::WindowText, c("ink"));
-    p.setColor(QPalette::Base, c("panel-2"));
-    p.setColor(QPalette::AlternateBase, c("panel"));
+    p.setColor(QPalette::Base, c("panel"));
+    p.setColor(QPalette::AlternateBase, c("panel-2"));
     p.setColor(QPalette::Text, c("ink"));
     p.setColor(QPalette::Button, c("raise"));
     p.setColor(QPalette::ButtonText, c("ink"));
-    p.setColor(QPalette::BrightText, c("ink"));
-    p.setColor(QPalette::Highlight, c("accent-dim"));
+    p.setColor(QPalette::BrightText, c("white"));
+    p.setColor(QPalette::Highlight, c("accent"));
     p.setColor(QPalette::HighlightedText, c("ink"));
     p.setColor(QPalette::ToolTipBase, c("panel"));
     p.setColor(QPalette::ToolTipText, c("ink"));
-    p.setColor(QPalette::PlaceholderText, c("ink-3"));
+    p.setColor(QPalette::PlaceholderText, c("ink-4"));
     p.setColor(QPalette::Link, c("accent"));
-    p.setColor(QPalette::Light, c("line-2"));
+    p.setColor(QPalette::Light, c("raise-2"));
     p.setColor(QPalette::Midlight, c("line-2"));
-    p.setColor(QPalette::Mid, c("line"));
-    p.setColor(QPalette::Dark, c("panel-2"));
+    p.setColor(QPalette::Mid, c("raise"));
+    p.setColor(QPalette::Dark, c("panel"));
     p.setColor(QPalette::Shadow, c("bg"));
     for (auto role : {QPalette::WindowText, QPalette::Text, QPalette::ButtonText})
-        p.setColor(QPalette::Disabled, role, c("ink-3"));
+        p.setColor(QPalette::Disabled, role, c("ink-4"));
     QApplication::setPalette(p);
 
     QFont font(r.ui_family);
-    font.setPixelSize(11);
-    font.setWeight(QFont::Medium);
+    font.setPixelSize(13);
+    font.setWeight(QFont::Normal);
     QApplication::setFont(font);
 
     const QString qss = read_resource(":/theme/studio.qss");

@@ -110,7 +110,7 @@ QString hint_text(const std::string& hint) {
 TEST(AppLook, ResolvesFromTheLibrary) {
     ASSERT_NE(g_theme, nullptr);
     EXPECT_TRUE(g_theme->ok()) << g_theme->problems.join("; ").toStdString();
-    EXPECT_EQ(g_theme->fonts_loaded.size(), 6);
+    EXPECT_EQ(g_theme->fonts_loaded.size(), 12);   // Geist and Geist Mono, and Plex for the scope labels
     EXPECT_FALSE(qApp->styleSheet().isEmpty());
 }
 
@@ -347,35 +347,76 @@ TEST(AppLayout, EveryPageElementHasItsWidget) {
     }
 }
 
+// Where the Pro boards put a page element somewhere else, and why.
+const std::map<std::string, std::string> kProPlaced = {
+    {"btnMaster", "on the Deliver tab (the board's Delivery inspector), and the toolbar's Export sheet"},
+    {"btnReprocess", "on the Deliver tab, beside Master EXR"},
+    {"renderDir", "the Render card of the Deliver tab"},
+    {"renderMode", "the Render card of the Deliver tab"},
+    {"renderName", "the Render card of the Deliver tab"},
+    {"renderStart", "the Render card of the Deliver tab"},
+    {"measA", "the This frame card's rows arrive with the first measurement"},
+    {"ckpt", "the sidebar's model card (the toolbar's machine pill stays when the sidebar hides)"},
+    {"itabs", "the toolbar's segmented tabs, which stay when the inspector hides"},
+    {"tabRec", "the toolbar's segmented tabs"},
+    {"tabGrade", "the toolbar's segmented tabs"},
+    {"tabDeliver", "the toolbar's segmented tabs"},
+    {"measB", "the This frame card's rows arrive with the first measurement"},
+};
+// The page's panel labels as the boards name their sections and cards.
+const std::map<std::string, std::string> kProLabels = {{"Media", "Shots"}, {"Frame", "This frame"}};
+
 TEST(AppLayout, ShownAndHiddenAsThePageIsInEveryState) {
     for (const auto& [state, snap] : layout()["states"].items()) {
         Window win(state);
         for (const auto& [id, e] : snap["ids"].items()) {
-            if (kNotWidgets.count(id)) continue;
+            if (kNotWidgets.count(id) || kProPlaced.count(id)) continue;
             QWidget* x = win.get(id);
             if (!x) continue;
             EXPECT_EQ(win.shown(x), e["shown"].get<bool>()) << state << ": " << id;
         }
-        // Panel labels, toolbar labels and notes, in reading order.
-        std::vector<std::pair<std::string, bool>> want, got;
-        for (const auto& l : snap["panel_labels"]) want.emplace_back(l["text"], l["shown"]);
-        for (QWidget* p : win.w.findChildren<QWidget*>()) {
-            if (p->property("role").toString() != "plabel") continue;
-            const auto* t = p->findChild<QLabel*>();
-            got.emplace_back(norm(t->text()).toStdString(), win.shown(p));
+        // The page's panel labels: each is a section, a card head or a label
+        // of the window, shown where the page shows it (the scopes' with the
+        // scopes, Region EV with the Grade tab).
+        for (const auto& l : snap["panel_labels"]) {
+            const std::string page = l["text"];
+            const auto it = kProLabels.find(page);
+            const QString want = QString::fromStdString(it == kProLabels.end() ? page : it->second);
+            bool any = false, shown = false;
+            for (QLabel* q : win.w.findChildren<QLabel*>())
+                if (norm(q->text()) == want) {
+                    any = true;
+                    shown = shown || win.shown(q);
+                }
+            EXPECT_TRUE(any) << state << ": no label " << want.toStdString();
+            if (page == "Region EV" || page == "Waveform" || page == "Histogram" || page == "Vectorscope")
+                EXPECT_EQ(shown, l["shown"].get<bool>()) << state << ": " << page;
         }
-        EXPECT_EQ(got, want) << state << ": panel labels";
         std::vector<std::pair<std::string, bool>> nwant, ngot;
         for (const auto& l : snap["notes"]) nwant.emplace_back(l["text"], l["shown"]);
         // In the page's order: the Reconstruct, Grade and Deliver panels.
-        auto* stack = win.w.findChild<QStackedWidget*>("ipanels");
-        for (int i = 0; i < stack->count(); ++i)
-            for (QLabel* l : stack->widget(i)->findChildren<QLabel*>())
-                if (l->property("role").toString() == "note-p") {
-                    ngot.emplace_back(norm(l->text()).toStdString(), win.shown(l));
-                }
-        EXPECT_EQ(ngot, nwant) << state << ": notes";
+        for (QLabel* l : win.w.findChild<QWidget*>("ipanels")->findChildren<QLabel*>())
+            if (l->property("role").toString() == "note-p") ngot.emplace_back(norm(l->text()).toStdString(), win.shown(l));
+        ASSERT_EQ(ngot.size(), nwant.size()) << state;
+        for (std::size_t i = 0; i < ngot.size(); ++i) {
+            EXPECT_EQ(ngot[i].second, nwant[i].second) << state << ": note " << i;
+            if (i < 2) EXPECT_EQ(ngot[i].first, nwant[i].first) << state << ": note " << i;   // the Deliver note is the board's
+        }
     }
+}
+
+// The words the Pro boards changed on purpose (the Studio page's are in the
+// golden); everything else is still the page's word for word.
+const std::map<std::string, std::string> kProWords = {
+    {"seqOpen text", "Open"},                                     // the sidebar's field: "Open"
+    {"seqPath title", "A folder of frames, read where it sits: nothing is copied."},   // no server behind it
+    {"seqPath placeholder", "Open a folder of frames\u2026"},     // the board's search field
+    {"iMedia title", "Show or hide the sidebar"},                 // the toolbar's sidebar toggle
+};
+
+std::string pro_or(const std::string& key, const std::string& page) {
+    const auto it = kProWords.find(key);
+    return it == kProWords.end() ? page : it->second;
 }
 
 TEST(AppLayout, TheWordsAreThePages) {
@@ -395,22 +436,21 @@ TEST(AppLayout, TheWordsAreThePages) {
         if (auto* l = qobject_cast<QLabel*>(x)) text = l->text();
         else if (auto* b = qobject_cast<QAbstractButton*>(x)) text = b->text();
         else continue;   // a container: its children are checked on their own
-        EXPECT_EQ(norm(text).toStdString(), e["text"].get<std::string>()) << id;
+        EXPECT_EQ(norm(text).toStdString(), pro_or(id + " text", e["text"].get<std::string>())) << id;
     }
     for (const auto& [id, title] : snap["titles"].items()) {
         QWidget* x = win.get(id);
         if (!x) continue;
-        EXPECT_EQ(x->toolTip().toStdString(), title.get<std::string>()) << id;
+        EXPECT_EQ(x->toolTip().toStdString(), pro_or(id + " title", title.get<std::string>())) << id;
     }
     for (const auto& [id, ph] : snap["placeholders"].items())
         EXPECT_EQ(win.w.findChild<QLineEdit*>(QString::fromStdString(id))->placeholderText().toStdString(),
-                  ph.get<std::string>()) << id;
-    std::vector<std::string> tl;
+                  pro_or(id + " placeholder", ph.get<std::string>())) << id;
+    // The page's toolbar labels (Compare, Layer, Zoom): the board's compare
+    // bar has none, its segments name themselves.
     for (QLabel* l : win.w.findChildren<QLabel*>())
-        if (l->property("role").toString() == "vlabel") tl.push_back(l->text().toStdString());
-    std::vector<std::string> twant;
-    for (const auto& l : snap["toolbar_labels"]) twant.push_back(l["text"]);
-    EXPECT_EQ(tl, twant);
+        EXPECT_NE(l->property("role").toString(), "vlabel") << l->text().toStdString();
+    EXPECT_FALSE(snap["toolbar_labels"].empty());
     for (const auto& c : snap["checks"]) {
         auto* row = find<app::CheckRow>(win.w, QString::fromStdString(c["id"].get<std::string>()));
         ASSERT_NE(row, nullptr) << c["id"];
@@ -421,7 +461,7 @@ TEST(AppLayout, TheWordsAreThePages) {
     for (const auto& ic : snap["icon_titles"]) {
         auto* b = find<app::IconButton>(win.w, QString::fromStdString(ic["id"].get<std::string>()));
         ASSERT_NE(b, nullptr);
-        EXPECT_EQ(b->toolTip().toStdString(), ic["title"].get<std::string>());
+        EXPECT_EQ(b->toolTip().toStdString(), pro_or(ic["id"].get<std::string>() + " title", ic["title"].get<std::string>()));
         EXPECT_EQ(b->on(), ic["on"].get<bool>()) << ic["id"];
     }
     // The sliders: label, value, unit and the page's range in its steps.
@@ -446,27 +486,53 @@ TEST(AppLayout, TheWordsAreThePages) {
     EXPECT_EQ(fgot, fwant);
 }
 
-TEST(AppLayout, TheFrameIsWhereThePagePutsIt) {
-    const std::map<std::string, std::string> names = {
-        {"iconrail", "iconRail"}, {"rail_left", "railLeft"}, {"centre", "centre"}, {"vtools", "viewerTools"},
-        {"viewer", "viewer"},     {"transport", "transport"}, {"rail_right", "railRight"}, {"pipe", "pipe"}};
-    for (const auto& [state, snap] : layout()["states"].items()) {
+// The frame is the Pro board's ("Pro direction: main window"): the unified
+// toolbar across the top, the 240 px sidebar, the 320 px inspector, and in
+// the middle the compare bar, the viewer, the 30 px colour pipeline and the
+// 128 px timeline; a rail that is hidden gives its width to the viewer.
+TEST(AppLayout, TheFrameIsTheProBoards) {
+    for (const std::string state : {"full", "simple", "rails_hidden"}) {
         Window win(state);
+        auto box = [&](const char* id) {
+            QWidget* x = win.get(id);
+            EXPECT_NE(x, nullptr) << id;
+            return x ? win.box(x) : std::array<int, 4>{};
+        };
         const auto mb = win.box(win.w.menuBar());
-        const auto& gm = snap["frame"]["menubar"]["box"];
-        EXPECT_EQ(mb[3], gm[3].get<int>()) << state << ": menubar height";
-        for (const auto& [key, name] : names) {
-            const auto& g = snap["frame"][key];
-            QWidget* x = win.get(name);
-            ASSERT_NE(x, nullptr) << name;
-            EXPECT_EQ(win.shown(x), g["shown"].get<bool>()) << state << ": " << key;
-            if (!g["shown"].get<bool>()) continue;
-            const auto b = win.box(x);
-            for (int i = 0; i < 4; ++i)
-                EXPECT_LE(std::abs(b[std::size_t(i)] - g["box"][std::size_t(i)].get<int>()), 1)
-                    << state << ": " << key << " box[" << i << "] " << b[std::size_t(i)] << " vs "
-                    << g["box"][std::size_t(i)].get<int>();
+        const auto tb = box("toolbar"), side = box("railLeft"), centre = box("centre"), insp = box("railRight");
+        const auto tools = box("viewerTools"), viewer = box("viewer"), pipe = box("pipe"), time = box("transport");
+        const int W = win.w.centralWidget()->width();
+        EXPECT_EQ(tb[1], mb[1] + mb[3]) << state;
+        EXPECT_EQ(tb[3], 52) << state;
+        EXPECT_EQ(tb[2], W) << state;
+        const bool rails = state != "rails_hidden";
+        EXPECT_EQ(win.shown(win.get("railLeft")), rails) << state;
+        EXPECT_EQ(win.shown(win.get("railRight")), rails) << state;
+        if (rails) {
+            EXPECT_EQ(side[2], 240) << state;
+            EXPECT_EQ(side[0], 0) << state;
+            EXPECT_EQ(insp[2], 320) << state;
+            EXPECT_EQ(insp[0] + insp[2], W) << state;
+            EXPECT_EQ(centre[0], 240) << state;
+            EXPECT_EQ(centre[2], W - 240 - 320) << state;
+        } else {
+            EXPECT_EQ(centre[0], 0) << state;
+            EXPECT_EQ(centre[2], W) << state;
         }
+        EXPECT_EQ(side[1], tb[1] + 52) << state;
+        EXPECT_EQ(tools[3], 52) << state;
+        EXPECT_EQ(viewer[1], tools[1] + tools[3]) << state;
+        EXPECT_EQ(pipe[1], viewer[1] + viewer[3]) << state;
+        EXPECT_EQ(pipe[3], 30) << state;
+        EXPECT_EQ(time[1], pipe[1] + pipe[3]) << state;
+        EXPECT_EQ(time[3], 128) << state;
+        EXPECT_EQ(time[1] + time[3], centre[1] + centre[3]) << state;
+        // The compare bar sits in the middle of the surround when the badges
+        // leave it room, and between them always.
+        const auto hud = box("hud"), hdr = box("hdrBadge"), cll = box("cllBadgeWrap");
+        if (!rails) EXPECT_LE(std::abs((hud[0] + hud[2] / 2) - (tools[0] + tools[2] / 2)), 2) << state;
+        EXPECT_GE(hud[0], hdr[0] + hdr[2]) << state;
+        EXPECT_LE(hud[0] + hud[2], cll[0]) << state;
     }
 }
 
