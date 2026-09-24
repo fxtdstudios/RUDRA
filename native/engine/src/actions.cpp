@@ -60,6 +60,7 @@ const std::vector<ActionSpec> kActions = {
     // peak slider, as on the page.
     {"open-package", "Open model package…", "", "", O::Native, E::Always, "Ctrl+Shift+O"},
     {"models", "Model packages…", "", "", O::Native, E::Always, "Ctrl+Shift+M"},
+    {"recent-clear", "Clear recent", "", "", O::Native, E::Always, ""},
     {"first-run", "Check the display and the model…", "", "", O::Native, E::Always, ""},
     {"open-folder", "Open folder of frames…", "", "", O::Native, E::Always, "Ctrl+Alt+O"},
     {"quit", "Quit", "", "", O::Native, E::Always, "Ctrl+Q"},
@@ -78,7 +79,7 @@ const std::vector<ActionSpec> kActions = {
 };
 
 const std::vector<MenuSpec> kMenus = {
-    {"File", {"open", "open-folder", "open-package", "models", "close", "-", "master", "-", "quit"}},
+    {"File", {"open", "open-folder", ">Open recent", "recent-clear", "<", "open-package", "models", "close", "-", "master", "-", "quit"}},
     {"Edit", {"undo", "redo", "-", "reset-recon", "reset-regions"}},
     {"Clip", {"first", "prev", "next", "last", "-", "play"}},
     {"Reconstruct",

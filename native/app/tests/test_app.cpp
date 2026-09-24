@@ -26,6 +26,12 @@
 #include <QPlainTextEdit>
 #include <QSpinBox>
 #include <QSettings>
+#include <QClipboard>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QPointer>
+#include <QUrl>
 #include <QTest>
 #include <QTreeWidget>
 
@@ -53,6 +59,7 @@
 #include "region_editor.hpp"
 #include "scope_widgets.hpp"
 #include "widgets.hpp"
+#include "rudra/core/copy_texts.hpp"
 #include "rudra/engine/actions.hpp"
 #include "theme.hpp"
 
@@ -220,8 +227,14 @@ TEST(AppActions, EnabledAsThePageEnablesThem) {
         EXPECT_TRUE(w.action(id)->isEnabled()) << id;
     // What waits on a later step says so.
     EXPECT_TRUE(w.action("rail-left")->isEnabled());
-    EXPECT_TRUE(w.action("copy-metrics")->toolTip().contains("step 11"));
-    EXPECT_TRUE(w.pending_reason("master").isEmpty());   // step 9 made it live
+    // Step 11 made the last of the page's actions live: none waits on a
+    // later step; the only ones off are the viewer's, in a window without one.
+    for (const auto& spec : action_specs()) {
+        const QString why = w.pending_reason(spec.id);
+        EXPECT_TRUE(why.isEmpty() || why == "This build has no viewer.") << spec.id << ": " << why.toStdString();
+    }
+    for (const char* id : {"master", "copy-metrics", "copy-scopes", "copy-delivery", "models", "recent-clear"})
+        EXPECT_TRUE(w.pending_reason(id).isEmpty()) << id;
     // A disabled action does not run from its key either.
     w.run("undo");
     EXPECT_EQ(w.session().undo_depth(), 0u);
@@ -1356,6 +1369,239 @@ TEST(AppModels, TheFirstRunReportsTheDisplaysRealPeak) {
     fr->start();
     EXPECT_TRUE(QSettings().value("firstRun/done").toBool());
     EXPECT_FALSE(fr->isVisible());
+}
+
+
+// ---------------------------------------------------------------------------
+// Phase 3 step 11: the sheets, the copies, drop to open, recent shots, settings
+// ---------------------------------------------------------------------------
+
+#ifdef RUDRA_HAVE_STILL_DECODE
+namespace {
+
+std::filesystem::path decode_dir() { return std::filesystem::path(RUDRA_GOLDEN_DIR) / "decode"; }
+
+void drop(QWidget& target, const QStringList& paths) {
+    auto* mime = new QMimeData;
+    QList<QUrl> urls;
+    for (const auto& p : paths) urls << QUrl::fromLocalFile(p);
+    mime->setUrls(urls);
+    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&target, &enter);
+    QDropEvent d(QPointF(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&target, &d);
+    delete mime;
+}
+
+QString png(const char* name) { return QString::fromStdString((decode_dir() / name).string()); }
+
+QString last_log(app::MainWindow& w) {
+    const QStringList lines = w.findChild<QPlainTextEdit*>("log")->toPlainText().split('\n', Qt::SkipEmptyParts);
+    return lines.isEmpty() ? QString() : lines.last();
+}
+
+}  // namespace
+
+TEST(AppCopy, TheCopiesAreThePagesTextsOfTheFrameOnScreen) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "copy");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.refresh_enabled();
+    EXPECT_FALSE(w.action("copy-metrics")->isEnabled());   // !!state.metrics
+    EXPECT_FALSE(w.action("copy-delivery")->isEnabled());  // no frame
+    w.add_files({decode_dir() / "png8_rgb.png"});
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() != nullptr; }));
+    w.measure_now();
+    w.refresh_enabled();
+    ASSERT_NE(w.measurement(), nullptr);
+    EXPECT_TRUE(w.action("copy-metrics")->isEnabled());
+    EXPECT_TRUE(w.action("copy-scopes")->isEnabled());
+    EXPECT_TRUE(w.action("copy-delivery")->isEnabled());
+
+    w.run("copy-metrics");
+    const auto* me = w.measurement();
+    EXPECT_EQ(QGuiApplication::clipboard()->text().toStdString(),
+              metrics_value(me->measured.metrics, me->compose_ms).stringify());
+    EXPECT_EQ(last_log(w), "copied measurements to the clipboard");
+    w.run("copy-scopes");
+    const json scopes = json::parse(QGuiApplication::clipboard()->text().toStdString());
+    EXPECT_EQ(scopes["lo"].size(), 230u);
+    EXPECT_EQ(scopes["histogram"].size(), 76u);
+    EXPECT_EQ(last_log(w), "copied scope data to the clipboard");
+
+    // Ungraded: region_ev is null; graded, it is the three regions.
+    w.run("copy-delivery");
+    json d = json::parse(QGuiApplication::clipboard()->text().toStdString());
+    std::vector<std::string> keys;
+    for (auto it = d.begin(); it != d.end(); ++it) keys.push_back(it.key());
+    EXPECT_EQ(d["checkpoint"], "alpha");
+    EXPECT_TRUE(d["step"].is_null());
+    EXPECT_EQ(d["frame"], "png8_rgb.png");
+    EXPECT_EQ(d["container"], "ACES 2065-1 (AP0)");
+    EXPECT_EQ(d["diffuse_white_nits"], 203);
+    EXPECT_TRUE(d["region_ev"].is_null());
+    EXPECT_EQ(d["measurements"]["maxcll"], me->measured.metrics.maxcll);
+    EXPECT_EQ(last_log(w), "copied delivery metadata to the clipboard");
+    w.session().region_press(1, 100.0);
+    w.session().region_move(130.0, false);
+    w.session().region_release();
+    w.run("container-linear");
+    w.run("copy-delivery");
+    d = json::parse(QGuiApplication::clipboard()->text().toStdString());
+    ASSERT_TRUE(d["region_ev"].is_array());
+    EXPECT_EQ(d["region_ev"][1]["label"], "speculars");
+    EXPECT_NE(d["region_ev"][1]["ev"], 0.0);
+    EXPECT_EQ(d["container"], "linear Rec.2020");
+    // The text is the page's bytes for this state (core/copy_texts, held to the page).
+    EXPECT_EQ(QGuiApplication::clipboard()->text().toStdString(), w.delivery_text());
+}
+
+TEST(AppCopy, SheetsAreThePagesAndAClickClosesThem) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "sheets");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.run("shortcuts");
+    ASSERT_NE(w.sheet(), nullptr);
+    EXPECT_TRUE(w.sheet()->isVisible());
+    EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetTitle")->text(), "Keyboard");
+    EXPECT_EQ(w.sheet()->findChild<QLabel*>("sheetClose")->text(), "Esc, or click anywhere, to close");
+    // The title, the rows (key and what), the close line.
+    EXPECT_EQ(w.sheet()->findChildren<QLabel*>().size(), qsizetype(2 + 2 * shortcut_sheet().size()));
+    QPointer<QDialog> first = w.sheet();
+    QTest::mouseClick(first, Qt::LeftButton);
+    QApplication::processEvents();
+    QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    EXPECT_TRUE(first.isNull() || !first->isVisible());
+    w.run("about");
+    ASSERT_NE(w.sheet(), nullptr);
+    bool device = false;
+    const auto labels = w.sheet()->findChildren<QLabel*>();
+    for (qsizetype i = 0; i + 1 < labels.size(); ++i)
+        if (labels[i]->text() == "Device") device = labels[i + 1]->text() == "CPU";   // $("device").textContent
+    EXPECT_TRUE(device);
+    QTest::keyClick(w.sheet(), Qt::Key_Escape);
+    QApplication::processEvents();
+    EXPECT_TRUE(w.sheet() == nullptr || !w.sheet()->isVisible());
+}
+
+TEST(AppOpen, ADropAddsFramesOpensAShotOrUsesAModel) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "drop");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.show();
+    ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+    // Enter lights the drop zone; the drop puts it out.
+    auto* dz = w.findChild<QWidget*>("dropzone");
+    ASSERT_NE(dz, nullptr);
+    {
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(png("png8_rgb.png"))});
+        QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&w, &enter);
+        EXPECT_TRUE(enter.isAccepted());
+        EXPECT_EQ(dz->property("state").toString(), "hot");
+        QDragLeaveEvent leave;
+        QApplication::sendEvent(&w, &leave);
+        EXPECT_EQ(dz->property("state").toString(), "");
+    }
+    // Two stills: the frames, the first shown (addFiles).
+    drop(w, {png("png8_rgb.png"), png("png16_rgb.png")});
+    EXPECT_EQ(w.frame_count(), 2u);
+    EXPECT_EQ(w.current_index(), 0);
+    EXPECT_EQ(last_log(w), "added 2 frames");
+    // One more: appended, and it is the one shown.
+    drop(w, {png("bmp24.bmp")});
+    EXPECT_EQ(w.frame_count(), 3u);
+    EXPECT_EQ(w.current_index(), 2);
+    EXPECT_EQ(last_log(w), "added 1 frame");
+    ASSERT_TRUE(wait_for([&] { return w.frame_fields() && w.frame_fields()->residual.width() > 0 &&
+                                      w.findChild<QLabel*>("shotCount")->text() == "3"; }));
+    // A model package folder: used, the frames kept.
+    drop(w, {QString::fromStdString((m->root / "beta").string())});
+    ASSERT_TRUE(wait_for([&] { return !w.loading_model() && w.model_package().filename() == "beta"; }));
+    EXPECT_EQ(w.frame_count(), 3u);
+    // A folder of frames: that shot instead.
+    drop(w, {QString::fromStdString(decode_dir().string())});
+    EXPECT_GE(w.frame_count(), 10u);
+    EXPECT_EQ(w.current_index(), 0);
+}
+
+TEST(AppOpen, RecentShotsNewestFirstAndClearable) {
+    QSettings().clear();
+    app::MainWindow w(false);
+    auto m = fake_models(w, "recent");
+    ASSERT_TRUE(use(w, m->root / "alpha"));
+    w.open_source(QString::fromStdString(decode_dir().string()));
+    w.add_files({decode_dir() / "png8_rgb.png"});
+    w.open_source(QString::fromStdString(decode_dir().string()));   // again: moves to the top, not twice
+    const QStringList r = w.recent_sources();
+    ASSERT_EQ(r.size(), 2);
+    EXPECT_EQ(r[0].toStdString(), decode_dir().lexically_normal().string());
+    EXPECT_TRUE(r[1].endsWith("png8_rgb.png"));
+    // The menu: File > Open recent, the shots then Clear recent.
+    QMenu* file = w.menuBar()->actions()[0]->menu();
+    QMenu* recent = nullptr;
+    for (QAction* a : file->actions())
+        if (a->menu() && a->text() == "Open recent") recent = a->menu();
+    ASSERT_NE(recent, nullptr);
+    w.fill_recent();
+    std::vector<QAction*> items;
+    for (QAction* a : recent->actions())
+        if (a->objectName().startsWith("recent:")) items.push_back(a);
+    ASSERT_EQ(items.size(), 2u);
+    EXPECT_EQ(recent->actions().last(), w.action("recent-clear"));
+    EXPECT_TRUE(items[1]->text().startsWith("png8_rgb.png"));
+    items[1]->trigger();   // a still: added to the frames
+    EXPECT_EQ(last_log(w), "added 1 frame");
+    w.run("recent-clear");
+    EXPECT_TRUE(w.recent_sources().isEmpty());
+    EXPECT_FALSE(w.action("recent-clear")->isEnabled());
+}
+#endif
+
+TEST(AppSettings, TheWindowComesBackAsItWasLeft) {
+    QSettings().clear();
+    QSize left_at;
+    {
+        app::MainWindow w(false);
+        w.set_workspace("simple");
+        w.show_tab("deliver");
+        w.run("rail-left");
+        w.run("scopes");
+        w.run("container-linear");
+        w.findChild<QLineEdit*>("renderDir")->setText("/renders/show");
+        w.findChild<QLineEdit*>("renderName")->setText("sh010");
+        w.findChild<QComboBox*>("renderMode")->setCurrentIndex(1);
+        w.findChild<QSpinBox*>("renderStart")->setValue(1001);
+        w.show();
+        ASSERT_TRUE(QTest::qWaitForWindowExposed(&w));
+        w.resize(720, 560);   // inside the offscreen screen (800 x 800), so nothing clamps it
+        QApplication::processEvents();
+        left_at = w.size();   // what the window made of it (its minimum may be wider)
+        w.close();   // closeEvent saves
+    }
+    app::MainWindow w(false);
+    EXPECT_EQ(w.workspace(), "full");   // nothing restored until asked (the tests' windows start clean)
+    w.restore_settings();
+    EXPECT_EQ(w.workspace(), "simple");
+    EXPECT_EQ(w.tab(), "deliver");
+    EXPECT_FALSE(w.session().rail_left);
+    EXPECT_TRUE(w.session().rail_right);
+    EXPECT_FALSE(w.session().scopes_open);
+    EXPECT_FALSE(w.action("rail-left")->isChecked());
+    EXPECT_EQ(w.container(), "linear");
+    EXPECT_EQ(w.findChild<QLineEdit*>("renderDir")->text(), "/renders/show");
+    EXPECT_EQ(w.findChild<QLineEdit*>("renderName")->text(), "sh010");
+    EXPECT_EQ(w.findChild<QComboBox*>("renderMode")->currentIndex(), 1);
+    EXPECT_EQ(w.findChild<QSpinBox*>("renderStart")->value(), 1001);
+    // The size (restoreGeometry keeps a window on its screen: the offscreen
+    // one is 800 wide, narrower than the window's minimum, so the height is
+    // the part that shows the round trip here).
+    EXPECT_EQ(w.size().height(), left_at.height());
+    QSettings().clear();
 }
 
 int main(int argc, char** argv) {

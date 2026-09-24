@@ -95,6 +95,9 @@ public:
     };
     void on_hover(std::function<void(const Hover&)> cb);
 
+    // Files dropped on the picture (the page's window drop); local paths.
+    void on_drop(std::function<void(const QStringList&)> cb);
+
     // Off: mouse, wheel and keys do nothing (the check tools, so a wheel or a
     // click that lands on the window while it runs cannot move the picture).
     void set_input_enabled(bool on);

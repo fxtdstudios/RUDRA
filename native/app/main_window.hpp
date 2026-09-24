@@ -101,6 +101,23 @@ public:
     void open_first_run();
     // A still, or a folder of frames: both are a sequence to the engine.
     void open_source(const QString& preset = {}, bool folder = false);
+    // The page's addFiles (Open, a drop of images): appended to the frames,
+    // the first of them shown ("added N frames").
+    void add_files(const std::vector<std::filesystem::path>& files);
+    // What a drop brings (step 11): a model package folder is used, a folder
+    // is opened as a shot, image files are added.
+    void open_paths(const QStringList& paths);
+    // Open recent: the shots opened last, newest first, kept between runs.
+    QStringList recent_sources() const;
+    void fill_recent();
+    // Settings kept between runs: the window's place and size, the workspace,
+    // the rails, the inspector tab, the container and the Render fields.
+    void save_settings() const;
+    void restore_settings();
+    // The sheet on screen (show_sheet), if any.
+    QDialog* sheet() const { return sheet_; }
+    // What Deliver > Copy writes (deliveryRecord()).
+    std::string delivery_text() const;
 
     // The QAction for an action id (engine/actions), or nullptr.
     QAction* action(std::string_view id) const;
@@ -157,6 +174,10 @@ protected:
     // the focus).
     void keyPressEvent(class QKeyEvent* e) override;
     void keyReleaseEvent(class QKeyEvent* e) override;
+    void dragEnterEvent(class QDragEnterEvent* e) override;
+    void dragLeaveEvent(class QDragLeaveEvent* e) override;
+    void dropEvent(class QDropEvent* e) override;
+    void closeEvent(class QCloseEvent* e) override;
 
 private:
     void build_menus();
@@ -247,7 +268,11 @@ private:
     bool loading_model_ = false;
     std::thread model_worker_;
     std::optional<BackendChoice> backend_choice_;
-    QPointer<QDialog> manager_, first_run_;
+    QPointer<QDialog> manager_, first_run_, sheet_;
+    QMenu* recent_menu_ = nullptr;
+    void remember_source(const QString& path);
+    void copy_text(const QString& label, const std::string& text);
+    void set_drop_hot(bool hot);
     std::unique_ptr<ModelManifest> manifest_;
     std::unique_ptr<InferenceBackend> backend_;   // used only from the engine's worker
     std::vector<std::filesystem::path> frames_;

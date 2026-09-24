@@ -81,8 +81,8 @@ jobs:
         # the Linux runner has; macOS and Windows test against the committed one.
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts; fi
-          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog
+          if [ "$RUNNER_OS" = "Linux" ]; then python tools/emit_golden.py; else python tools/emit_golden.py --except viewer viewport session layout scopes readouts copy; fi
+          git diff --exit-code native/tests/golden/core/index.json native/tests/golden/decode native/tests/golden/queue native/tests/golden/sequence native/tests/golden/actions native/tests/golden/session native/tests/golden/layout native/tests/golden/scopes/drawings.json native/tests/golden/readouts native/tests/golden/render_plan native/tests/golden/catalog native/tests/golden/copy
       - name: Configure
         shell: bash
         run: cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DRUDRA_BUILD_TESTS=ON -DRUDRA_WITH_OPENCV=ON ${TOOLCHAIN:-}

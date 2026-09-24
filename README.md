@@ -461,7 +461,8 @@ Studio workflow with no Python installed, every number and file matching the Stu
 - [x] Checkpoint manager and first run: packages found as the Studio server finds checkpoints, switched mid-session
   with the session kept, each checked against its goldens on first use; the first run shows the HDR card on the display
   and says what that display can show
-- [ ] The remaining sheets, drop to open, recent shots, settings
+- [x] The rest of the page: the copies (the page's clipboard bytes), the sheets, drop to open, Open recent, and the
+  window, rails, tab, container and Render fields kept between runs
 - [ ] The whole workflow on Windows with no Python on the machine
 
 Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:

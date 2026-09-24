@@ -1,0 +1,174 @@
+{
+ "oracle": "ui/app.js copy(): JSON.stringify(value, null, 2) of state.metrics, state.scopeData, deliveryRecord()",
+ "cases": [
+  {
+   "name": "metrics",
+   "act": "copy-metrics",
+   "state": {
+    "metrics": {
+     "maxcll": 1235,
+     "maxfall": 87,
+     "peak_nits": 1234.4912109375,
+     "baseline_peak_nits": 402.25,
+     "headroom_stops": 1.617,
+     "headroom_highlight_stops": 2.604,
+     "headroom_shadow_stops": "NaN",
+     "departure_rms_stops": 0.41234,
+     "p99_nits": 812.3450000000001,
+     "median_nits": 42.125,
+     "above_diffuse_white_pct": 12.3456,
+     "above_1000_nits_pct": 0.0125,
+     "highlight_mask_pct": 3.456,
+     "shadow_mask_pct": 0,
+     "compose_ms": 17.25
+    }
+   },
+   "text": "{\n  \"maxcll\": 1235,\n  \"maxfall\": 87,\n  \"peak_nits\": 1234.4912109375,\n  \"baseline_peak_nits\": 402.25,\n  \"headroom_stops\": 1.617,\n  \"headroom_highlight_stops\": 2.604,\n  \"headroom_shadow_stops\": null,\n  \"departure_rms_stops\": 0.41234,\n  \"p99_nits\": 812.3450000000001,\n  \"median_nits\": 42.125,\n  \"above_diffuse_white_pct\": 12.3456,\n  \"above_1000_nits_pct\": 0.0125,\n  \"highlight_mask_pct\": 3.456,\n  \"shadow_mask_pct\": 0,\n  \"compose_ms\": 17.25\n}",
+   "log": "copied measurements to the clipboard"
+  },
+  {
+   "name": "scopes",
+   "act": "copy-scopes",
+   "state": {
+    "scopeData": {
+     "lo": [
+      0.0009765625,
+      0.5
+     ],
+     "q1": [
+      0.1,
+      1
+     ],
+     "mid": [
+      0.30000000000000004,
+      1e-07
+     ],
+     "q3": [
+      0.75,
+      123456.5
+     ],
+     "hi": [
+      1,
+      1e+21
+     ],
+     "histogram": [
+      0,
+      0.25,
+      1
+     ]
+    }
+   },
+   "text": "{\n  \"lo\": [\n    0.0009765625,\n    0.5\n  ],\n  \"q1\": [\n    0.1,\n    1\n  ],\n  \"mid\": [\n    0.30000000000000004,\n    1e-7\n  ],\n  \"q3\": [\n    0.75,\n    123456.5\n  ],\n  \"hi\": [\n    1,\n    1e+21\n  ],\n  \"histogram\": [\n    0,\n    0.25,\n    1\n  ]\n}",
+   "log": "copied scope data to the clipboard"
+  },
+  {
+   "name": "delivery_empty",
+   "act": "copy-delivery",
+   "state": {},
+   "text": "{\n  \"checkpoint\": null,\n  \"step\": null,\n  \"frame\": null,\n  \"resolution\": null,\n  \"container\": \"ACES 2065-1 (AP0)\",\n  \"transfer\": \"linear\",\n  \"diffuse_white_nits\": 203,\n  \"recovery_mode\": \"all\",\n  \"residual_strength\": 1,\n  \"preserve_outside\": true,\n  \"region_ev\": null,\n  \"measurements\": null\n}",
+   "log": "copied delivery metadata to the clipboard"
+  },
+  {
+   "name": "delivery_full",
+   "act": "copy-delivery",
+   "state": {
+    "header": {
+     "checkpoint": "sdr2hdr_shadow_v1",
+     "step": 90000,
+     "resolution": "1920x1080"
+    },
+    "frames": [
+     {
+      "name": "shot_010.000001.png"
+     }
+    ],
+    "index": 0,
+    "container": "linear",
+    "mode": "shadows",
+    "strength": 1.1,
+    "preserve": false,
+    "regions": [
+     {
+      "label": "highlights",
+      "low_nits": 400,
+      "high_nits": 2000,
+      "ev": 0.5
+     },
+     {
+      "label": "speculars",
+      "low_nits": 2000,
+      "high_nits": 8000,
+      "ev": -1.25
+     },
+     {
+      "label": "shadows",
+      "low_nits": 0.05,
+      "high_nits": 12,
+      "ev": 0
+     }
+    ],
+    "metrics": {
+     "maxcll": 1235,
+     "maxfall": 87,
+     "peak_nits": 1234.4912109375,
+     "baseline_peak_nits": 402.25,
+     "headroom_stops": 1.617,
+     "headroom_highlight_stops": 2.604,
+     "headroom_shadow_stops": "NaN",
+     "departure_rms_stops": 0.41234,
+     "p99_nits": 812.3450000000001,
+     "median_nits": 42.125,
+     "above_diffuse_white_pct": 12.3456,
+     "above_1000_nits_pct": 0.0125,
+     "highlight_mask_pct": 3.456,
+     "shadow_mask_pct": 0,
+     "compose_ms": 17.25
+    }
+   },
+   "text": "{\n  \"checkpoint\": \"sdr2hdr_shadow_v1\",\n  \"step\": 90000,\n  \"frame\": \"shot_010.000001.png\",\n  \"resolution\": \"1920x1080\",\n  \"container\": \"linear Rec.2020\",\n  \"transfer\": \"linear\",\n  \"diffuse_white_nits\": 203,\n  \"recovery_mode\": \"shadows\",\n  \"residual_strength\": 1.1,\n  \"preserve_outside\": false,\n  \"region_ev\": [\n    {\n      \"label\": \"highlights\",\n      \"low_nits\": 400,\n      \"high_nits\": 2000,\n      \"ev\": 0.5\n    },\n    {\n      \"label\": \"speculars\",\n      \"low_nits\": 2000,\n      \"high_nits\": 8000,\n      \"ev\": -1.25\n    },\n    {\n      \"label\": \"shadows\",\n      \"low_nits\": 0.05,\n      \"high_nits\": 12,\n      \"ev\": 0\n    }\n  ],\n  \"measurements\": {\n    \"maxcll\": 1235,\n    \"maxfall\": 87,\n    \"peak_nits\": 1234.4912109375,\n    \"baseline_peak_nits\": 402.25,\n    \"headroom_stops\": 1.617,\n    \"headroom_highlight_stops\": 2.604,\n    \"headroom_shadow_stops\": null,\n    \"departure_rms_stops\": 0.41234,\n    \"p99_nits\": 812.3450000000001,\n    \"median_nits\": 42.125,\n    \"above_diffuse_white_pct\": 12.3456,\n    \"above_1000_nits_pct\": 0.0125,\n    \"highlight_mask_pct\": 3.456,\n    \"shadow_mask_pct\": 0,\n    \"compose_ms\": 17.25\n  }\n}",
+   "log": "copied delivery metadata to the clipboard"
+  },
+  {
+   "name": "delivery_ungraded",
+   "act": "copy-delivery",
+   "state": {
+    "header": {
+     "checkpoint": "a \"quoted\" name\\",
+     "resolution": "640x480"
+    },
+    "frames": [
+     {
+      "name": "café\tframe.png"
+     }
+    ],
+    "index": 0,
+    "container": "aces",
+    "mode": "all",
+    "strength": 0.30000000000000004,
+    "preserve": true,
+    "regions": [
+     {
+      "label": "highlights",
+      "low_nits": 400,
+      "high_nits": 2000,
+      "ev": 0
+     },
+     {
+      "label": "speculars",
+      "low_nits": 2000,
+      "high_nits": 8000,
+      "ev": 0
+     },
+     {
+      "label": "shadows",
+      "low_nits": 0.05,
+      "high_nits": 12,
+      "ev": 0
+     }
+    ]
+   },
+   "text": "{\n  \"checkpoint\": \"a \\\"quoted\\\" name\\\\\",\n  \"step\": null,\n  \"frame\": \"café\\tframe.png\",\n  \"resolution\": \"640x480\",\n  \"container\": \"ACES 2065-1 (AP0)\",\n  \"transfer\": \"linear\",\n  \"diffuse_white_nits\": 203,\n  \"recovery_mode\": \"all\",\n  \"residual_strength\": 0.30000000000000004,\n  \"preserve_outside\": true,\n  \"region_ev\": null,\n  \"measurements\": null\n}",
+   "log": "copied delivery metadata to the clipboard"
+  }
+ ]
+}

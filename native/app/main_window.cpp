@@ -4,7 +4,9 @@
 #include <QApplication>
 #include <QDialog>
 #include <QFileDialog>
+#include <QDir>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QGridLayout>
 #include <QKeySequence>
 #include <QLabel>
@@ -14,6 +16,12 @@
 #include <QStatusBar>
 #include <QFrame>
 #include <QKeyEvent>
+#include <QClipboard>
+#include <QCloseEvent>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 #include <QLayout>
 #include <QComboBox>
 #include <QLineEdit>
@@ -41,6 +49,7 @@
 #include <thread>
 
 #include "rudra/core/baseline.hpp"
+#include "rudra/core/copy_texts.hpp"
 #include "rudra/core/readouts.hpp"
 #include "rudra/engine/actions.hpp"
 #include "rudra/engine/frame_engine.hpp"
@@ -96,6 +105,7 @@ MainWindow::MainWindow(bool with_viewer) {
     resize(1600, 1000);
     session_.on_change([this](std::uint32_t what) { session_changed(what); });
     build_ui(with_viewer);
+    setAcceptDrops(true);   // a drop anywhere opens (the page's window drop)
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->on_status([this](const ViewerStatus&) {
@@ -136,6 +146,7 @@ MainWindow::MainWindow(bool with_viewer) {
     probe_box_->hide();
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
+        viewer_->on_drop([this](const QStringList& paths) { open_paths(paths); });
         viewer_->on_hover([this](const ViewerWindow::Hover& h) {
             if (!(probe_on_ || h.alt) || !h.x) {
                 probe_pixel(std::nullopt);
@@ -181,7 +192,14 @@ void MainWindow::run(std::string_view id) {
 
 void MainWindow::bind_handlers() {
     auto& h = handlers_;
-    h["open"] = [this] { open_source(); };
+    h["open"] = [this] {
+        // The page's file input: several stills at once, added to the frames.
+        const QStringList files = QFileDialog::getOpenFileNames(
+            this, "Open SDR frames", {}, "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)");
+        std::vector<std::filesystem::path> paths;
+        for (const auto& f : files) paths.emplace_back(f.toStdString());
+        if (!paths.empty()) add_files(paths);
+    };
     h["open-folder"] = [this] { open_source({}, true); };
     h["open-package"] = [this] { open_package(); };
     h["models"] = [this] { open_model_manager(); };
@@ -202,17 +220,14 @@ void MainWindow::bind_handlers() {
         show_sheet("Keyboard", rows);
     };
     h["about"] = [this] {
-        QString device = "—";
-        if (backend_) {
-            const auto info = backend_->info();
-            device = QStringLiteral("%1 on %2").arg(to_string(info.runtime), to_string(info.device));
-        }
+        const QString device = device_->text();   // the page's $("device").textContent
         QString composite = "CPU";
 #ifdef RUDRA_APP_VIEWER
         if (viewer_) composite = QStringLiteral("GPU, QRhi %1 — render/shaders/composite.frag")
                                      .arg(QString::fromStdString(viewer_->status().backend));
 #endif
-        show_sheet("RUDRA Studio", {{"Checkpoint", manifest_ ? QString::fromStdString(manifest_->name) : "—"},
+        // head.checkpoint: the model that made the frame on screen.
+        show_sheet("RUDRA Studio", {{"Checkpoint", manifest_ && current_frame_ ? QString::fromStdString(manifest_->name) : "—"},
                                     {"Step", "—"},
                                     {"Device", device},
                                     {"Composite", composite},
@@ -226,8 +241,18 @@ void MainWindow::bind_handlers() {
     h["view-difference"] = [this] { session_.set_view_layer(2); };
 
     // Waiting on later steps of Phase 3: off, and they say why.
-    for (const char* id : {"copy-metrics", "copy-scopes", "copy-delivery"})
-        pending_[id] = "Copying arrives with Phase 3 step 11.";
+    // copy(): JSON.stringify(value, null, 2) to the clipboard (core/copy_texts).
+    h["copy-metrics"] = [this] {
+        if (measure_) copy_text("measurements", metrics_value(measure_->measured.metrics, measure_->compose_ms).stringify());
+    };
+    h["copy-scopes"] = [this] {
+        if (measure_) copy_text("scope data", scopes_value(measure_->measured.scopes).stringify());
+    };
+    h["copy-delivery"] = [this] { copy_text("delivery metadata", delivery_text()); };
+    h["recent-clear"] = [this] {
+        QSettings().remove("recent/sources");
+        fill_recent();
+    };
     h["remeasure"] = [this] {
         measure_now();
         log("re-measured");
@@ -314,7 +339,14 @@ void MainWindow::build_menus() {
         for (auto e : m.entries) {
             if (e == "-") stack.back()->addSeparator();
             else if (e == "<") stack.pop_back();
-            else if (e.substr(0, 1) == ">") stack.push_back(stack.back()->addMenu(qs(e.substr(1))));
+            else if (e.substr(0, 1) == ">") {
+                QMenu* sub = stack.back()->addMenu(qs(e.substr(1)));
+                if (e == ">Open recent") {
+                    recent_menu_ = sub;
+                    connect(sub, &QMenu::aboutToShow, this, [this] { fill_recent(); });
+                }
+                stack.push_back(sub);
+            }
             else stack.back()->addAction(actions_.at(std::string(e)));
         }
         connect(menu, &QMenu::aboutToShow, this, [this] {
@@ -397,27 +429,46 @@ void MainWindow::sync_checks() {
     set("zoom-fit", true);
 }
 
+namespace {
+
+// The page's overlay sheet: Esc, or a click anywhere, closes it.
+class Sheet : public QDialog {
+public:
+    using QDialog::QDialog;
+
+protected:
+    void mousePressEvent(QMouseEvent*) override { accept(); }
+};
+
+}  // namespace
+
 void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows) {
-    QDialog d(this);
-    d.setObjectName("sheet");
-    d.setWindowTitle(title);
-    auto* grid = new QGridLayout(&d);
-    auto* head = new QLabel(title, &d);
+    if (sheet_) sheet_->close();
+    auto* d = new Sheet(this);
+    d->setAttribute(Qt::WA_DeleteOnClose);
+    d->setObjectName("sheet");
+    d->setWindowTitle(title);
+    auto* grid = new QGridLayout(d);
+    auto* head = new QLabel(title, d);
+    head->setObjectName("sheetTitle");
     head->setProperty("role", "plabel");
     grid->addWidget(head, 0, 0, 1, 2);
     int r = 1;
     for (const auto& [k, v] : rows) {
-        auto* kl = new QLabel(k, &d);
+        auto* kl = new QLabel(k, d);
         kl->setProperty("role", "value");
-        auto* vl = new QLabel(v, &d);
+        auto* vl = new QLabel(v, d);
+        vl->setTextInteractionFlags(Qt::TextSelectableByMouse);
         grid->addWidget(kl, r, 0);
         grid->addWidget(vl, r, 1);
         ++r;
     }
-    auto* close = new QLabel("Esc to close", &d);
+    auto* close = new QLabel("Esc, or click anywhere, to close", d);
+    close->setObjectName("sheetClose");
     close->setProperty("role", "note");
     grid->addWidget(close, r, 0, 1, 2);
-    d.exec();
+    sheet_ = d;
+    d->show();
 }
 
 void MainWindow::session_changed(std::uint32_t what) {
@@ -641,7 +692,7 @@ void MainWindow::boot() {
 void MainWindow::open_source(const QString& preset, bool folder) {
 #if defined(RUDRA_APP_VIEWER) && defined(RUDRA_HAVE_STILL_DECODE)
     if (!backend_) {
-        QMessageBox::information(this, "RUDRA", "Open a model package first.");
+        log("Open a model package first.");
         return;
     }
     QString path = preset;
@@ -661,6 +712,7 @@ void MainWindow::open_source(const QString& preset, bool folder) {
     } else {
         frames = {std::filesystem::path(path.toStdString())};
     }
+    remember_source(path);
     start_engine(std::move(frames));
 #else
     (void)preset;
@@ -1183,6 +1235,177 @@ void MainWindow::master_finished(const MasterOutcome& o, const QString& folder) 
     btn_master_->setToolTip({});
     refresh_enabled();
     sync_ui();
+}
+
+// ---------------------------------------------------------------------------
+// Step 11: copies, drop to open, recent shots, settings
+// ---------------------------------------------------------------------------
+
+void MainWindow::copy_text(const QString& label, const std::string& text) {
+    QGuiApplication::clipboard()->setText(QString::fromStdString(text));
+    log("copied " + label + " to the clipboard");
+}
+
+std::string MainWindow::delivery_text() const {
+    DeliveryRecord d;
+    if (current_frame_) {
+        // state.header: what came back with the frame on screen.
+        if (manifest_) d.checkpoint = manifest_->name;
+        d.resolution = current_frame_->header.resolution;
+    }
+    if (!frames_.empty()) d.frame = frames_[std::size_t(current_)].filename().string();
+    d.aces = session_.container == "aces";
+    d.mode = session_.grade.mode;
+    d.strength = session_.grade.strength;
+    d.preserve = session_.grade.preserve;
+    for (const auto& r : session_.grade.regions) d.regions.push_back({r.label, r.low_nits, r.high_nits, r.ev});
+    if (measure_) d.metrics = std::pair{measure_->measured.metrics, measure_->compose_ms};
+    return delivery_value(d).stringify();
+}
+
+void MainWindow::add_files(const std::vector<std::filesystem::path>& files) {
+    if (files.empty()) return;
+    if (!backend_) {
+        log("Open a model package first.");
+        return;
+    }
+    auto all = frames_;
+    const std::size_t start = all.size();
+    all.insert(all.end(), files.begin(), files.end());
+    log(QStringLiteral("added %1 frame%2").arg(files.size()).arg(files.size() == 1 ? "" : "s"));
+    for (const auto& f : files) remember_source(QString::fromStdString(f.string()));
+    // select(state.frames.length === files.length ? 0 : start)
+    start_engine(std::move(all), all.size() == files.size() ? 0 : int(start));
+}
+
+void MainWindow::open_paths(const QStringList& paths) {
+    std::vector<std::filesystem::path> files;
+    for (const auto& p : paths) {
+        const QFileInfo fi(p);
+        if (fi.isDir()) {
+            if (QFileInfo(QDir(p).filePath("manifest.json")).isFile()) use_model(p.toStdString(), backend_choice_);
+            else open_source(p, true);
+            return;   // one folder is one shot, or one model
+        }
+        if (fi.isFile()) files.emplace_back(p.toStdString());
+    }
+    add_files(files);
+}
+
+void MainWindow::set_drop_hot(bool hot) {
+    if (auto* dz = findChild<QWidget*>("dropzone")) {
+        dz->setProperty("state", hot ? "hot" : "");
+        dz->style()->unpolish(dz);
+        dz->style()->polish(dz);
+        for (auto* c : dz->findChildren<QWidget*>()) {
+            c->style()->unpolish(c);
+            c->style()->polish(c);
+        }
+    }
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
+    if (!e->mimeData()->hasUrls()) return;
+    e->acceptProposedAction();
+    set_drop_hot(true);
+}
+
+void MainWindow::dragLeaveEvent(QDragLeaveEvent*) { set_drop_hot(false); }
+
+void MainWindow::dropEvent(QDropEvent* e) {
+    set_drop_hot(false);
+    QStringList paths;
+    for (const auto& u : e->mimeData()->urls())
+        if (u.isLocalFile()) paths << u.toLocalFile();
+    if (paths.isEmpty()) return;
+    e->acceptProposedAction();
+    open_paths(paths);
+}
+
+namespace {
+constexpr int kRecentMax = 10;
+}
+
+QStringList MainWindow::recent_sources() const { return QSettings().value("recent/sources").toStringList(); }
+
+void MainWindow::remember_source(const QString& path) {
+    QSettings st;
+    QStringList r = st.value("recent/sources").toStringList();
+    const QString p = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    r.removeAll(p);
+    r.prepend(p);
+    while (r.size() > kRecentMax) r.removeLast();
+    st.setValue("recent/sources", r);
+}
+
+void MainWindow::fill_recent() {
+    if (!recent_menu_) return;
+    for (QAction* a : recent_menu_->actions())
+        if (a->objectName().startsWith("recent:")) {
+            recent_menu_->removeAction(a);
+            a->deleteLater();
+        }
+    QAction* clear = action("recent-clear");
+    const QStringList r = recent_sources();
+    int i = 0;
+    for (const auto& p : r) {
+        const QFileInfo fi(p);
+        auto* a = new QAction(QStringLiteral("%1  ·  %2").arg(fi.fileName(), fi.absolutePath()), recent_menu_);
+        a->setObjectName(QStringLiteral("recent:%1").arg(i++));
+        a->setData(p);
+        a->setEnabled(fi.exists() && backend_ != nullptr);
+        connect(a, &QAction::triggered, this, [this, p] {
+            if (QFileInfo(p).isDir()) open_source(p, true);
+            else add_files({std::filesystem::path(p.toStdString())});
+        });
+        recent_menu_->insertAction(clear, a);
+    }
+    if (clear) clear->setEnabled(!r.isEmpty());
+}
+
+void MainWindow::save_settings() const {
+    QSettings st;
+    st.setValue("window/geometry", saveGeometry());
+    st.setValue("window/workspace", workspace_);
+    st.setValue("window/tab", tab_);
+    st.setValue("window/railLeft", session_.rail_left);
+    st.setValue("window/railRight", session_.rail_right);
+    st.setValue("window/scopes", session_.scopes_open);
+    st.setValue("deliver/container", QString::fromStdString(session_.container));
+    if (auto* e = findChild<QLineEdit*>("renderDir")) st.setValue("deliver/renderDir", e->text());
+    if (auto* e = findChild<QLineEdit*>("renderName")) st.setValue("deliver/renderName", e->text());
+    if (auto* c = findChild<QComboBox*>("renderMode")) st.setValue("deliver/renderMode", c->currentIndex());
+    if (auto* sb = findChild<QSpinBox*>("renderStart")) st.setValue("deliver/renderStart", sb->value());
+}
+
+void MainWindow::restore_settings() {
+    QSettings st;
+    if (st.contains("window/geometry")) restoreGeometry(st.value("window/geometry").toByteArray());
+    if (st.contains("window/workspace")) set_workspace(st.value("window/workspace").toString());
+    if (st.contains("window/tab")) show_tab(st.value("window/tab").toString());
+    const bool l = st.value("window/railLeft", session_.rail_left).toBool(),
+               r = st.value("window/railRight", session_.rail_right).toBool(),
+               sc = st.value("window/scopes", session_.scopes_open).toBool();
+    if (l != session_.rail_left) run("rail-left");
+    if (r != session_.rail_right) run("rail-right");
+    if (sc != session_.scopes_open) run("scopes");
+    const QString c = st.value("deliver/container").toString();
+    if (c == "aces" || c == "linear") session_.set_container(c.toStdString());
+    if (auto* e = findChild<QLineEdit*>("renderDir"); e && st.contains("deliver/renderDir"))
+        e->setText(st.value("deliver/renderDir").toString());
+    if (auto* e = findChild<QLineEdit*>("renderName"); e && st.contains("deliver/renderName"))
+        e->setText(st.value("deliver/renderName").toString());
+    if (auto* cb = findChild<QComboBox*>("renderMode"); cb && st.contains("deliver/renderMode"))
+        cb->setCurrentIndex(st.value("deliver/renderMode").toInt());
+    if (auto* sb = findChild<QSpinBox*>("renderStart"); sb && st.contains("deliver/renderStart"))
+        sb->setValue(st.value("deliver/renderStart").toInt());
+    sync_checks();
+    sync_ui();
+}
+
+void MainWindow::closeEvent(QCloseEvent* e) {
+    save_settings();
+    QMainWindow::closeEvent(e);
 }
 
 void MainWindow::log(const QString& line) {

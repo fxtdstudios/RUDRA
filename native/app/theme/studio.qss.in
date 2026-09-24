@@ -77,6 +77,8 @@ QWidget[role="field"] QLabel[role="value"] { color: var(--ink); font-size: 11px;
 /* ── the media rail ────────────────────────────────────────────────── */
 QFrame#dropzone { border: 1px dashed var(--line-2); border-radius: var(--radius); background: transparent; }
 QFrame#dropzone QLabel { background: transparent; color: var(--ink-3); font-size: 11px; }
+QFrame#dropzone[state="hot"] { border-color: var(--accent); }
+QFrame#dropzone[state="hot"] QLabel { color: var(--ink-2); }
 QLabel[role="drop-b"] { color: var(--ink-2); font-size: 12px; }
 QLabel[role="drop-or"] { font-size: 10px; }
 QLabel[role="empty-rail"] { background: transparent; color: var(--ink-3); font-size: 11px; padding: 10px 11px; }

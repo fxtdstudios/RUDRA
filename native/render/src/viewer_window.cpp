@@ -1,5 +1,8 @@
 #include "rudra/render/viewer_window.hpp"
 
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 #include <QExposeEvent>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -163,6 +166,7 @@ struct ViewerWindow::Impl {
 
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const ViewerWindow::Hover&)> hover_cb;
+    std::function<void(const QStringList&)> drop_cb;
     void hover(const QPointF& at, bool alt) {
         if (!hover_cb) return;
         ViewerWindow::Hover h;
@@ -798,6 +802,25 @@ bool ViewerWindow::event(QEvent* e) {
         case QEvent::Leave:
             if (d_->hover_cb) d_->hover_cb(Hover{});
             break;
+        case QEvent::DragEnter:
+        case QEvent::DragMove: {
+            auto* de = static_cast<QDragMoveEvent*>(e);
+            if (d_->drop_cb && de->mimeData()->hasUrls()) {
+                de->acceptProposedAction();
+                return true;
+            }
+            break;
+        }
+        case QEvent::Drop: {
+            auto* de = static_cast<QDropEvent*>(e);
+            if (!d_->drop_cb) break;
+            QStringList paths;
+            for (const auto& u : de->mimeData()->urls())
+                if (u.isLocalFile()) paths << u.toLocalFile();
+            de->acceptProposedAction();
+            if (!paths.isEmpty()) d_->drop_cb(paths);
+            return true;
+        }
         case QEvent::Resize:
             // Fit follows the window; a zoom keeps its scale and pan.
             d_->notify();
@@ -843,6 +866,8 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::on_hover(std::function<void(const Hover&)> cb) { d_->hover_cb = std::move(cb); }
+
+void ViewerWindow::on_drop(std::function<void(const QStringList&)> cb) { d_->drop_cb = std::move(cb); }
 
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
     if (!d_->input) return;
