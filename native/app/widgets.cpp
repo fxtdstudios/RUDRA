@@ -34,7 +34,11 @@ Seg::Seg(const QString& id, const std::vector<std::pair<QString, QString>>& butt
     row->setSpacing(0);
     auto* group = new QButtonGroup(this);
     group->setExclusive(exclusive);
-    for (const auto& [key, text] : buttons) {
+    for (const auto& entry : buttons) {
+        // Not a structured binding: the click lambda captures the key, which
+        // Apple clang 15 cannot do with a binding (C++20 allows it, clang 16+).
+        const QString key = entry.first;
+        const auto& text = entry.second;
         auto* b = new QPushButton(text, this);
         b->setProperty("role", "seg-button");
         b->setCheckable(true);

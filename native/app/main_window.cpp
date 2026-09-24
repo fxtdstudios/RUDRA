@@ -664,7 +664,9 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     if (had_frames) start_engine(frames_, current_);
     else if (!pending_source_) log("drop frames — the network runs once each, then the grade is local");
     if (pending_source_) {
-        const auto [path, folder] = *pending_source_;
+        // Copies, not a structured binding: the lambda captures them.
+        const QString path = pending_source_->first;
+        const bool folder = pending_source_->second;
         pending_source_.reset();
         QTimer::singleShot(0, this, [this, path, folder] { open_source(path, folder); });
     }

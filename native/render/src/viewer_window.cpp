@@ -13,7 +13,8 @@
 #include <QWheelEvent>
 #include <rhi/qrhi.h>
 
-#if QT_CONFIG(vulkan)
+#include "rudra/render/qt_vulkan.hpp"
+#if RUDRA_QT_VULKAN
 #include <QVulkanInstance>
 #endif
 #include <QScreen>
@@ -68,7 +69,7 @@ GpuApi resolve(GpuApi api) {
     return GpuApi::D3D12;
 #elif defined(Q_OS_MACOS)
     return GpuApi::Metal;
-#elif QT_CONFIG(vulkan)
+#elif RUDRA_QT_VULKAN
     return GpuApi::Vulkan;
 #else
     return GpuApi::OpenGL;
@@ -122,7 +123,7 @@ struct ViewerWindow::Impl {
     GpuApi api = GpuApi::OpenGL;
     bool prefer_hdr = true;
 
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
     std::unique_ptr<QVulkanInstance> vk;
 #endif
     std::unique_ptr<QOffscreenSurface> fallback;
@@ -212,7 +213,7 @@ struct ViewerWindow::Impl {
                 break;
             }
             case GpuApi::Vulkan: {
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
                 QRhiVulkanInitParams p;
                 p.inst = w->vulkanInstance();
                 p.window = w;
@@ -683,7 +684,7 @@ ViewerWindow::ViewerWindow(GpuApi api, bool prefer_hdr) : d_(std::make_unique<Im
     d_->w = this;
     d_->api = resolve(api);
     d_->prefer_hdr = prefer_hdr;
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
     if (d_->api == GpuApi::Vulkan) {
         d_->vk = std::make_unique<QVulkanInstance>();
         d_->vk->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());

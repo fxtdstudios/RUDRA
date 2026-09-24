@@ -10,7 +10,8 @@
 #include <QOffscreenSurface>
 #include <rhi/qrhi.h>
 
-#if QT_CONFIG(vulkan)
+#include "rudra/render/qt_vulkan.hpp"
+#if RUDRA_QT_VULKAN
 #include <QVulkanInstance>
 #endif
 
@@ -565,7 +566,7 @@ private:
                 break;
             }
             case GpuApi::Vulkan: {
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
                 vk_ = std::make_unique<QVulkanInstance>();
                 vk_->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
                 vk_->setApiVersion(vk_->supportedApiVersion());
@@ -606,7 +607,7 @@ private:
         return {};
     }
 
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
     std::unique_ptr<QVulkanInstance> vk_;
 #endif
     std::unique_ptr<QOffscreenSurface> fallback_;
