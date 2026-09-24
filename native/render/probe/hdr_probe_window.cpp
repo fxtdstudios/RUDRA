@@ -1,5 +1,6 @@
 #include "hdr_probe_window.hpp"
 
+#include <algorithm>
 #include <QCoreApplication>
 #include <QFile>
 #include <QGuiApplication>

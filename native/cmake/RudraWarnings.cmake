@@ -2,6 +2,8 @@
 function(rudra_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+    # std::getenv is the portable call; MSVC's C4996 wants _dupenv_s.
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion
                                              -Wno-sign-conversion)

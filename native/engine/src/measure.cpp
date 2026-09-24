@@ -1,5 +1,6 @@
 #include "rudra/engine/measure.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 
