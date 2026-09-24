@@ -244,8 +244,10 @@ std::vector<std::string> sequence_encode_command(const SequenceTarget& t, int wi
 }
 
 bool ffmpeg_supports(const std::string& kind, const std::string& name, const std::string& flag) {
-    static std::mutex mu;
-    static std::map<std::string, bool> cache;
+    // Never destroyed, for the same reason as media's video registry: a
+    // worker can still ask while the process exits.
+    static std::mutex& mu = *new std::mutex;
+    static std::map<std::string, bool>& cache = *new std::map<std::string, bool>;
     const std::string key = kind + "=" + name + ":" + flag;
     {
         std::lock_guard lk(mu);

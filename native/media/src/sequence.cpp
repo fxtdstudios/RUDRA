@@ -112,18 +112,29 @@ bool natural_less(const std::string& a, const std::string& b) {
 }
 
 namespace {
-std::mutex g_videos_mu;
-std::map<fs::path, FrameSequence> g_videos;   // cache folder -> the video it holds frames of
+// Cache folder -> the video it holds frames of. Never destroyed: an engine's
+// decode worker can still ask for a movie frame while the process exits, and
+// locking a destroyed mutex aborts on macOS ("mutex lock failed").
+struct Videos {
+    std::mutex mu;
+    std::map<fs::path, FrameSequence> by_cache;
+};
+Videos& videos() {
+    static Videos* v = new Videos;
+    return *v;
+}
 
 void register_video(const FrameSequence& seq) {
-    std::lock_guard lk(g_videos_mu);
-    g_videos[seq.cache] = seq;
+    Videos& v = videos();
+    std::lock_guard lk(v.mu);
+    v.by_cache[seq.cache] = seq;
 }
 
 std::optional<FrameSequence> video_of(const fs::path& frame) {
-    std::lock_guard lk(g_videos_mu);
-    const auto it = g_videos.find(frame.parent_path());
-    if (it == g_videos.end()) return std::nullopt;
+    Videos& v = videos();
+    std::lock_guard lk(v.mu);
+    const auto it = v.by_cache.find(frame.parent_path());
+    if (it == v.by_cache.end()) return std::nullopt;
     return it->second;
 }
 }  // namespace
