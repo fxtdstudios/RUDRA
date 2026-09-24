@@ -600,7 +600,12 @@
 >
 > ---
 >
-> **Licensing (5 Sep 2026).** The code is Apache 2.0. The **weights are not**:
+> **Licensing (24 Sep 2026).** The code is now **non-commercial** too, under the
+> PolyForm Noncommercial License 1.0.0 (`LICENSE`, with the Required Notice in
+> `NOTICE`); commercial use of code or weights needs a licence from FXTD
+> Studios. Copies obtained before 24 Sep keep Apache 2.0.
+>
+> **Licensing (5 Sep 2026).** The code was Apache 2.0. The **weights are not**:
 > HdM-HDR-2014 and HdM-HFR-2017 are **75.6% of the training corpus** and are
 > free for academic use only, with commercial use requiring a separate
 > agreement with HdM Stuttgart. `checkpoints/LICENSE` now licenses the weights

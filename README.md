@@ -523,9 +523,17 @@ Plan: [`docs/DESKTOP_APP_PLAN.md`](docs/DESKTOP_APP_PLAN.md) · design:
 
 ## Licence
 
-Code is Apache 2.0. **The weights are non-commercial.** The training corpus is
-why, and that is not a term FXTD Studios can waive for you. See
-[`checkpoints/LICENSE`](checkpoints/LICENSE) and [`NOTICE`](NOTICE).
+**RUDRA is non-commercial.** The code is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE): research, teaching,
+evaluation, personal projects and noncommercial organizations may use,
+change and share it. **The weights are non-commercial too**, under their own
+terms, because of their training corpus; that is a term FXTD Studios cannot
+waive for you. See [`checkpoints/LICENSE`](checkpoints/LICENSE) and
+[`NOTICE`](NOTICE).
+
+Commercial use of the code or the weights needs a licence from
+[FXTD Studios](https://fxtdstudios.com). Copies of the code obtained before
+24 September 2026 were released under Apache 2.0 and keep that licence.
 
 ---
 
