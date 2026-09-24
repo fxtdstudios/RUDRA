@@ -24,7 +24,8 @@ render     the QRhi viewer: GpuCompositor and ViewerWindow (rudra_render_gpu);
            rudra-viewer-check                                     (core, Qt)
 deliver    EXR/ACES/OCIO writers, metadata sidecars, QC, queue;
            encode later                                           (core)
-engine     jobs, generations, priorities                          (below)
+engine     FrameEngine: the InferActor, generations, cancellation,
+           read-ahead and the frame cache                         (below)
 cli        rudra-native: version | info | diff | bench | master | master-check
            (never Qt, never render)
 app        the Qt application                                     (everything)
@@ -148,7 +149,9 @@ Then the display pass (`display.frag`, Phase 2 step 4): seven views of each
 frame into RGBA8 against `core/view.cpp`, within 1 code ("view codes" in the
 gate table is the worst difference), and the HDR paths (scRGB, HDR10, EDR,
 step 5) into RGBA32F and RGBA16F. Both gate B scripts run it on every API the machine has, with `--bench`: one
-composite pass timed at 1080p and 4K into RGBA16F (QRhi GPU timestamps). Gate A
+composite pass, and a composite plus display pass (a slider move), timed at
+1080p and 4K (QRhi GPU timestamps). `rudra-native bench-scopes` times the
+viewer's CPU measurements and scopes; Gate A runs it. Gate A
 times inference at 1080p on every backend that passed (`rudra-native bench`).
 
 ## Status
@@ -171,5 +174,5 @@ times inference at 1080p on every backend that passed (`rudra-native bench`).
 | `rudra-native master` | done: Studio-identical master (1 half ulp, same header and sidecar) on LibTorch and ONNX Runtime |
 | QC, queue, sequence open | done: same QC report text, queue state byte-identical and resumable across Python and C++, same frame order and messages |
 | Phase 1 (librudra) | steps 1 to 10 of 11 done (`NATIVE_ARCHITECTURE.md` section 14) |
-| Phase 2 (QRhi viewer) | steps 1 to 9 of 13 done (4 to 6 and 9 on Linux so far): the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR, the reduction ladder, probe, measurements and scopes equal to the browser's, and the viewer window in the app (section 15) |
+| Phase 2 (QRhi viewer) | steps 1 to 11 of 13 done: the browser Studio as oracle, `docs/view.spec.md`, the display pass SDR and HDR, the reduction ladder, probe, measurements and scopes equal to the browser's, the viewer window in the app (Gate B through it passes on Windows), the frame path through the engine, and the guides (section 15) |
 | Video decode, encode, engine, viewer, app | Phase 1 onward |

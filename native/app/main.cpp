@@ -1,11 +1,13 @@
 // RUDRA: the Qt application shell.
 //
-// Phase 2 step 9: the viewer (render/viewer_window.hpp, a QWindow with its
-// own swapchain, ADR-010) sits in the middle of the window. File opens a
-// model package and a still; the still is decoded, inferred off the UI
-// thread, and shown through the same composite and display passes the
-// parity tools hold to the Studio. The rails and the Pro-direction layout
-// are Phase 3; the engine's generations and cancellation are step 10.
+// Phase 2 steps 9 and 10: the viewer (render/viewer_window.hpp, a QWindow
+// with its own swapchain, ADR-010) sits in the middle of the window. File
+// opens a model package, then a still or a folder of frames; frames reach the
+// viewer through the engine's FrameEngine (engine/frame_engine.hpp): decode
+// and inference on its own thread, generations so a late result never lands
+// on the wrong frame, read-ahead and a frame cache, as the Studio's page does.
+// Comma and full stop step, Home and End jump, Space plays. The rails and the
+// Pro-direction layout are Phase 3.
 
 #include <QActionGroup>
 #include <QApplication>
@@ -13,17 +15,23 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenuBar>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QPointer>
 #include <QStatusBar>
 #include <QVBoxLayout>
 
+#include <filesystem>
 #include <memory>
-#include <thread>
+
+#include <QKeyEvent>
+#include <QTimer>
 
 #include "rudra/core/model_manifest.hpp"
+#include "rudra/engine/frame_engine.hpp"
 #include "rudra/infer/backend.hpp"
 #include "rudra/infer/tiler.hpp"
+#include "rudra/media/sequence.hpp"
 
 #ifdef RUDRA_APP_VIEWER
 #include "rudra/render/viewer_window.hpp"
@@ -116,6 +124,12 @@ public:
             model_->setText(describe(*m) + "  ·  " + QString::fromStdString(b.error().message));
             return;
         }
+        // The engine's worker uses the backend: it goes first.
+#ifdef RUDRA_APP_VIEWER
+        play_.stop();
+#endif
+        engine_.reset();
+        frames_.clear();
         manifest_ = std::make_unique<rudra::ModelManifest>(*m);
         backend_ = std::move(*b);
         const auto info = backend_->info();
@@ -123,47 +137,63 @@ public:
                                                                             rudra::to_string(info.device)));
     }
 
-    void open_image(const QString& preset = {}) {
+    // A still, or a folder of frames: both are a sequence to the engine.
+    void open_source(const QString& preset = {}, bool folder = false) {
 #if defined(RUDRA_APP_VIEWER) && defined(RUDRA_HAVE_STILL_DECODE)
         if (!backend_) {
             QMessageBox::information(this, "RUDRA", "Open a model package first.");
             return;
         }
-        const QString path = preset.isEmpty()
-            ? QFileDialog::getOpenFileName(this, "Open an SDR still", {}, "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)")
-            : preset;
+        QString path = preset;
+        if (path.isEmpty())
+            path = folder ? QFileDialog::getExistingDirectory(this, "Open a folder of SDR frames")
+                          : QFileDialog::getOpenFileName(this, "Open an SDR still", {},
+                                                         "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp)");
         if (path.isEmpty()) return;
-        statusBar()->showMessage("Reconstructing " + path + " …");
-        // Off the UI thread: one untiled forward pass, as the Studio's preview.
-        auto* backend = backend_.get();
-        const rudra::ModelConstants model{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev};
-        QPointer<MainWindow> self(this);
-        std::thread([self, backend, model, file = path.toStdString()] {
-            auto decoded = rudra::decode_sdr_file(file);
-            rudra::Result<rudra::FrameResult> fr = decoded ? rudra::infer_frame(*backend, decoded->rgb, rudra::TileConfig{0, 0})
-                                                           : rudra::Result<rudra::FrameResult>(decoded.error());
-            QMetaObject::invokeMethod(qApp, [self, decoded = std::move(decoded), fr = std::move(fr), model]() mutable {
-                if (!self) return;
-                if (!fr) {
-                    self->statusBar()->showMessage(QString::fromStdString(fr.error().message));
-                    return;
-                }
-                self->viewer_->set_frame({std::move(decoded->rgb), std::move(fr->fields), fr->scalars, model});
-                self->viewer_->set_composite(self->composite_);
-            });
-        }).detach();
+        std::vector<std::filesystem::path> frames;
+        if (QFileInfo(path).isDir()) {
+            auto seq = rudra::open_sequence(path.toStdString());
+            if (!seq) {
+                statusBar()->showMessage(QString::fromStdString(seq.error().message));
+                return;
+            }
+            frames = seq->frames;
+        } else {
+            frames = {std::filesystem::path(path.toStdString())};
+        }
+        start_engine(std::move(frames));
 #else
         (void)preset;
+        (void)folder;
         QMessageBox::information(this, "RUDRA", "This build has no viewer or no still decoder (Qt 6.6 with Shader "
                                                 "Tools, and RUDRA_WITH_OPENCV).");
 #endif
+    }
+
+protected:
+    void keyPressEvent(QKeyEvent* e) override {
+#ifdef RUDRA_APP_VIEWER
+        if (engine_ && frames_.size() > 1) {
+            const int n = int(frames_.size());
+            switch (e->key()) {
+                case Qt::Key_Comma: step_to(current_ - 1); return;
+                case Qt::Key_Period: step_to(current_ + 1); return;
+                case Qt::Key_Home: step_to(0); return;
+                case Qt::Key_End: step_to(n - 1); return;
+                case Qt::Key_Space: toggle_play(); return;
+                default: break;
+            }
+        }
+#endif
+        QMainWindow::keyPressEvent(e);
     }
 
 private:
     void build_menus() {
         auto* file = menuBar()->addMenu("&File");
         file->addAction("Open model package…", QKeySequence("Ctrl+Shift+O"), this, [this] { open_package(); });
-        file->addAction("Open still…", QKeySequence::Open, this, [this] { open_image(); });
+        file->addAction("Open still…", QKeySequence::Open, this, [this] { open_source(); });
+        file->addAction("Open folder of frames…", QKeySequence("Ctrl+Alt+O"), this, [this] { open_source({}, true); });
         file->addSeparator();
         file->addAction("Quit", QKeySequence::Quit, qApp, &QApplication::quit);
 #ifdef RUDRA_APP_VIEWER
@@ -190,6 +220,34 @@ private:
         });
         view->addAction("Fit", QKeySequence("Ctrl+0"), this, [this] { viewer_->zoom_fit(); });
         view->addAction("Actual pixels", QKeySequence("Ctrl+1"), this, [this] { viewer_->zoom_actual(); });
+        auto* guides = view->addMenu("Guides");
+        auto toggle = [this](bool rudra::GuideOptions::*flag) {
+            return [this, flag] (bool on) {
+                auto g = viewer_->guides();
+                g.*flag = on;
+                viewer_->set_guides(g);
+            };
+        };
+        auto* action_safe = guides->addAction("Action safe (90 %)", QKeySequence("G"), this,
+                                              toggle(&rudra::GuideOptions::action_safe));
+        auto* title_safe = guides->addAction("Title safe (80 %)", QKeySequence("Shift+G"), this,
+                                             toggle(&rudra::GuideOptions::title_safe));
+        auto* centre = guides->addAction("Centre cross", this, toggle(&rudra::GuideOptions::centre));
+        for (auto* a : {action_safe, title_safe, centre}) a->setCheckable(true);
+        guides->addSeparator();
+        auto* aspects = new QActionGroup(this);
+        const std::pair<const char*, double> ratios[] = {{"No aspect mask", 0.0}, {"2.39", 2.39}, {"1.85", 1.85},
+                                                          {"16:9", 16.0 / 9.0}, {"4:3", 4.0 / 3.0}, {"1:1", 1.0}};
+        for (const auto& [label, r] : ratios) {
+            auto* a = guides->addAction(label, this, [this, r = r] {
+                auto g = viewer_->guides();
+                g.aspect = r;
+                viewer_->set_guides(g);
+            });
+            a->setCheckable(true);
+            a->setChecked(r == 0.0);
+            aspects->addAction(a);
+        }
         auto* peak = view->addMenu("View peak");
         for (double nits : {203.0, 400.0, 1000.0, 4000.0, 10000.0}) {
             peak->addAction(nits >= 10000.0 ? QString("The display's own") : QString("%1 nits").arg(nits), this,
@@ -234,22 +292,95 @@ private:
         statusBar()->showMessage(QStringLiteral("strength %1").arg(double(composite_.strength), 0, 'f', 2), 1500);
     }
 
+    void start_engine(std::vector<std::filesystem::path> frames) {
+        play_.stop();
+        engine_.reset();   // joins the old worker before the new one starts
+        frames_ = std::move(frames);
+        auto* backend = backend_.get();
+        const rudra::ModelConstants model{manifest_->log_scale, manifest_->max_hdr, manifest_->corpus_ev};
+        auto files = frames_;
+        engine_ = std::make_unique<rudra::FrameEngine>(
+            [files](int i) -> rudra::Result<rudra::SdrImage> {
+                auto d = rudra::decode_sdr_file(files[std::size_t(i)]);
+                if (!d) return d.error();
+                return std::move(d->rgb);
+            },
+            [backend](const rudra::SdrImage& sdr) {
+                // One untiled pass, as the Studio's preview.
+                return rudra::infer_frame(*backend, sdr, rudra::TileConfig{0, 0});
+            });
+        QPointer<MainWindow> self(this);
+        engine_->on_ready([self, model](const rudra::ReadyFrame& f) {
+            QMetaObject::invokeMethod(qApp, [self, f, model] {
+                if (self) self->frame_ready(f, model);
+            });
+        });
+        engine_->set_sequence(int(frames_.size()));
+        step_to(0);
+    }
+
+    void step_to(int i) {
+        if (!engine_ || frames_.empty()) return;
+        const int n = int(frames_.size());
+        current_ = ((i % n) + n) % n;
+        waiting_ = true;
+        engine_->show(current_);
+    }
+
+    void toggle_play() {
+        if (play_.isActive()) {
+            play_.stop();
+            return;
+        }
+        // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
+        play_.setInterval(1000 / 24);
+        QObject::connect(&play_, &QTimer::timeout, this, [this] {
+            if (!waiting_) step_to(current_ + 1);
+        }, Qt::UniqueConnection);
+        play_.start();
+    }
+
+    void frame_ready(const rudra::ReadyFrame& f, const rudra::ModelConstants& model) {
+        if (f.index != current_) return;   // the engine already dropped stale ones; this is the UI's own check
+        waiting_ = false;
+        const QString name = QString::fromStdString(frames_[std::size_t(f.index)].filename().string());
+        if (f.error) {
+            statusBar()->showMessage(name + ": " + QString::fromStdString(f.error->message));
+            return;
+        }
+        viewer_->set_frame({*f.sdr, f.fields->fields, f.fields->scalars, model});
+        viewer_->set_composite(composite_);
+        const auto st = engine_->stats();
+        frame_info_ = QStringLiteral("%1  %2/%3  ·  %4").arg(name).arg(f.index + 1).arg(frames_.size())
+                          .arg(f.from_cache ? QStringLiteral("cached")
+                                            : QStringLiteral("decode %1 ms, infer %2 ms").arg(f.decode_ms, 0, 'f', 0)
+                                                  .arg(f.infer_ms, 0, 'f', 0));
+        frame_info_ += QStringLiteral("  ·  %1 in cache").arg(st.cached);
+        show_status(viewer_->status());
+    }
+
     void show_status(const rudra::ViewerStatus& s) {
         const bool hdr = s.target.path != rudra::OutputPath::SdrPqSimulation;
         const QString path = QString::fromStdString(s.swapchain) +
                              (hdr ? QStringLiteral(" · peak %1 nits").arg(std::lround(s.target.peak_nits)) : QString());
-        statusBar()->showMessage(QStringLiteral("%1 · %2 · %3% · %4").arg(QString::fromStdString(s.backend), path)
+        statusBar()->showMessage(QStringLiteral("%1 · %2 · %3% · %4%5").arg(QString::fromStdString(s.backend), path)
                                      .arg(s.zoom_percent)
-                                     .arg(runtimes_));
+                                     .arg(runtimes_, frame_info_.isEmpty() ? QString() : "  ·  " + frame_info_));
     }
 
     rudra::ViewerWindow* viewer_ = nullptr;
     rudra::CompositeParams composite_;
+    QTimer play_;
+    int current_ = 0;
+    bool waiting_ = false;
+    QString frame_info_;
 #endif
     QLabel* model_ = nullptr;
     QString runtimes_;
     std::unique_ptr<rudra::ModelManifest> manifest_;
-    std::unique_ptr<rudra::InferenceBackend> backend_;
+    std::unique_ptr<rudra::InferenceBackend> backend_;   // used only from the engine's worker
+    std::vector<std::filesystem::path> frames_;
+    std::unique_ptr<rudra::FrameEngine> engine_;         // declared after the backend: destroyed first
 };
 
 }  // namespace
@@ -260,7 +391,7 @@ int main(int argc, char** argv) {
     QApplication::setOrganizationName("FXTD Studios");
     MainWindow w;
     if (argc > 1) w.open_package(QString::fromLocal8Bit(argv[1]));
-    if (argc > 2) w.open_image(QString::fromLocal8Bit(argv[2]));
+    if (argc > 2) w.open_source(QString::fromLocal8Bit(argv[2]));
     w.show();
     return QApplication::exec();
 }

@@ -12,10 +12,16 @@
 #if QT_CONFIG(vulkan)
 #include <QVulkanInstance>
 #endif
+#include <QScreen>
+
+#ifdef Q_OS_WIN
+#include <dxgi1_6.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 
 #include "passes.hpp"
 #include "rudra/core/baseline.hpp"
@@ -30,9 +36,10 @@ using detail::load_shader;
 struct BlitUbo {
     float clip_corr[16];
     float rect[4];
-    float window[4];
+    float window[4];   // width, height, y-up, SDR white encoded
+    float guides[4];   // action, title, centre, aspect
 };
-static_assert(sizeof(BlitUbo) == 24 * sizeof(float));
+static_assert(sizeof(BlitUbo) == 28 * sizeof(float));
 
 // The surround: neutral grey #121212, a graphic at the SDR white.
 constexpr float kSurroundCode = 0x12 / 255.0f;
@@ -73,6 +80,37 @@ const char* swapchain_name(QRhiSwapChain::Format f, bool display_referred) {
     }
 }
 
+#ifdef Q_OS_WIN
+// The peak Windows reports for the output under `native_geometry`, from DXGI.
+// Qt's Vulkan and OpenGL swapchains report placeholder limits (1 000 nits),
+// so on Windows the viewer asks the OS directly (as rudra-hdr-probe does).
+std::optional<double> dxgi_peak(const QRect& native_geometry) {
+    std::optional<double> peak;
+    IDXGIFactory1* factory = nullptr;
+    if (FAILED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory)))) return peak;
+    IDXGIAdapter1* adapter = nullptr;
+    for (UINT a = 0; factory->EnumAdapters1(a, &adapter) != DXGI_ERROR_NOT_FOUND; ++a) {
+        IDXGIOutput* output = nullptr;
+        for (UINT o = 0; adapter->EnumOutputs(o, &output) != DXGI_ERROR_NOT_FOUND; ++o) {
+            IDXGIOutput6* output6 = nullptr;
+            if (SUCCEEDED(output->QueryInterface(__uuidof(IDXGIOutput6), reinterpret_cast<void**>(&output6)))) {
+                DXGI_OUTPUT_DESC1 d{};
+                if (SUCCEEDED(output6->GetDesc1(&d))) {
+                    const RECT r = d.DesktopCoordinates;
+                    if (QRect(r.left, r.top, r.right - r.left, r.bottom - r.top).intersects(native_geometry) && !peak)
+                        peak = double(d.MaxLuminance);
+                }
+                output6->Release();
+            }
+            output->Release();
+        }
+        adapter->Release();
+    }
+    factory->Release();
+    return peak;
+}
+#endif
+
 }  // namespace
 
 struct ViewerWindow::Impl {
@@ -111,18 +149,22 @@ struct ViewerWindow::Impl {
     CompositeParams composite;
     ViewParams view;
     ViewportState viewport;
+    GuideOptions guides;
     bool upload_dirty = false, composite_dirty = false, view_dirty = true;
 
     // Interaction.
+    bool input = true;
     bool wipe_dragging = false, flip_held_key = false, flip_held_mouse = false;
     bool panning = false;
     QPointF pan_from;
     double pan_x0 = 0, pan_y0 = 0;
 
+    std::string peak_from = "swapchain";   // swapchain, DXGI, or placeholder (unknown)
+
     std::function<void(const ViewerStatus&)> status_cb;
     std::function<void(const Grab&)> grab_cb;
     QRhiReadbackResult grab_rb;
-    bool grab_pending = false;
+    bool grab_pending = false, grab_y_up = false;
 
     ViewSize viewer_size() const { return {double(w->width()), double(w->height())}; }
     ViewSize frame_view_size() const {
@@ -225,9 +267,27 @@ struct ViewerWindow::Impl {
     void update_target() {
         const QRhiSwapChainHdrInfo info = sc->hdrInfo();
         const bool display_referred = info.luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
-        const double nits = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits
-                                ? double(info.limits.luminanceInNits.maxLuminance)
-                                : double(info.limits.colorComponentValue.maxColorComponentValue) * kDiffuseWhite.v;
+        double nits = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits
+                          ? double(info.limits.luminanceInNits.maxLuminance)
+                          : double(info.limits.colorComponentValue.maxColorComponentValue) * kDiffuseWhite.v;
+        peak_from = "swapchain";
+        // Qt's placeholder limits (Vulkan, OpenGL): 1 000 / 0 nits, not the display's.
+        const bool placeholder = info.limitsType == QRhiSwapChainHdrInfo::LuminanceInNits &&
+                                 info.limits.luminanceInNits.maxLuminance == 1000.0f &&
+                                 info.limits.luminanceInNits.minLuminance == 0.0f;
+        if (placeholder && format != QRhiSwapChain::SDR) {
+            peak_from = "placeholder";
+#ifdef Q_OS_WIN
+            if (const QScreen* scr = w->screen()) {
+                const qreal dpr = scr->devicePixelRatio();
+                const QRect native(scr->geometry().topLeft() * dpr, scr->geometry().size() * dpr);
+                if (auto p = dxgi_peak(native)) {
+                    nits = *p;
+                    peak_from = "DXGI";
+                }
+            }
+#endif
+        }
         DisplayTarget t = DisplayTarget::sdr();
         switch (format) {
             case QRhiSwapChain::HDRExtendedSrgbLinear:
@@ -249,12 +309,14 @@ struct ViewerWindow::Impl {
         if (!picture) return true;
         blit_srb_nearest.reset(rhi->newShaderResourceBindings());
         blit_srb_nearest->setBindings({
-            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, blit_ubo.get()),
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+                                                     blit_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, picture.get(), nearest.get()),
         });
         blit_srb_trilinear.reset(rhi->newShaderResourceBindings());
         blit_srb_trilinear->setBindings({
-            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, blit_ubo.get()),
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage,
+                                                     blit_ubo.get()),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, picture.get(), trilinear.get()),
         });
         if (!blit_srb_nearest->create() || !blit_srb_trilinear->create()) return false;
@@ -332,6 +394,13 @@ struct ViewerWindow::Impl {
             has_swapchain = false;
             sc->destroy();
         }
+    }
+
+    // White as a graphic (the SDR white) in the swapchain's encoding.
+    float graphic_white() const {
+        if (view.target.path == OutputPath::SdrPqSimulation) return 1.0f;
+        const float nits = float(kDiffuseWhite.v);
+        return view.target.path == OutputPath::Hdr10 ? pq_oetf(nits) : nits / float(view.target.unit_nits);
     }
 
     // The surround as the swapchain wants it: a graphic at the SDR white.
@@ -432,6 +501,12 @@ struct ViewerWindow::Impl {
         bu.rect[3] = float((rect.top + rect.height) * dpr);
         bu.window[0] = float(px.width());
         bu.window[1] = float(px.height());
+        bu.window[2] = rhi->isYUpInFramebuffer() ? 1.0f : 0.0f;
+        bu.window[3] = graphic_white();
+        bu.guides[0] = guides.action_safe ? 1.0f : 0.0f;
+        bu.guides[1] = guides.title_safe ? 1.0f : 0.0f;
+        bu.guides[2] = guides.centre ? 1.0f : 0.0f;
+        bu.guides[3] = float(guides.aspect);
         u->updateDynamicBuffer(blit_ubo.get(), 0, sizeof(bu), &bu);
 
         cb->beginPass(sc->currentFrameRenderTarget(), surround(), {1.0f, 0}, u);
@@ -446,12 +521,18 @@ struct ViewerWindow::Impl {
         if (grab_cb && !grab_pending) {
             grab_pending = true;
             grab_rb = {};
+            grab_y_up = rhi->isYUpInFramebuffer();
             grab_rb.completed = [this] { finish_grab(); };
             after = rhi->nextResourceUpdateBatch();
             after->readBackTexture(QRhiReadbackDescription(), &grab_rb);
         }
         cb->endPass(after);
         rhi->endFrame(sc.get());
+        // With frames in flight (D3D12, Vulkan, Metal) a readback completes
+        // only when its frame slot comes round again, so a grab would report
+        // an older frame, or never. Wait for it here: grabs are for tests and
+        // Gate B, never the interactive path.
+        if (grab_pending) rhi->finish();
     }
 
     void finish_grab() {
@@ -470,7 +551,7 @@ struct ViewerWindow::Impl {
         }
         const int row = g.height > 0 ? int(grab_rb.data.size()) / g.height : 0;
         g.bytes.resize(std::size_t(g.width) * std::size_t(g.height) * std::size_t(g.bytes_per_pixel));
-        const bool y_up = rhi->isYUpInFramebuffer();
+        const bool y_up = grab_y_up;
         for (int y = 0; y < g.height; ++y) {
             const int src = y_up ? g.height - 1 - y : y;
             std::memcpy(g.bytes.data() + std::size_t(y) * std::size_t(g.width) * std::size_t(g.bytes_per_pixel),
@@ -496,6 +577,11 @@ struct ViewerWindow::Impl {
     }
 
     void release_all() {
+        // A readback still in flight completes while the QRhi is torn down:
+        // it must not call back into a half-destroyed viewer.
+        grab_rb.completed = nullptr;
+        grab_cb = nullptr;
+        grab_pending = false;
         blit_pipe.reset();
         composite_pipe.reset();
         display_pipe.reset();
@@ -536,7 +622,11 @@ struct ViewerWindow::Impl {
             sc && has_swapchain && sc->hdrInfo().luminanceBehavior == QRhiSwapChainHdrInfo::DisplayReferred;
         s.swapchain = swapchain_name(format, display_referred);
         s.target = view.target;
-        s.zoom_percent = zoom_percent(viewport, viewer_size(), frame_view_size());
+        // In device pixels: 100 % is one frame pixel per screen pixel.
+        s.zoom_percent = int(std::floor(displayed_scale(viewport, viewer_size(), frame_view_size()) *
+                                        w->devicePixelRatio() * 100.0 + 0.5));
+        s.peak_from = peak_from;
+        s.device_pixel_ratio = w->devicePixelRatio();
         s.has_frame = has_frame;
         s.wiping = view.wipe >= 0.0;
         return s;
@@ -616,18 +706,32 @@ void ViewerWindow::set_viewport(const ViewportState& v) {
     d_->moved();
 }
 
+void ViewerWindow::set_guides(const GuideOptions& g) {
+    d_->guides = g;
+    requestUpdate();
+}
+
+GuideOptions ViewerWindow::guides() const { return d_->guides; }
+
 void ViewerWindow::zoom_fit() {
     rudra::zoom_fit(d_->viewport);
     d_->moved();
 }
 
 void ViewerWindow::zoom_actual() {
-    rudra::zoom_actual(d_->viewport);
+    // Actual pixels are the screen's: one frame pixel per device pixel, so a
+    // 150 % display scale does not turn 1:1 into 1.5:1.
+    d_->viewport = {1.0 / devicePixelRatio(), 0.0, 0.0};
     d_->moved();
 }
 
 ViewerStatus ViewerWindow::status() const { return d_->status(); }
 void ViewerWindow::on_status(std::function<void(const ViewerStatus&)> cb) { d_->status_cb = std::move(cb); }
+
+void ViewerWindow::set_input_enabled(bool on) {
+    d_->input = on;
+    if (!on) d_->wipe_dragging = d_->panning = d_->flip_held_key = d_->flip_held_mouse = false;
+}
 
 void ViewerWindow::grab(std::function<void(const Grab&)> done) {
     d_->grab_cb = std::move(done);
@@ -664,6 +768,7 @@ bool ViewerWindow::event(QEvent* e) {
 }
 
 void ViewerWindow::wheelEvent(QWheelEvent* e) {
+    if (!d_->input) return;
     if (!d_->has_frame) return;
     const double notches = e->angleDelta().y() / 120.0;
     if (notches == 0.0) return;
@@ -674,6 +779,7 @@ void ViewerWindow::wheelEvent(QWheelEvent* e) {
 }
 
 void ViewerWindow::mousePressEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::MiddleButton && d_->has_frame) {
         d_->panning = true;
         d_->pan_from = e->position();
@@ -696,6 +802,7 @@ void ViewerWindow::mousePressEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (d_->panning) {
         d_->viewport.pan_x = d_->pan_x0 + (e->position().x() - d_->pan_from.x());
         d_->viewport.pan_y = d_->pan_y0 + (e->position().y() - d_->pan_from.y());
@@ -709,6 +816,7 @@ void ViewerWindow::mouseMoveEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::MiddleButton) d_->panning = false;
     if (e->button() == Qt::LeftButton) {
         d_->wipe_dragging = false;
@@ -720,10 +828,12 @@ void ViewerWindow::mouseReleaseEvent(QMouseEvent* e) {
 }
 
 void ViewerWindow::mouseDoubleClickEvent(QMouseEvent* e) {
+    if (!d_->input) return;
     if (e->button() == Qt::LeftButton) zoom_fit();
 }
 
 void ViewerWindow::keyPressEvent(QKeyEvent* e) {
+    if (!d_->input) return;
     switch (e->key()) {
         case Qt::Key_B:
             if (!e->isAutoRepeat()) {
@@ -760,6 +870,7 @@ void ViewerWindow::keyPressEvent(QKeyEvent* e) {
 }
 
 void ViewerWindow::keyReleaseEvent(QKeyEvent* e) {
+    if (!d_->input) return;
     if (e->key() == Qt::Key_B && !e->isAutoRepeat()) {
         d_->flip_held_key = false;
         d_->changed_view();

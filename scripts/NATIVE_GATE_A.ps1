@@ -197,6 +197,15 @@ if (-not $NoBench) {
     }
     $bench | Format-Table -AutoSize | Out-String | Write-Host
     $log += ($bench | Format-Table -AutoSize | Out-String)
+
+    # The viewer's CPU work after a slider move (Phase 2 step 12): the sample,
+    # the measurements, the waveform and histogram, the vectorscope.
+    Say "Viewer measurements and scopes on the CPU"
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $out = & $Exe bench-scopes 2>&1 | ForEach-Object { "$_" }
+    $ErrorActionPreference = $prev
+    $out | Where-Object { $_ -notmatch "^BENCH " } | Write-Host
+    $log += "---- bench-scopes"; $log += $out; $log += ""
 }
 $log | Set-Content -Encoding utf8 $Report
 

@@ -6,6 +6,7 @@
 //   rudra-native bench <package> [--runtime ...] [--device ...] [--size 1920x1080] [--iters 5]
 //   rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]
 //   rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]
+//   rudra-native bench-scopes [--iters 7]
 //
 // `diff` is the native half of Gate A (NATIVE_ARCHITECTURE.md 12): it runs the
 // package's golden frames through each compiled runtime, untiled and tiled, and
@@ -16,6 +17,10 @@
 // one warm-up, then the median of --iters runs, untiled and tiled 512/64, on
 // a synthetic frame. Wall time, fields back in host memory, so a GPU run is
 // timed to completion. Each result is also printed as a BENCH line for scripts.
+//
+// `bench-scopes` times what the viewer does on the CPU after a slider move
+// (core/scopes.cpp: the 768-side sample, computeStats, buildScopes and the
+// vectorscope) at 1080p and 4K, median of --iters, one thread.
 
 #include <algorithm>
 #include <chrono>
@@ -33,6 +38,8 @@
 #include <nlohmann/json.hpp>
 
 #include "rudra/core/model_manifest.hpp"
+#include "rudra/core/scopes.hpp"
+#include "rudra/core/view.hpp"
 #include "rudra/deliver/exr.hpp"
 #include "rudra/infer/tiler.hpp"
 #include "rudra/platform/npy.hpp"
@@ -354,6 +361,43 @@ int cmd_master_check(const fs::path& pkg, const fs::path& dir, const std::string
 }
 #endif
 
+int cmd_bench_scopes(int iters) {
+    std::printf("Viewer measurements and scopes on the CPU (sample, computeStats, buildScopes, vectorscope), median of %d\n",
+                iters);
+    for (auto [w, h] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
+        PlanarBuffer m(3, h, w), b(3, h, w);
+        std::uint32_t x = 2463534242u;   // xorshift: a busy, noise-like frame
+        for (auto* buf : {&m, &b})
+            for (float& v : buf->span()) {
+                x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+                v = float(x % 100000u) / 100000.0f * 0.3f;
+            }
+        const std::vector<float> hi(std::size_t(w) * h, 0.7f), sh(std::size_t(w) * h, 0.2f);
+        const Reductions rm = reduce_ladder(m), rb = reduce_ladder(b);
+        std::vector<double> t_measure, t_vector;
+        for (int i = 0; i < iters; ++i) {
+            const auto t0 = std::chrono::steady_clock::now();
+            const SampleGrid g = sample_grid(w, h);
+            const PlanarBuffer ms = take_sample(m, g), bs = take_sample(b, g);
+            const Measured r = measure_view(ms, bs, g, hi, sh, MaskCoverage{}, rm, rb, std::size_t(w) * h);
+            const auto t1 = std::chrono::steady_clock::now();
+            const auto img = vectorscope(ms);
+            const auto t2 = std::chrono::steady_clock::now();
+            if (r.scopes.mid.empty() || img.empty()) return 1;
+            t_measure.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+            t_vector.push_back(std::chrono::duration<double, std::milli>(t2 - t1).count());
+        }
+        std::sort(t_measure.begin(), t_measure.end());
+        std::sort(t_vector.begin(), t_vector.end());
+        const SampleGrid g = sample_grid(w, h);
+        const double tm = t_measure[t_measure.size() / 2], tv = t_vector[t_vector.size() / 2];
+        std::printf("  %dx%d (sample %dx%d): measurements and scopes %.2f ms, vectorscope %.2f ms\n", w, h, g.width,
+                    g.height, tm, tv);
+        std::printf("BENCH scopes %dx%d %.3f %.3f\n", w, h, tm, tv);
+    }
+    return 0;
+}
+
 void usage() {
     std::fprintf(stderr,
                  "usage: rudra-native version\n"
@@ -362,7 +406,8 @@ void usage() {
                  "directml|coreml|rocm|openvino]\n"
                  "       rudra-native bench <package> [--runtime ...] [--device ...] [--size WxH] [--iters N]\n"
                  "       rudra-native master <package> <image> --out <file.exr> [--runtime ...] [--device ...] [--params JSON]\n"
-                 "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n");
+                 "       rudra-native master-check <package> <golden-dir> [--runtime ...] [--device ...]\n"
+                 "       rudra-native bench-scopes [--iters N]\n");
 }
 
 }  // namespace
@@ -373,6 +418,11 @@ int main(int argc, char** argv) {
     if (args[0] == "version") {
         std::printf("rudra-native 0.1.0 (model contract %d.x)\n", kSupportedContractMajor);
         return 0;
+    }
+    if (args[0] == "bench-scopes") {
+        int iters = 7;
+        if (args.size() == 3 && args[1] == "--iters") iters = std::max(1, std::atoi(args[2].c_str()));
+        return cmd_bench_scopes(iters);
     }
     if (args.size() < 2) { usage(); return 64; }
     const fs::path pkg = args[1];

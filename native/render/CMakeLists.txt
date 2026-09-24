@@ -11,6 +11,7 @@ if(RUDRA_BUILD_RENDER)
   set_target_properties(rudra_render_gpu PROPERTIES AUTOMOC OFF)
   if(WIN32)
     target_compile_definitions(rudra_render_gpu PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(rudra_render_gpu PRIVATE dxgi)   # the display's peak when Qt has only placeholders
   endif()
   qt_add_shaders(rudra_render_gpu "rudra_composite_shaders"
     PREFIX "/rudra/shaders"

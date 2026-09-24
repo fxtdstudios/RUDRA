@@ -49,6 +49,9 @@ public:
                                            const ModelConstants& model, const CompositeParams& params,
                                            GpuPrecision precision) = 0;
     virtual Result<GpuTiming> benchmark(int width, int height, int iterations) = 0;
+    // A slider move as the viewer pays for it: the composite pass into RGBA32F
+    // and the display pass into the RGBA16F picture, one frame, median.
+    virtual Result<GpuTiming> benchmark_view(int width, int height, int iterations) = 0;
     // The display pass (docs/view.spec.md section 2) on two composite targets,
     // into an RGBA8 target read back in image order: the parity path for
     // core/view.cpp.

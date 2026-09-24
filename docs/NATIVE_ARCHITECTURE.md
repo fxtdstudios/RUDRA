@@ -415,13 +415,14 @@ only when enabled.
 
 | Path | Budget | Measured |
 |---|---|---|
-| composite + view, 1080p, GPU | ≤ 4 ms | composite pass 0.114 ms (D3D12), 0.113 (Vulkan), 0.115 (D3D11), 0.074 (OpenGL), RTX 4080 SUPER, GPU timestamps; the view pass is Phase 2 |
-| composite + view, 4K, GPU | ≤ 12 ms | composite pass 0.505 ms (D3D12), 0.508 (Vulkan), 0.507 (D3D11), 0.366 (OpenGL) |
+| composite + view, 1080p, GPU | ≤ 4 ms | **composite + display pass 0.240 ms (D3D12), 0.248 (D3D11), 0.244 (Vulkan), 0.219 (OpenGL)**, RTX 4080 SUPER, GPU timestamps, 24 Sep; the composite alone 0.118 ms |
+| composite + view, 4K, GPU | ≤ 12 ms | **composite + display pass 1.156 ms (D3D12), 1.154 (D3D11), 1.167 (Vulkan), 1.030 (OpenGL)**; the composite alone 0.49 ms |
 | inference, 1080p, RTX 4080, LibTorch CUDA fp32 / fp16 | measure | fp32 172 ms untiled, 296 ms tiled 512/64 (RTX 4080 SUPER, fields in host memory); fp16/bf16 not built yet |
 | inference, 1080p, RTX 4080, ORT DirectML fp32 | measure | 150 ms untiled, 489 ms tiled 512/64; CPU for reference: LibTorch 2.5 s, ONNX Runtime 3.2 s |
 | inference, 1080p, Apple M-series, LibTorch MPS / ORT Core ML | measure | [Phase 0] |
-| first frame after open (warm) | ≤ 2 s | [Phase 0] |
-| scrub to cached frame | ≤ 1 display frame | [Phase 0] |
+| viewer measurements and scopes, CPU, after a slider settles (off the render thread) | ≤ 16 ms | 21 ms at 1080p and 23 ms at 4K (768 x 432 sample) plus 5 ms vectorscope on two 2.1 GHz cloud cores (29 and 7 ms on one): the per-pixel work runs in up to eight chunks whose integer counts merge exactly, the order-dependent sums stay sequential, and the result is bit-identical to the browser's still (`rudra-native bench-scopes`); the desktop number comes from `NATIVE_GATE_A.ps1` |
+| first frame after open (warm) | ≤ 2 s | decode plus one inference: 150 to 172 ms of inference at 1080p on the RTX 4080 SUPER (above); end to end from the app on Windows open |
+| scrub to cached frame | ≤ 1 display frame | synchronous: a cached frame is delivered inside `FrameEngine::show()` (0.01 ms in the engine test); the upload and passes are the composite + view row |
 
 Instrumentation: Tracy zones on every actor message and GPU timer queries on
 every render pass (QRhi GPU timestamps), from the first commit.
@@ -654,11 +655,30 @@ the SDR fallback), `ViewerBackend` and `OutputPath` in `render/`.
 | 6 | GPU reductions: the `REDUCE` ladder as QRhi passes for peak, mean and MaxFALL | `measure()` (Python), browser `peakNits` / `meanNits` | peak exact, mean within fp32 summation bounds, on every backend | 1 | **done** 24 Sep: `render/shaders/reduce.frag`, `GpuCompositor::reduce`, `core/view.cpp` `reduce_ladder` (the ladder's own fp32 order); peak and sum equal to the browser's bit for bit, MaxCLL and MaxFALL too, and the shader equal to the CPU ladder on llvmpipe. Windows and Metal runs with the gate scripts |
 | 7 | Probe: one texel from each float target, nits by Rec.2020 luma, no flip | browser `probe()`, `composite.cpp` | equal at a fixed point set including the four corners | 0.5 | **done** 24 Sep: `core/view.cpp` `probe_pixel`; eight points per frame, corners included, equal to the browser's `probe()` bit for bit. On the GPU it is a one-texel read of the target, done by the viewer (step 9) |
 | 8 | Sample and scopes: the 768-side point sample and its source index, the waveform quantiles and histogram, the vectorscope, ported to `core/scopes.cpp` and run on the sample | browser `sample()`, `buildScopes`, `drawVector` accumulation | sample indices exact; waveform, histogram and vectorscope bins exact; the scopes cost recorded (compute shaders only if the CPU path misses its budget) | 1.5 | **done** 24 Sep: `core/scopes.cpp`; the sample grid and index, all 14 `computeStats` numbers, the waveform quantiles, the histogram and the vectorscope image equal the browser's bit for bit on every stored case, and the mask coverage too. Cost at 1080p (768 x 432 sample) on a 2.1 GHz cloud core: 32 ms for the measurements and scopes, 7 ms for the vectorscope; they run off the render thread, after a slider settles, as in the Studio. Compute shaders only if the Windows measurement (step 12) misses a 16 ms budget |
-| 9 | The viewer in the Qt shell: a `QWindow` with its own QRhi swapchain inside the widget tree (`createWindowContainer`), fit, 1:1, zoom about the cursor, pan, wipe drag, view switching with no recomposite, resize, device loss | `fitScale` and `zoomAbout` in `ui/app.js` (goldens of viewport maths) | viewport maths equal to the browser's; a still is judged in the app exactly as in the Studio; Gate B re-run through the real display pass on the PA279CRV (scRGB and HDR10) | 3 | **Linux done** 24 Sep: `render/viewer_window.cpp` (composite, display and blit passes on its own swapchain, HDR format from the display, device loss rebuilt from host copies), `core/viewport.cpp` equal to the Studio's own layout laid out by Chromium (`tools/emit_viewport_golden.py`, five gesture scripts), the app embeds it; `rudra-viewer-check` reads the swapchain back at fit and 2x within 1 code of `core/view.cpp` on llvmpipe. Three Studio viewport defects fixed on the way (view.spec.md section 10). Gate B through the viewer (`--card`) runs from `NATIVE_GATE_B.ps1` on the PA279CRV |
-| 10 | Frame path: decode, an engine inference job with generations and cancellation, field upload, composite, present; stills and sequences (Phase 1 step 10) with fields cached per frame | Phase 1 modules | scrubbing a 240-frame folder never shows a stale frame; latency recorded | 3 | |
-| 11 | Guides (new, no Studio oracle): title and action safe, aspect masks, centre cross, specified in `view.spec.md` | the spec | CPU reference test; drawn identically on every backend | 1 | |
-| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | |
+| 9 | The viewer in the Qt shell: a `QWindow` with its own QRhi swapchain inside the widget tree (`createWindowContainer`), fit, 1:1, zoom about the cursor, pan, wipe drag, view switching with no recomposite, resize, device loss | `fitScale` and `zoomAbout` in `ui/app.js` (goldens of viewport maths) | viewport maths equal to the browser's; a still is judged in the app exactly as in the Studio; Gate B re-run through the real display pass on the PA279CRV (scRGB and HDR10) | 3 | **done** 24 Sep. Linux: `render/viewer_window.cpp` (composite, display and blit on its own swapchain, the HDR format from the display, device loss rebuilt from host copies), `core/viewport.cpp` equal to the Studio's own layout (`tools/emit_viewport_golden.py`); `rudra-viewer-check` reads the swapchain back at fit, 2x and 1:1 within 1 code of `core/view.cpp` at device pixel ratios 1, 1.25, 1.5 and 2. Windows, RTX 4080 SUPER and PA279CRV: Gate B through the real display pass passes on D3D12 and D3D11 scRGB (203 exact, 1 000 and 2 000 clipped at the display's 418 nits) and on Vulkan scRGB (418 from DXGI). The first Windows runs found three things, all fixed: the parity check did not allow for texel ties at a 150 % display scale, and Qt's Vulkan swapchain reports a placeholder 1 000-nit peak, now replaced by the DXGI value on Windows; and on D3D12, D3D11 and Vulkan a swapchain readback completes only when its frame slot comes round again, so each window check compared a case with the one before it (reproduced on lavapipe, now waited for with `QRhi::finish`, and lavapipe Vulkan runs in CI). "Actual pixels" is device 1:1. Three Studio viewport defects fixed on the way (view.spec.md section 10) |
+| 10 | Frame path: decode, an engine inference job with generations and cancellation, field upload, composite, present; stills and sequences (Phase 1 step 10) with fields cached per frame | Phase 1 modules | scrubbing a 240-frame folder never shows a stale frame; latency recorded | 3 | **done** 24 Sep: `engine/frame_engine.cpp`, the InferActor: one worker owns the backend; `show()` bumps the generation, cancels older queued work, queues the frame and 12 after it; results are cached (32 frames, LRU, the frame on screen never evicted) and delivered only while current. A 240-frame scrub faster than inference never delivers another frame's pixels or fields (fakes tagged by value; ThreadSanitizer clean); with the real package on CPU over the 17 decode fixtures, every delivered frame equals a direct decode, the refused float TIFF is reported as itself, the way back is all cache hits. The app opens a still or a folder through it (comma, full stop, Home, End, Space at 24 fps). Latency at 1080p is measured with step 12 |
+| 11 | Guides (new, no Studio oracle): title and action safe, aspect masks, centre cross, specified in `view.spec.md` | the spec | CPU reference test; drawn identically on every backend | 1 | **done** 24 Sep: [`view.spec.md`](view.spec.md) section 11, `core/guides.cpp`, drawn by the blit in device pixels; `rudra-viewer-check` holds the window's readback to the CPU reference with all guides on and a 2.39 and a 4:3 mask, at fit, 2x and 1:1, device pixel ratios 1 and 1.5 (within 1 code); the app's View > Guides (G, Shift+G) |
+| 12 | Backend matrix and budgets: everything above on D3D12, D3D11, Vulkan, OpenGL, Metal; composite plus view at 1080p against the 4 ms budget in 6.6 | | matrix and numbers recorded here and in 6.6 | 1.5 | **in progress** 24 Sep: the matrix above; `rudra-gpu-parity --bench` times composite plus display per slider move and `rudra-native bench-scopes` the CPU measurements, both run by the gate scripts; 6.6 filled where measured. Waiting on the next Windows gate runs and the Mac |
 | 13 | Review: Phase 2 exit written into `STATUS.md` | | probe and measurements equal the browser Studio's on every backend | 0.5 | |
+
+Backend matrix for the viewer (step 12), from the gate scripts and CI:
+
+| Backend | Composite (fp32 / fp16) | Display pass (SDR, 7 views) | HDR paths (40 cases) | Reductions | Window readback (fit, 2x, 1:1, guides) | Gate B through the viewer |
+|---|---|---|---|---|---|---|
+| OpenGL, llvmpipe (Linux, CI) | pass | exact | pass (2.8e-5, 1 ulp) | exact | pass at device pixel ratios 1 to 2 | n/a: no HDR swapchain |
+| D3D12, RTX 4080 SUPER | pass (fp32 3.0e-6, fp16 1 ulp) | 1 code | pass, HDR10 near black within 1/20 of a 10-bit code (1.4e-5) | exact | scrolled mid-run (below); re-run | **pass**, scRGB, 203 exact, clipped at 418 |
+| D3D11, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | scrolled mid-run (below); re-run | **pass**, scRGB, as D3D12 |
+| Vulkan, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | **pass** at device pixel ratio 1.5 | **pass**, scRGB, the display's 418 nits from DXGI (Qt reports a placeholder 1 000) |
+| Vulkan, lavapipe (Linux, CI) | pass | exact | pass | exact | pass at device pixel ratios 1 and 1.5 | n/a: no HDR swapchain |
+| OpenGL, RTX 4080 SUPER | pass (1.7e-6, 1 ulp) | 1 code | as D3D12 | exact | scrolled mid-run (below); re-run | n/a: Qt's OpenGL swapchain is SDR on Windows |
+| Metal, Apple Silicon | open | open | open | open | open | open (the XDR Mac run) |
+
+The window readback failures on Windows (24 Sep, 03:08 and 03:14 runs) were
+the check, not the viewer: the dumps show the placed rectangle off the
+intended scale and pan in every failing case (1:1 at 75.7 device pixels wide
+instead of 80), so the check window was being scrolled or clicked while it
+ran. The check now ignores input (`ViewerWindow::set_input_enabled`) and
+records the viewport it saw.
 
 Why a `QWindow` and not `QRhiWidget` (ADR-010, proposed): `QRhiWidget` draws
 into a texture that the widget backing store composites, and that path is SDR
@@ -675,3 +695,43 @@ the CPU path misses its budget.
 Order: 1 and 2 first (the oracle and the spec), then 3 to 8 in order of
 dependency (3 before 4 and 5; 6, 7 and 8 need only the composite targets), 9
 and 10 together, 11, then 12 and 13.
+
+## 16. Phase 3: the Qt UI, the next fifteen working days
+
+Goal (docs/DESKTOP_APP_PLAN.md section 6): the full Studio workflow in the
+native app with no Python installed. Open a package and a shot, scrub it,
+reconstruct and grade it, compare, probe, measure and master it, and every
+number and file matches what the browser Studio gives for the same actions.
+Same rules as before, with the page itself as the oracle for behaviour.
+`ui/index.html` names the actions and panels, `ui/app.js` holds the state and
+what each control does, `ui/theme.css` holds the colours, and `ui/server.py`
+holds the master's naming and parameters. Layout follows section 2.5 of the
+desktop plan and the Pro-direction boards.
+
+In hand from Phase 2: the viewer window (with its wipe, flip, zoom, pan and
+guides), the frame engine, the display pass in every encoding, and the
+measurements and scopes as data, all equal to the Studio's.
+
+| # | Deliverable | Oracle | Done when | Days | Status |
+|---|---|---|---|---|---|
+| 1 | Theme: QSS generated at build time from the custom properties in `ui/theme.css`; IBM Plex Mono and Plex Sans Condensed embedded (OFL) | `ui/theme.css` | every colour in the QSS is a `theme.css` token (a build-time test), the surround is R = G = B | 1 | |
+| 2 | Actions: all 33 `data-act` ids as `QAction`s with the Studio's shortcuts and menus; the native menubar on macOS, in-window elsewhere | `ui/index.html` `data-act`, `SHORTCUTS` in `ui/app.js` | a test extracts both from the page and compares them to the app's actions | 1 | |
+| 3 | Session model (`engine/session`): the page's `state` in C++, with undo and redo as commands (5.6) where the page pushes undo | `ui/app.js` `state`, `params()`, `pushUndo` | the same scripted actions give byte-identical `params()` JSON (goldens from the page, headless) | 1.5 | |
+| 4 | Main window: media rail (drop zone, shot list, open by path), viewer toolbar (compare, layer, probe, guides, zoom, HDR badge), transport (prev, play, next, timecode, scrub), right rail (scopes; Reconstruct, Grade, Deliver tabs; frame measurements), pipe bar; the simple and full workspaces | `ui/index.html`, the Pro-direction boards | every panel present and wired; a side-by-side screenshot review against the boards | 2.5 | |
+| 5 | Scope widgets: waveform, histogram and vectorscope painted from `ScopeData` as `drawScopes` and `drawVector` draw them (zone colours, gridlines, the dashed 203 line, the clip band) | `ui/app.js` `drawScopes`, `drawVector` | a raster of the page's scope SVG and the widget's paint agree within 2 codes on 99 % of pixels | 1.5 | |
+| 6 | Reconstruct and Grade panels: mode, strength, preserve, view peak, the three-band Region EV editor (the `#regions` drag behaviour), anchor and chroma carry, container and primaries | `ui/app.js` handlers | each control drives the composite, the view and `params()` as the page does (the step 3 goldens) | 2 | |
+| 7 | Probe: the floating box and the rail panel at the cursor (`probeAt`, `showProbePanel`): nits, stops, baseline and model values, masks, the SDR codes | `ui/app.js` | text identical to the page's for the same pixel | 0.5 | |
+| 8 | Frame measurements panel (`showMetrics`), the clip bar, the pipe bar's warning | `ui/app.js` `showMetrics`, `paintClipBar`, `updatePipe` | text identical to the page's for the same frame | 0.5 | |
+| 9 | Deliver tab: a master EXR of the frame or the whole sequence as an engine background job with progress and cancel; `render_master` moves out of the CLI into `deliver` so the app and the CLI share it | `ui/server.py` `/api/master/plan` and `/api/master` | the same paths and names as the plan, and the same EXR and sidecar bytes as the Studio for a 3-frame sequence (within the master goldens' bound) | 2 | |
+| 10 | Checkpoint manager and first run: find, verify and switch model packages and the runtime and device (the page's `#ckpt`, `#device`) without a restart; the first-run wizard runs the viewer's HDR card on the display it opens on | `/api/model`, `/api/checkpoints` | switching packages mid-session keeps the session; the wizard reports the display's real peak | 1.5 | |
+| 11 | The rest of the page: the sheets (shortcuts, about, copy metrics, scopes and delivery), drop to open, recent shots, settings kept between runs | `ui/app.js` | every remaining `data-act` works | 0.5 | |
+| 12 | Review: the whole workflow on Windows with no Python on the machine, scripted and by hand; Phase 3 exit in `STATUS.md` | | open, scrub, grade, compare, probe and master a 240-frame folder with the numbers matching the Studio's | 0.5 | |
+
+Order: 1 to 3 first (look, actions and state are what everything else binds
+to), then 4, then 5 to 8 in any order, then 9 and 10 (they need the engine
+jobs), 11, 12.
+
+The one structural change: step 9 moves the master pipeline, which is in
+`cli/master.cpp` today, into a library the app can call. It goes to
+`deliver/` (the stages are core and deliver already), and the CLI keeps only
+argument parsing, so the layer rule stays as it is.

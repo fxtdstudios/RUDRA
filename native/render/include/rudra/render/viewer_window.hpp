@@ -8,6 +8,8 @@
 // Studio's plate work the same: wheel zooms about the cursor, middle drag
 // pans, double click fits; W toggles the wipe and left drag moves it; B or a
 // held left button shows the baseline; arrows nudge the wipe; Esc leaves it.
+// Placement is the Studio's, in logical pixels; "actual pixels" and the zoom
+// readout are in device pixels, so 1:1 is true 1:1 on a scaled display.
 //
 // QRhi stays behind the pimpl: this header includes only QtGui.
 
@@ -19,6 +21,7 @@
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/fields.hpp"
+#include "rudra/core/guides.hpp"
 #include "rudra/core/image.hpp"
 #include "rudra/core/view.hpp"
 #include "rudra/core/viewport.hpp"
@@ -30,7 +33,9 @@ struct ViewerStatus {
     std::string backend;     // QRhi backend name
     std::string swapchain;   // SDR, scRGB, HDR10, EDR
     DisplayTarget target;
-    int zoom_percent = 100;
+    std::string peak_from;           // swapchain, DXGI (Windows, when Qt only has placeholders), placeholder
+    double device_pixel_ratio = 1.0;
+    int zoom_percent = 100;          // in device pixels: 100 is one frame pixel per screen pixel
     bool has_frame = false;
     bool wiping = false;
 };
@@ -65,9 +70,16 @@ public:
     void set_viewport(const ViewportState& v);
     void zoom_fit();
     void zoom_actual();
+    // Safe areas, centre cross, aspect mask: screen space, over the picture.
+    void set_guides(const GuideOptions& g);
+    GuideOptions guides() const;
 
     ViewerStatus status() const;
     void on_status(std::function<void(const ViewerStatus&)> cb);
+
+    // Off: mouse, wheel and keys do nothing (the check tools, so a wheel or a
+    // click that lands on the window while it runs cannot move the picture).
+    void set_input_enabled(bool on);
 
     // The next presented frame, read back from the swapchain (tests, Gate B).
     // Pixels are top-down RGBA in the swapchain's format: 8-bit sRGB codes

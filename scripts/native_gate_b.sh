@@ -68,7 +68,7 @@ echo; echo "== GPU composite parity (day 8)"
 for api in $PARITY_APIS; do
   code=0
   outp=$("$PARITY" --api "$api" --report "reports/native_gpu_parity_${api}_${STAMP}.json" --bench 2>&1) || code=$?
-  printf '%s\n' "$outp" | grep -E "^GPU composite|^Display pass|=>|^  [0-9]+x[0-9]+ |FAIL" || true
+  printf '%s\n' "$outp" | grep -E "^GPU composite|^Display pass|^Composite|=>|^  [0-9]+x[0-9]+ |FAIL" || true
   case $code in
     0) ;;
     2) echo "  $api: not available here" ;;

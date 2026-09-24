@@ -6,9 +6,10 @@
 //
 // Default: an SDR swapchain. A frame from the viewer goldens goes in as fields,
 // through the window's composite, display and blit passes, and the swapchain
-// is read back: at fit and at 2x (nearest) every picture pixel must equal
+// is read back: at fit, 2x and 1:1 every picture pixel must equal
 // core/view.cpp on core/composite.cpp within 1 code, for the image, false
-// colour and wipe views, and the surround must be #121212.
+// colour and wipe views, and with the guides on (core/guides.cpp: safe areas,
+// centre cross, a 2.39 and a 4:3 mask); the surround must be #121212.
 //
 // --card: Gate B through the real display pass. An HDR swapchain if the
 // display has one; a card of known luminance (10, 100, 203, 600, 1 000 and
@@ -28,6 +29,8 @@
 #include <QTextStream>
 #include <QTimer>
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -37,6 +40,7 @@
 
 #include "rudra/core/baseline.hpp"
 #include "rudra/core/composite.hpp"
+#include "rudra/core/guides.hpp"
 #include "rudra/core/half.hpp"
 #include "rudra/core/hdr10.hpp"
 #include "rudra/core/view.hpp"
@@ -116,12 +120,16 @@ int main(int argc, char** argv) {
     QCommandLineOption golden_opt("golden", "viewer golden folder", "dir", RUDRA_VIEWER_GOLDEN_DIR);
     QCommandLineOption report_opt("report", "write a JSON report", "file");
     QCommandLineOption card_opt("card", "Gate B through the viewer's display pass (HDR swapchain)");
-    cli.addOptions({api_opt, golden_opt, report_opt, card_opt});
+    QCommandLineOption dump_opt("dump", "write the grab and the expected picture of every failing case (PPM)", "dir");
+    cli.addOptions({api_opt, golden_opt, report_opt, card_opt, dump_opt});
     cli.process(app);
     QTextStream out(stdout);
     const bool card = cli.isSet(card_opt);
 
     ViewerWindow win(api_of(cli.value(api_opt)), /*prefer_hdr=*/card);
+    // A wheel turn or a click on the window while it runs must not move the
+    // picture: the first Windows runs were scrolled mid-check.
+    win.set_input_enabled(false);
     QJsonObject report;
     bool pass = true;
     int step = 0;
@@ -159,8 +167,10 @@ int main(int argc, char** argv) {
         views = {{"image 203", view_params(ViewMode::Image, 203.0)},
                  {"image 1000", view_params(ViewMode::Image, 1000.0)},
                  {"false colour", view_params(ViewMode::FalseColour, 203.0)},
-                 {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)}};
-        zooms = {{"fit", 0.0}, {"2x", 2.0}};
+                 {"wipe 0.37", view_params(ViewMode::Image, 406.0, ViewSource::Model, 0.37, 0.02)},
+                 {"guides 2.39", view_params(ViewMode::Image, 203.0)},
+                 {"guides 4:3", view_params(ViewMode::FalseColour, 203.0)}};
+        zooms = {{"fit", 0.0}, {"2x", 2.0}, {"1:1", -1.0}};   // -1: actual pixels (device 1:1)
         win.resize(400, 300);   // an 80x48 frame lands on whole pixels at fit and at 2x
     }
 
@@ -174,24 +184,25 @@ int main(int argc, char** argv) {
 
     QJsonArray rows;
     std::function<void()> next;
+    bool no_hdr = false;
     auto finish = [&] {
         report["cases"] = rows;
-        report["verdict"] = pass ? "PASS" : "FAIL";
+        report["verdict"] = no_hdr ? "NO-HDR" : pass ? "PASS" : "FAIL";
         const QByteArray json = QJsonDocument(report).toJson(QJsonDocument::Indented);
         if (cli.isSet(report_opt)) {
             QFile f(cli.value(report_opt));
             if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write(json);
         }
-        out << "  => " << (pass ? "PASS" : "FAIL") << "\n";
+        out << "  => " << (no_hdr ? "NO-HDR (not a failure: this API has no HDR swapchain here)" : pass ? "PASS" : "FAIL") << "\n";
         out.flush();
-        QCoreApplication::exit(pass ? 0 : 1);
+        QCoreApplication::exit(no_hdr ? 2 : pass ? 0 : 1);
     };
 
     auto check_card = [&](const ViewerWindow::Grab& g) {
         const ViewerStatus s = info();
         out << "Gate B through the viewer: " << QString::fromStdString(s.backend) << ", swapchain "
             << QString::fromStdString(s.swapchain) << " (" << QString::fromStdString(g.format) << "), display peak "
-            << s.target.peak_nits << " nits\n";
+            << s.target.peak_nits << " nits (from " << QString::fromStdString(s.peak_from) << ")\n";
         const PlacedRect r = place(win.viewport(), {double(win.width()), double(win.height())}, {kCardW, kCardH});
         const double dpr = win.devicePixelRatio();
         // Each patch must read as its own luminance up to the display's peak and
@@ -212,8 +223,15 @@ int main(int argc, char** argv) {
         }
         report["patches"] = patches;
         const bool hdr = s.target.path != OutputPath::SdrPqSimulation;
-        pass = hdr && all_exact && s.target.peak_nits > 2.0 * 203.0;
-        report["verdict_note"] = !hdr ? "SDR swapchain: the display offers no HDR format (is HDR on?)"
+        report["peak_from"] = QString::fromStdString(s.peak_from);
+        if (!hdr) {
+            no_hdr = true;
+            report["verdict_note"] = "SDR swapchain: this API offers no HDR format here";
+            finish();
+            return;
+        }
+        pass = all_exact && s.target.peak_nits > 2.0 * 203.0 && s.peak_from != "placeholder";
+        report["verdict_note"] = s.peak_from == "placeholder" ? "the swapchain reports Qt's placeholder peak, not the display's"
                                  : pass ? "every patch at its luminance up to the display peak and clipped above it, "
                                           "through the display pass; confirm on the glass"
                                         : "the display pass did not carry the card to the swapchain exactly";
@@ -231,31 +249,94 @@ int main(int argc, char** argv) {
         want_p.target = s.target;
         const Rgb8Image want = render_view_rgb8(cpu_model, cpu_base, want_p);
         const bool bgra = g.format == "BGRA8";
+        // Device pixel centres against the picture's texels. At a fractional
+        // device pixel ratio (150 % display scale) a pixel centre can sit exactly
+        // on a texel edge, where nearest sampling may take either texel, so both
+        // are accepted there; likewise the surround or the edge texel on the
+        // rectangle's border.
+        const double L = r.left * dpr, T = r.top * dpr, W = r.width * dpr, H = r.height * dpr;
+        constexpr double kTie = 1e-3;
+        auto candidates = [](double u, int n, std::vector<int>& list) {   // texel indices, -1 for outside
+            list.clear();
+            for (double e : {-kTie, kTie}) {
+                const double v = std::floor(u + e);
+                const int k = (v < 0 || v >= n) ? -1 : int(v);
+                if (std::find(list.begin(), list.end(), k) == list.end()) list.push_back(k);
+            }
+        };
+        std::vector<int> cx, cy;
         int worst = 0, surround_off = 0;
         std::size_t off = 0;
+        std::vector<unsigned char> got_img(std::size_t(g.width) * std::size_t(g.height) * 3),
+            want_img(std::size_t(g.width) * std::size_t(g.height) * 3, 0x12);
+        QJsonArray samples;   // the first mismatches, for the report
         for (int y = 0; y < g.height; ++y)
             for (int x = 0; x < g.width; ++x) {
                 const unsigned char* p = g.bytes.data() + (std::size_t(y) * std::size_t(g.width) + std::size_t(x)) * 4;
                 const int rgb[3] = {bgra ? p[2] : p[0], p[1], bgra ? p[0] : p[2]};
-                const double lx = (x + 0.5) / dpr, ly = (y + 0.5) / dpr;
-                const auto fp = pixel_at(r, {double(fw), double(fh)}, lx, ly);
-                if (!fp) {
-                    for (int c : rgb) surround_off = std::max(surround_off, std::abs(c - 0x12));
-                    continue;
-                }
-                for (int c = 0; c < 3; ++c) {
-                    const int wv = want.rgb[(std::size_t(fp->y) * std::size_t(fw) + std::size_t(fp->x)) * 3 + std::size_t(c)];
-                    const int d = std::abs(rgb[c] - wv);
-                    worst = std::max(worst, d);
-                    off += d != 0;
-                }
+                const std::size_t o3 = (std::size_t(y) * std::size_t(g.width) + std::size_t(x)) * 3;
+                for (int c = 0; c < 3; ++c) got_img[o3 + std::size_t(c)] = (unsigned char)rgb[c];
+                candidates((x + 0.5 - L) / W * fw, fw, cx);
+                candidates((y + 0.5 - T) / H * fh, fh, cy);
+                const GuideSample gs = guide_at(win.guides(), L, T, W, H, x, y);
+                int best = 1 << 20;
+                bool surround_ok = false;
+                for (int ty : cy)
+                    for (int tx : cx) {
+                        if (tx < 0 || ty < 0) {
+                            int d = 0;
+                            for (int c : rgb) d = std::max(d, std::abs(c - 0x12));
+                            if (d == 0) surround_ok = true;
+                            if (cx.size() == 1 && cy.size() == 1) surround_off = std::max(surround_off, d);
+                            continue;
+                        }
+                        int d = 0, e3[3];
+                        for (int c = 0; c < 3; ++c) {
+                            const float v = float(want.rgb[(std::size_t(ty) * std::size_t(fw) + std::size_t(tx)) * 3 + std::size_t(c)]) / 255.0f;
+                            const int e = int(std::lround(std::clamp(apply_guides(v, 1.0f, gs), 0.0f, 1.0f) * 255.0f));
+                            e3[c] = e;
+                            d = std::max(d, std::abs(rgb[c] - e));
+                        }
+                        if (d < best)
+                            for (int c = 0; c < 3; ++c) want_img[o3 + std::size_t(c)] = (unsigned char)e3[c];
+                        best = std::min(best, d);
+                    }
+                if (surround_ok) best = 0;
+                if (best == 1 << 20) continue;   // only surround candidates: counted above
+                if (best > 1 && samples.size() < 8)
+                    samples.append(QJsonObject{{"x", x}, {"y", y}, {"got", QJsonArray{rgb[0], rgb[1], rgb[2]}},
+                                               {"want", QJsonArray{want_img[o3], want_img[o3 + 1], want_img[o3 + 2]}},
+                                               {"texel", QJsonArray{cx[0], cy[0]}}});
+                worst = std::max(worst, best);
+                off += best != 0;
             }
         const bool ok = worst <= 1 && surround_off == 0 && s.target.path == OutputPath::SdrPqSimulation;
         pass = pass && ok;
         out << QString("  %1 %2 max %3 code, %4 off, surround %5  %6\n").arg(QString::fromStdString(vname), -14)
                    .arg(QString::fromStdString(zname), -4).arg(worst).arg(off).arg(surround_off).arg(ok ? "pass" : "FAIL");
-        rows.append(QJsonObject{{"case", QString::fromStdString(vname + " " + zname)}, {"max_code", worst},
-                                {"values_off", qint64(off)}, {"surround_off", surround_off}, {"pass", ok}});
+        QJsonObject row{{"case", QString::fromStdString(vname + " " + zname)}, {"max_code", worst},
+                        {"values_off", qint64(off)}, {"surround_off", surround_off}, {"pass", ok},
+                        {"grab", QJsonArray{g.width, g.height}}, {"grab_format", QString::fromStdString(g.format)},
+                        {"window", QJsonArray{win.width(), win.height()}},
+                        {"rect_device", QJsonArray{L, T, W, H}},
+                        {"viewport", QJsonArray{win.viewport().scale ? *win.viewport().scale : 0.0, win.viewport().pan_x,
+                                                win.viewport().pan_y}},
+                        {"first_mismatches", samples}};
+        rows.append(row);
+        if (!ok && cli.isSet(dump_opt)) {
+            const QString dir = cli.value(dump_opt);
+            fs::create_directories(dir.toStdString());
+            auto ppm = [&](const std::string& name, const std::vector<unsigned char>& img) {
+                std::ofstream f(fs::path(dir.toStdString()) / name, std::ios::binary);
+                f << "P6\n" << g.width << " " << g.height << "\n255\n";
+                f.write(reinterpret_cast<const char*>(img.data()), std::streamsize(img.size()));
+            };
+            std::string base = vname + "_" + zname;
+            for (char& ch : base)
+                if (!std::isalnum(static_cast<unsigned char>(ch))) ch = '_';
+            ppm(base + "_got.ppm", got_img);
+            ppm(base + "_want.ppm", want_img);
+        }
         ++step;
         next();
     };
@@ -269,16 +350,26 @@ int main(int argc, char** argv) {
             const ViewerStatus s = info();
             out << "Viewer window parity: " << QString::fromStdString(s.backend) << ", swapchain "
                 << QString::fromStdString(s.swapchain) << ", frame " << frame.sdr.width() << "x" << frame.sdr.height()
-                << " in a " << win.width() << "x" << win.height() << " window\n";
+                << " in a " << win.width() << "x" << win.height() << " window, device pixel ratio "
+                << win.devicePixelRatio() << "\n";
+            report["device_pixel_ratio"] = win.devicePixelRatio();
         }
         if (step >= int(views.size() * zooms.size())) {
             out << "  bound: 1 code in 8 bits against core/view.cpp on core/composite.cpp\n";
             finish();
             return;
         }
+        const std::string& vname = views[std::size_t(step / int(zooms.size()))].first;
+        GuideOptions gopt;
+        if (vname.rfind("guides", 0) == 0) {
+            gopt.action_safe = gopt.title_safe = gopt.centre = true;
+            gopt.aspect = vname == "guides 2.39" ? 2.39 : 4.0 / 3.0;
+        }
+        win.set_guides(gopt);
         win.set_view(views[std::size_t(step / int(zooms.size()))].second);
         const double z = zooms[std::size_t(step % int(zooms.size()))].second;
         if (z > 0) win.set_viewport({z, 0.0, 0.0});
+        else if (z < 0) win.zoom_actual();
         else win.zoom_fit();
         // Two frames: the one that renders the change, then the grab.
         QTimer::singleShot(50, [&] { win.grab(check_parity); });

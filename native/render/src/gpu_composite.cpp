@@ -216,6 +216,110 @@ public:
         return t;
     }
 
+    Result<GpuTiming> benchmark_view(int w, int h, int iterations) override {
+        if (!supports(GpuPrecision::Fp32) || !supports(GpuPrecision::Fp16))
+            return make_error(ErrorCode::Unsupported, "This GPU cannot render to RGBA32F and RGBA16F.");
+        std::vector<float> a(std::size_t(w) * h * 4), b(std::size_t(w) * h * 4), base(std::size_t(w) * h * 4, 1.0f);
+        for (std::size_t i = 0; i < std::size_t(w) * h; ++i) {
+            const float v = float(i % 1021) / 1020.0f;
+            a[i * 4 + 0] = v; a[i * 4 + 1] = 1.0f - v; a[i * 4 + 2] = v * v; a[i * 4 + 3] = 0.3f;
+            b[i * 4 + 0] = 0.2f; b[i * 4 + 1] = -0.1f; b[i * 4 + 2] = 0.05f; b[i * 4 + 3] = 0.6f;
+            base[i * 4 + 0] = base[i * 4 + 1] = base[i * 4 + 2] = v * 0.02f;
+        }
+        auto tex = [&](QRhiTexture::Format f, QRhiTexture::Flags fl = {}) {
+            return std::unique_ptr<QRhiTexture>(rhi_->newTexture(f, QSize(w, h), 1, fl));
+        };
+        auto ta = tex(QRhiTexture::RGBA32F), tb = tex(QRhiTexture::RGBA32F), tbase = tex(QRhiTexture::RGBA32F);
+        auto model = tex(QRhiTexture::RGBA32F, QRhiTexture::RenderTarget);
+        auto pic = tex(QRhiTexture::RGBA16F, QRhiTexture::RenderTarget);
+        if (!ta->create() || !tb->create() || !tbase->create() || !model->create() || !pic->create())
+            return make_error(ErrorCode::BackendError, "GPU texture creation failed.");
+        std::unique_ptr<QRhiTextureRenderTarget> mrt(rhi_->newTextureRenderTarget({QRhiColorAttachment(model.get())}));
+        std::unique_ptr<QRhiRenderPassDescriptor> mrp(mrt->newCompatibleRenderPassDescriptor());
+        mrt->setRenderPassDescriptor(mrp.get());
+        std::unique_ptr<QRhiTextureRenderTarget> prt(rhi_->newTextureRenderTarget({QRhiColorAttachment(pic.get())}));
+        std::unique_ptr<QRhiRenderPassDescriptor> prp(prt->newCompatibleRenderPassDescriptor());
+        prt->setRenderPassDescriptor(prp.get());
+        if (!mrt->create() || !prt->create()) return make_error(ErrorCode::BackendError, "GPU render target creation failed.");
+        std::unique_ptr<QRhiShaderResourceBindings> csrb(rhi_->newShaderResourceBindings()), dsrb(rhi_->newShaderResourceBindings());
+        csrb->setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, ubuf_.get()),
+            QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, ta.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tb.get(), sampler_.get()),
+        });
+        dsrb->setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, vbuf_.get()),
+            QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, model.get(), sampler_.get()),
+            QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, tbase.get(), sampler_.get()),
+        });
+        if (!csrb->create() || !dsrb->create()) return make_error(ErrorCode::BackendError, "GPU resource bindings failed.");
+        auto pipeline = [&](const QShader& frag, QRhiShaderResourceBindings* srb, QRhiRenderPassDescriptor* rp) {
+            std::unique_ptr<QRhiGraphicsPipeline> p(rhi_->newGraphicsPipeline());
+            p->setShaderStages({{QRhiShaderStage::Vertex, vert_}, {QRhiShaderStage::Fragment, frag}});
+            p->setVertexInputLayout({});
+            p->setShaderResourceBindings(srb);
+            p->setRenderPassDescriptor(rp);
+            return p->create() ? std::move(p) : nullptr;
+        };
+        auto cpipe = pipeline(frag_, csrb.get(), mrp.get());
+        auto dpipe = pipeline(display_, dsrb.get(), prp.get());
+        if (!cpipe || !dpipe) return make_error(ErrorCode::BackendError, "GPU pipeline creation failed.");
+
+        CompositeParams cp;
+        cp.regions = {{400.0, 2000.0, 0.5}, {2000.0, 8000.0, -0.3}, {0.05, 12.0, 0.4}};
+        FrameScalars sc;
+        const ModelConstants mc{16.0f, 4.0f, -1.0f};
+        using clock = std::chrono::steady_clock;
+        std::vector<double> gpu, wall;
+        for (int i = 0; i <= iterations; ++i) {
+            QRhiCommandBuffer* cb = nullptr;
+            const auto t0 = clock::now();
+            if (rhi_->beginOffscreenFrame(&cb) != QRhi::FrameOpSuccess)
+                return make_error(ErrorCode::BackendError, "GPU frame could not start.");
+            QRhiResourceUpdateBatch* up = rhi_->nextResourceUpdateBatch();
+            cp.strength = 0.9f + 0.1f * float(i % 2);   // a slider move: both UBOs change, nothing else
+            const CompositeUbo cu = detail::composite_ubo(sc, mc, cp);
+            ViewParams vp = view_params(ViewMode::Image, 1000.0);
+            vp.target = DisplayTarget::scrgb(1000.0);
+            const ViewUbo vu = detail::view_ubo(vp, w);
+            up->updateDynamicBuffer(ubuf_.get(), 0, sizeof(cu), &cu);
+            up->updateDynamicBuffer(vbuf_.get(), 0, sizeof(vu), &vu);
+            if (i == 0) {
+                for (auto [t, v] : {std::pair{ta.get(), &a}, std::pair{tb.get(), &b}, std::pair{tbase.get(), &base}})
+                    up->uploadTexture(t, QRhiTextureUploadDescription(QRhiTextureUploadEntry(
+                        0, 0, QRhiTextureSubresourceUploadDescription(v->data(), quint32(v->size() * sizeof(float))))));
+            }
+            cb->beginPass(mrt.get(), Qt::black, {1.0f, 0}, up);
+            cb->setGraphicsPipeline(cpipe.get());
+            cb->setViewport({0, 0, float(w), float(h)});
+            cb->setShaderResources(csrb.get());
+            cb->draw(3);
+            cb->endPass();
+            cb->beginPass(prt.get(), Qt::black, {1.0f, 0});
+            cb->setGraphicsPipeline(dpipe.get());
+            cb->setViewport({0, 0, float(w), float(h)});
+            cb->setShaderResources(dsrb.get());
+            cb->draw(3);
+            cb->endPass();
+            rhi_->endOffscreenFrame();
+            const auto t1 = clock::now();
+            if (i == 0) continue;
+            wall.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+            const double g = cb->lastCompletedGpuTime();
+            if (g > 0.0) gpu.push_back(g * 1000.0);
+        }
+        auto median = [](std::vector<double> v) {
+            if (v.empty()) return 0.0;
+            std::sort(v.begin(), v.end());
+            return v[v.size() / 2];
+        };
+        GpuTiming t;
+        t.wall_ms = median(wall);
+        t.gpu_ms = median(gpu);
+        t.has_gpu_timestamps = !gpu.empty();
+        return t;
+    }
+
     Result<Rgb8Image> view(const NetworkLinearImage& model, const NetworkLinearImage& baseline,
                            const ViewParams& params) override {
         if (params.target.path != OutputPath::SdrPqSimulation)

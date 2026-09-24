@@ -144,9 +144,12 @@ if (Test-Path $Parity) {
             $w32 = ($d.cases | Measure-Object -Property fp32_max_abs -Maximum).Maximum
             $w16 = ($d.cases | Measure-Object -Property fp16_max_ulp -Maximum).Maximum
             $wv = if ($d.views) { ($d.views | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
-            $t = @{}; foreach ($b in $d.bench) { $t[$b.size] = if ($null -ne $b.gpu_ms) { "{0:f3}" -f $b.gpu_ms } else { "wall {0:f2}" -f $b.wall_ms } }
+            $t = @{}; foreach ($b in $d.bench) {
+                $key = if ($b.pass) { "$($b.pass) $($b.size)" } else { $b.size }
+                $t[$key] = if ($null -ne $b.gpu_ms) { "{0:f3}" -f $b.gpu_ms } else { "wall {0:f2}" -f $b.wall_ms } }
             $parityRows += [pscustomobject]@{ API = $api; Device = $d.device; "fp32 max|d|" = "{0:e2}" -f $w32;
                                               "fp16 ulp" = $w16; "view codes" = $wv; "1080p ms" = $t["1920x1080"]; "4K ms" = $t["3840x2160"];
+                                              "+view 1080p" = $t["composite+view 1920x1080"]; "+view 4K" = $t["composite+view 3840x2160"];
                                               Result = $(if ($d.pass) { "PASS" } else { "FAIL" }) }
         } else {
             $why = ($text | Select-Object -Last 1)
@@ -171,18 +174,19 @@ if (Test-Path $Viewer) {
         foreach ($mode in @("parity", "card")) {
             $json = Join-Path $Reports "native_viewer_${mode}_${api}_$Stamp.json"
             $vargs = @("--api", $api, "--report", $json)
-            if ($mode -eq "card") { $vargs += "--card" }
+            if ($mode -eq "card") { $vargs += "--card" } else { $vargs += @("--dump", (Join-Path $Reports "native_viewer_dump_${api}_$Stamp")) }
             $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
             $text = & $Viewer @vargs 2>&1 | ForEach-Object { "$_" }
             $code = $LASTEXITCODE
             $ErrorActionPreference = $prev
-            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>" } | Write-Host
+            $text | Where-Object { $_ -match "^Viewer window|^Gate B through|patch|=>|FAIL$" } | Write-Host
             if (Test-Path $json) {
                 $d = Get-Content $json -Raw | ConvertFrom-Json
                 $worst = if ($d.cases) { ($d.cases | Measure-Object -Property max_code -Maximum).Maximum } else { "" }
                 $p = @{}; foreach ($x in $d.patches) { $p[[string]$x.target_nits] = $x.swapchain_nits }
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Backend = $d.backend; Swapchain = $d.swapchain;
-                                                  Peak = [math]::Round([double]$d.peak_nits); "max code" = $worst;
+                                                  Peak = [math]::Round([double]$d.peak_nits); From = $d.peak_from;
+                                                  DPR = $d.device_pixel_ratio; "max code" = $worst;
                                                   "203" = $p["203"]; "1000" = $p["1000"]; "2000" = $p["2000"]; Verdict = $d.verdict }
             } else {
                 $viewerRows += [pscustomobject]@{ API = $api; Check = $mode; Verdict = $(if ($code -eq 2) { "n/a" } else { "ERROR" }) }
