@@ -446,7 +446,8 @@ Studio workflow with no Python installed, every number and file matching the Stu
   colour the theme's and every grey neutral (a test), IBM Plex embedded (OFL)
 - [x] Actions: the page's 33 actions with its menus, labels, keys and check states, checked
   against the page and in the app's real menubar (offscreen Qt tests)
-- [ ] Session model with undo, the page's `params()` byte for byte
+- [x] Session model with undo, the page's `params()` byte for byte (251 states of the page itself,
+  driven headless by real DOM events)
 - [ ] Main window, scope widgets, Reconstruct and Grade panels, probe, measurements
 - [ ] Deliver tab, checkpoint manager and first run, the remaining sheets
 - [ ] The whole workflow on Windows with no Python on the machine

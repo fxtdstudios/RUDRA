@@ -193,6 +193,40 @@ TEST(AppActions, EnabledAsThePageEnablesThem) {
     EXPECT_TRUE(w.action("master")->toolTip().contains("step 9"));
     // A disabled action does not run from its key either.
     w.run("undo");
+    EXPECT_EQ(w.session().undo_depth(), 0u);
+}
+
+TEST(AppSession, UndoAndRedoThroughTheMenus) {
+    app::MainWindow w(false);
+    w.run("strength-up");
+    w.run("mode-shadows");
+    w.refresh_enabled();
+    EXPECT_TRUE(w.action("undo")->isEnabled());
+    EXPECT_FALSE(w.action("redo")->isEnabled());
+    w.action("undo")->trigger();
+    EXPECT_EQ(w.composite().mode, RecoveryMode::All);
+    EXPECT_TRUE(w.action("mode-all")->isChecked());
+    EXPECT_TRUE(w.action("redo")->isEnabled());   // refreshed after the change
+    w.action("undo")->trigger();
+    EXPECT_FLOAT_EQ(w.composite().strength, 1.0f);
+    EXPECT_FALSE(w.action("undo")->isEnabled());
+    w.action("redo")->trigger();
+    w.action("redo")->trigger();
+    EXPECT_EQ(w.session().grade.mode, "shadows");
+    EXPECT_FLOAT_EQ(w.composite().strength, 1.1f);
+    // Region EV reset is live now, and undoable.
+    w.session().region_press(0, 0.0);
+    w.session().region_move(50.0, false);
+    w.session().region_release();
+    EXPECT_DOUBLE_EQ(w.session().grade.regions[0].ev, 0.5);
+    w.run("reset-regions");
+    EXPECT_DOUBLE_EQ(w.session().grade.regions[0].ev, 0.0);
+    w.run("undo");
+    EXPECT_DOUBLE_EQ(w.session().grade.regions[0].ev, 0.5);
+    // The wipe key is the session's.
+    w.run("wipe");
+    ASSERT_TRUE(w.session().wipe.has_value());
+    EXPECT_TRUE(w.action("wipe")->isChecked());
 }
 
 int main(int argc, char** argv) {

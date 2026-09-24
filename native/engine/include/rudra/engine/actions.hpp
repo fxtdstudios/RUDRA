@@ -2,7 +2,7 @@
 // The app's commands (Phase 3 step 2): the browser Studio's 33 actions, with
 // its menus, labels, key hints, check states, keys and shortcut sheet, and the
 // few the native app adds (opening a model package, quitting, the viewer's
-// modes, guides and view peak, which the page keeps on its toolbar).
+// modes and guides, which the page keeps on its toolbar).
 //
 // The Studio part is a port of ui/index.html's menubar and of ACTIONS, the
 // keydown handler, SHORTCUTS and refreshMenu() in ui/app.js, and equals them

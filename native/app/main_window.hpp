@@ -19,6 +19,7 @@
 
 #include "rudra/core/composite.hpp"
 #include "rudra/core/model_manifest.hpp"
+#include "rudra/engine/session.hpp"
 
 class QAction;
 class QLabel;
@@ -56,17 +57,18 @@ public:
     // Why an action is off in this build or at this step ("" when it is live).
     QString pending_reason(std::string_view id) const;
 
-    // For the tests: the recovery settings the actions have set.
-    const CompositeParams& composite() const { return composite_; }
-    const std::string& container() const { return container_; }
+    // The page's state: grade, undo, peak, wipe, container (engine/session).
+    Session& session() { return session_; }
+    const Session& session() const { return session_; }
+    CompositeParams composite() const { return session_.composite_params(); }
+    const std::string& container() const { return session_.container; }
 
 private:
     void build_menus();
     void bind_handlers();
     void show_sheet(const QString& title, const std::vector<std::pair<QString, QString>>& rows);
-    void set_mode(RecoveryMode m);
-    void nudge_strength(double d);
     void sync_checks();
+    void session_changed(std::uint32_t what);
 
     void start_engine(std::vector<std::filesystem::path> frames);
     void close_frames();
@@ -80,8 +82,7 @@ private:
     std::map<std::string, QString, std::less<>> pending_;
 
     ViewerWindow* viewer_ = nullptr;
-    CompositeParams composite_;
-    std::string container_ = "aces";
+    Session session_;
     QTimer play_;
     int current_ = 0;
     bool waiting_ = false;

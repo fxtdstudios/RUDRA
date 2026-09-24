@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "rudra/engine/actions.hpp"
 #include "rudra/engine/frame_engine.hpp"
@@ -106,7 +107,17 @@ MainWindow::MainWindow(bool with_viewer) {
         container->setFocusPolicy(Qt::StrongFocus);
         container->setMinimumSize(320, 200);
         layout->addWidget(container, 1);
-        viewer_->on_status([this](const ViewerStatus&) { show_status(); });
+        viewer_->on_status([this](const ViewerStatus& st) {
+            // A wipe dragged or dropped on the plate itself: the session follows.
+            const double w = viewer_->view().wipe;
+            const std::optional<double> now = w >= 0.0 ? std::optional<double>(w) : std::nullopt;
+            if (now != session_.wipe) {
+                session_.wipe = now;
+                sync_checks();
+            }
+            (void)st;
+            show_status();
+        });
     } else {
         layout->addStretch(1);
     }
@@ -115,6 +126,7 @@ MainWindow::MainWindow(bool with_viewer) {
     layout->addStretch(1);
 #endif
     setCentralWidget(body);
+    session_.on_change([this](std::uint32_t what) { session_changed(what); });
     bind_handlers();
     build_menus();
     sync_checks();
@@ -161,30 +173,9 @@ void MainWindow::bind_handlers() {
     h["next"] = [this] { step_to(current_ + 1); };
     h["last"] = [this] { step_to(int(frames_.size()) - 1); };
     h["play"] = [this] { toggle_play(); };
-    h["mode-all"] = [this] { set_mode(RecoveryMode::All); };
-    h["mode-highlights"] = [this] { set_mode(RecoveryMode::Highlights); };
-    h["mode-shadows"] = [this] { set_mode(RecoveryMode::Shadows); };
-    h["mode-off"] = [this] { set_mode(RecoveryMode::Off); };
-    h["preserve"] = [this] {
-        composite_.preserve_outside = !composite_.preserve_outside;
-#ifdef RUDRA_APP_VIEWER
-        if (viewer_) viewer_->set_composite(composite_);
-#endif
-    };
-    // The page's nudgeStrength: 0.1 a press, rounded to hundredths, 0 to 2.
-    h["strength-down"] = [this] { nudge_strength(-0.1); };
-    h["strength-up"] = [this] { nudge_strength(0.1); };
-    h["reset-recon"] = [this] {
-        composite_.mode = RecoveryMode::All;
-        composite_.strength = 1.0f;
-        composite_.preserve_outside = true;
-#ifdef RUDRA_APP_VIEWER
-        if (viewer_) viewer_->set_composite(composite_);
-#endif
-        statusBar()->showMessage("reconstruction reset", 2000);
-    };
-    h["container-aces"] = [this] { container_ = "aces"; };
-    h["container-linear"] = [this] { container_ = "linear"; };
+    // The page's grading state and its undo: engine/session.
+    for (const auto& spec : action_specs())
+        if (Session::owns(spec.id)) h[std::string(spec.id)] = [this, id = std::string(spec.id)] { session_.run(id); };
     h["shortcuts"] = [this] {
         std::vector<std::pair<QString, QString>> rows;
         for (const auto& r : shortcut_sheet()) rows.emplace_back(qs(r.keys), qs(r.what));
@@ -211,7 +202,6 @@ void MainWindow::bind_handlers() {
     };
 
     // Waiting on later steps of Phase 3: off, and they say why.
-    for (const char* id : {"undo", "redo", "reset-regions"}) pending_[id] = "Undo and Region EV arrive with Phase 3 step 3.";
     for (const char* id : {"rail-left", "rail-right", "scopes"}) pending_[id] = "The rails arrive with Phase 3 step 4.";
     for (const char* id : {"copy-metrics", "copy-scopes", "remeasure", "copy-delivery"})
         pending_[id] = "Measurements arrive with Phase 3 step 8.";
@@ -235,7 +225,6 @@ void MainWindow::bind_handlers() {
                 viewer_->set_guides(g);
             };
         };
-        h["wipe"] = view([](ViewParams& v) { v.wipe = v.wipe >= 0.0 ? -1.0 : 0.5; });
         h["zoom-fit"] = [this] { if (viewer_) viewer_->zoom_fit(); };
         h["zoom-actual"] = [this] { if (viewer_) viewer_->zoom_actual(); };
         h["view-image"] = view([](ViewParams& v) { v.mode = ViewMode::Image; });
@@ -248,10 +237,6 @@ void MainWindow::bind_handlers() {
                                                           {"aspect-1.85", 1.85}, {"aspect-16:9", 16.0 / 9.0},
                                                           {"aspect-4:3", 4.0 / 3.0}, {"aspect-1:1", 1.0}};
         for (const auto& [id, r] : aspects) h[id] = guides([r = r](GuideOptions& g) { g.aspect = r; });
-        const std::pair<const char*, double> peaks[] = {{"peak-203", 203.0}, {"peak-400", 400.0},
-                                                        {"peak-1000", 1000.0}, {"peak-4000", 4000.0},
-                                                        {"peak-display", 10000.0}};
-        for (const auto& [id, n] : peaks) h[id] = view([n = n](ViewParams& v) { v.display_nits = n; });
     }
 #endif
     for (const auto& a : action_specs()) {
@@ -321,8 +306,8 @@ void MainWindow::refresh_enabled() {
             case EnableRule::AnyFrames: on = any; break;
             case EnableRule::ManyFrames: on = many; break;
             case EnableRule::CanMaster: on = any && backend_ != nullptr; break;
-            case EnableRule::CanUndo:
-            case EnableRule::CanRedo:
+            case EnableRule::CanUndo: on = session_.undo_depth() > 0; break;
+            case EnableRule::CanRedo: on = session_.redo_depth() > 0; break;
             case EnableRule::HasMetrics:
             case EnableRule::HasScopes: on = false; break;
         }
@@ -336,13 +321,15 @@ void MainWindow::sync_checks() {
     auto set = [this](std::string_view id, bool on) {
         if (QAction* a = action(id)) a->setChecked(on);
     };
-    set("mode-all", composite_.mode == RecoveryMode::All);
-    set("mode-highlights", composite_.mode == RecoveryMode::Highlights);
-    set("mode-shadows", composite_.mode == RecoveryMode::Shadows);
-    set("mode-off", composite_.mode == RecoveryMode::Off);
-    set("preserve", composite_.preserve_outside);
-    set("container-aces", container_ == "aces");
-    set("container-linear", container_ == "linear");
+    const auto& grade = session_.grade;
+    set("mode-all", grade.mode == "all");
+    set("mode-highlights", grade.mode == "highlights");
+    set("mode-shadows", grade.mode == "shadows");
+    set("mode-off", grade.mode == "off");
+    set("preserve", grade.preserve);
+    set("container-aces", session_.container == "aces");
+    set("container-linear", session_.container == "linear");
+    set("wipe", session_.wipe.has_value());
     set("rail-left", true);
     set("rail-right", true);
     set("scopes", true);
@@ -353,7 +340,6 @@ void MainWindow::sync_checks() {
         const bool fit = viewer_->viewport().scale <= 0.0;
         set("zoom-fit", fit);
         set("zoom-actual", !fit);
-        set("wipe", v.wipe >= 0.0);
         set("view-image", v.mode == ViewMode::Image);
         set("view-false-colour", v.mode == ViewMode::FalseColour);
         set("view-difference", v.mode == ViewMode::Difference);
@@ -366,11 +352,6 @@ void MainWindow::sync_checks() {
         set("aspect-16:9", std::abs(g.aspect - 16.0 / 9.0) < 1e-9);
         set("aspect-4:3", std::abs(g.aspect - 4.0 / 3.0) < 1e-9);
         set("aspect-1:1", std::abs(g.aspect - 1.0) < 1e-9);
-        set("peak-203", v.display_nits == 203.0);
-        set("peak-400", v.display_nits == 400.0);
-        set("peak-1000", v.display_nits == 1000.0);
-        set("peak-4000", v.display_nits == 4000.0);
-        set("peak-display", v.display_nits >= 10000.0);
         return;
     }
 #endif
@@ -400,21 +381,27 @@ void MainWindow::show_sheet(const QString& title, const std::vector<std::pair<QS
     d.exec();
 }
 
-void MainWindow::set_mode(RecoveryMode m) {
-    if (composite_.mode == m) return;
-    composite_.mode = m;
+void MainWindow::session_changed(std::uint32_t what) {
 #ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composite(composite_);
+    if (viewer_) {
+        if (what & Session::Grade) viewer_->set_composite(session_.composite_params());
+        if (what & (Session::Peak | Session::Wipe)) {
+            auto v = viewer_->view();
+            v.display_nits = session_.display_nits();
+            v.wipe = session_.wipe ? *session_.wipe : -1.0;
+            viewer_->set_view(v);
+        }
+    }
 #endif
-}
-
-void MainWindow::nudge_strength(double d) {
-    const double s = std::clamp(std::round((double(composite_.strength) + d) * 100.0) / 100.0, 0.0, 2.0);
-    composite_.strength = float(s);
-#ifdef RUDRA_APP_VIEWER
-    if (viewer_) viewer_->set_composite(composite_);
-#endif
-    statusBar()->showMessage(QStringLiteral("strength %1").arg(s, 0, 'f', 2), 1500);
+    if (what & Session::Grade) {
+        statusBar()->showMessage(QStringLiteral("strength %1  ·  %2%3")
+                                     .arg(session_.grade.strength, 0, 'f', 2)
+                                     .arg(QString::fromStdString(session_.grade.mode),
+                                          session_.grade.preserve ? "  ·  preserve" : ""),
+                                 1500);
+    }
+    sync_checks();
+    refresh_enabled();
 }
 
 void MainWindow::open_package(const QString& preset) {
@@ -559,7 +546,7 @@ void MainWindow::frame_ready(const ReadyFrame& f, const ModelConstants& model) {
 #ifdef RUDRA_APP_VIEWER
     if (viewer_) {
         viewer_->set_frame({*f.sdr, f.fields->fields, f.fields->scalars, model});
-        viewer_->set_composite(composite_);
+        viewer_->set_composite(session_.composite_params());
     }
 #else
     (void)model;

@@ -55,8 +55,9 @@ const std::vector<ActionSpec> kActions = {
     {"wipe", "Wipe", "W", "wipe", O::Studio, E::Always, ""},
 
     // Native only. The page opens a package with the server and keeps its
-    // view modes, guides and peak on the viewer toolbar; the app also puts
-    // them in a menu, on keys the page leaves free.
+    // view modes and guides on the viewer toolbar; the app also puts them in
+    // a menu, on keys the page leaves free. The view peak is the session's
+    // peak slider, as on the page.
     {"open-package", "Open model package…", "", "", O::Native, E::Always, "Ctrl+Shift+O"},
     {"open-folder", "Open folder of frames…", "", "", O::Native, E::Always, "Ctrl+Alt+O"},
     {"quit", "Quit", "", "", O::Native, E::Always, "Ctrl+Q"},
@@ -72,11 +73,6 @@ const std::vector<ActionSpec> kActions = {
     {"aspect-16:9", "16:9", "", "aspect:16:9", O::Native, E::Always, ""},
     {"aspect-4:3", "4:3", "", "aspect:4:3", O::Native, E::Always, ""},
     {"aspect-1:1", "1:1", "", "aspect:1:1", O::Native, E::Always, ""},
-    {"peak-203", "203 nits", "", "peak:203", O::Native, E::Always, ""},
-    {"peak-400", "400 nits", "", "peak:400", O::Native, E::Always, ""},
-    {"peak-1000", "1 000 nits", "", "peak:1000", O::Native, E::Always, ""},
-    {"peak-4000", "4 000 nits", "", "peak:4000", O::Native, E::Always, ""},
-    {"peak-display", "The display's own", "", "peak:display", O::Native, E::Always, ""},
 };
 
 const std::vector<MenuSpec> kMenus = {
@@ -90,7 +86,7 @@ const std::vector<MenuSpec> kMenus = {
     {"View",
      {"view-image", "view-false-colour", "view-difference", "-", "wipe", "-", ">Guides", "guides-action",
       "guides-title", "guides-centre", "-", "aspect-none", "aspect-2.39", "aspect-1.85", "aspect-16:9", "aspect-4:3",
-      "aspect-1:1", "<", ">View peak", "peak-203", "peak-400", "peak-1000", "peak-4000", "peak-display", "<"}},
+      "aspect-1:1", "<"}},
     {"Window", {"rail-left", "rail-right", "scopes", "-", "zoom-fit", "zoom-actual"}},
     {"Help", {"shortcuts", "about"}},
 };
