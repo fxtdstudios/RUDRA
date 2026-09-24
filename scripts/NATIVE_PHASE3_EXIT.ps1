@@ -173,8 +173,15 @@ if (-not $SkipTests -and (Test-Path $AppTests)) {
     $code = $LASTEXITCODE
     $ErrorActionPreference = $prev
     Remove-Item Env:QT_QPA_PLATFORM
-    $text | Where-Object { $_ -match "PASSED|FAILED|Failure" } | Write-Host
+    $testLog = Join-Path $Reports "native_phase3_app_tests_$Stamp.txt"
+    $text | Set-Content -Encoding utf8 $testLog
+    # The failures with the lines around them, and the summary.
+    $lines = @($text)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "Failure|FAILED|PASSED|error:") { $lines[$i..([math]::Min($i + 4, $lines.Count - 1))] | Write-Host }
+    }
     $testsOk = $code -eq 0
+    Write-Host "  full output: $testLog"
     Write-Host ("  => " + $(if ($testsOk) { "PASS" } else { "FAIL" }))
 }
 
@@ -222,6 +229,7 @@ $ErrorActionPreference = $prev
 $text | Write-Host
 
 $log = @("RUDRA native Phase 3 exit, $Stamp", "package $Package", "frames $Frames", "backend $Backend",
+         "app tests: $(if ($SkipTests) { 'skipped' } elseif ($testsOk) { 'PASS' } else { 'FAIL' })",
          "PATH for the app: $clean", "") + ($rows | Format-Table -AutoSize | Out-String) + $text
 $log | Set-Content -Encoding utf8 (Join-Path $Reports "native_phase3_exit_$Stamp.txt")
 
