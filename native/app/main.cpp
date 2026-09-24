@@ -27,6 +27,9 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("RUDRA");
     QApplication::setOrganizationName("FXTD Studios");
+#ifdef RUDRA_VERSION_LABEL
+    QApplication::setApplicationVersion(QStringLiteral(RUDRA_VERSION_LABEL));
+#endif
     const rudra::app::ThemeReport theme = rudra::app::apply_theme(app);
     // RUDRA --theme-check out.json: the look as this machine resolves it
     // (fonts, weights, style), for CI and the gates; exit 1 on a problem.

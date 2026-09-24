@@ -1,0 +1,85 @@
+name: release
+
+# The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon) and a ZIP
+# (Windows x64), each with its SHA-256, attached to a GitHub pre-release when
+# a v* tag is pushed (git tag v0.9.0-beta.1 && git push origin v0.9.0-beta.1).
+# Run by hand (workflow_dispatch), it builds the two and keeps them as
+# workflow artifacts without publishing. The packaging is the scripts'
+# (scripts/package_mac.sh, scripts/PACKAGE_WINDOWS.ps1); the model package is
+# exported here from the shipped checkpoint, as NATIVE_GATE_A does.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (Apple silicon)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: Tools
+        run: brew install ninja
+      - name: The model package
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch onnx onnxruntime numpy opencv-python-headless
+          pip install -e .
+          tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
+      - name: Build and package
+        # The app's Qt tests run in native.yml; here the movie tests would need
+        # an ffmpeg with zscale, which Homebrew's default ffmpeg lacks.
+        run: SKIP_TESTS=1 PYTHON=python tools/ci_run.sh "Package" scripts/package_mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rudra-macos
+          path: |
+            dist/beta/*.dmg
+            dist/beta/*.dmg.sha256
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - name: The model package
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install onnx onnxruntime numpy opencv-python-headless
+          pip install -e .
+          tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
+      - name: Build and package
+        shell: pwsh
+        run: .\scripts\PACKAGE_WINDOWS.ps1 -Python python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rudra-windows
+          path: |
+            dist/beta/*.zip
+            dist/beta/*.zip.sha256
+
+  publish:
+    name: Pre-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          name: RUDRA ${{ github.ref_name }}
+          body_path: docs/BETA.md
+          files: artifacts/*

@@ -545,7 +545,13 @@ std::vector<std::filesystem::path> MainWindow::model_roots() const {
     QSettings st;
     std::vector<std::filesystem::path> extra;
     for (const auto& r : st.value("model/roots").toStringList()) extra.emplace_back(r.toStdString());
-    const auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+    // The packages shipped with the app: beside the executable, or in a macOS
+    // bundle's Resources (RUDRA.app/Contents/MacOS/../Resources/models).
+    auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+#ifdef __APPLE__
+    if (const auto res = app_models.parent_path().parent_path() / "Resources" / "models"; std::filesystem::is_directory(res))
+        app_models = res;
+#endif
     const QString user = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return package_roots(extra, app_models,
                          user.isEmpty() ? std::filesystem::path() : std::filesystem::path(user.toStdString()) / "models");
