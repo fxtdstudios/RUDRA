@@ -135,6 +135,13 @@ MainWindow::MainWindow(bool with_viewer) {
     stats_timer_.setSingleShot(true);
     stats_timer_.setInterval(90);
     connect(&stats_timer_, &QTimer::timeout, this, [this] { run_stats(); });
+    // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
+    // Connected once here: Qt::UniqueConnection does not apply to a lambda, so
+    // connecting on every Play added a handler each time and playback ran fast.
+    play_.setInterval(1000 / 24);
+    connect(&play_, &QTimer::timeout, this, [this] {
+        if (!waiting_) step_to(current_ + 1);
+    });
 
     // The floating probe box (#probeBox): it follows the cursor over the viewer,
     // a window of its own so it can sit over the viewer's swapchain.
@@ -851,11 +858,6 @@ void MainWindow::toggle_play() {
     }
     if (frames_.size() < 2) return;
     btn_play_->set_glyph(IconButton::Glyph::Pause);
-    // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
-    play_.setInterval(1000 / 24);
-    QObject::connect(&play_, &QTimer::timeout, this, [this] {
-        if (!waiting_) step_to(current_ + 1);
-    }, Qt::UniqueConnection);
     play_.start();
 }
 
