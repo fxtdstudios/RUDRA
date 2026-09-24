@@ -399,10 +399,16 @@ Done:
 - [x] Video delivery: HDR10, HLG and ProRes masters with audio, QC before
   publishing, video jobs in a resumable queue
 - [x] The whole workflow scripted, passing on Linux
+- [x] macOS on Apple silicon (macOS 27): the app builds with `scripts/native_app.sh`
+  and its 36 Qt tests pass, including the scripted workflow (model, open, scrub,
+  grade, compare, measure, master) and a movie opened, scrubbed and queued for
+  HDR10; the model package exports there with TorchScript exact and ONNX at
+  5.4e-5 of eager PyTorch
 
 Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
-  EDR), GPU composite and display pass on Metal
+  EDR), GPU composite and display pass on Metal, a clean exit (the fix for an
+  abort at exit is in, not yet run there)
 - [ ] Model checks on the full bench set
 - [ ] CI green on Windows, macOS and Linux
 - [ ] Performance budgets recorded on every GPU backend
