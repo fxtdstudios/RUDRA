@@ -37,6 +37,40 @@
    ]
   },
   {
+   "clip": "bars_709.mp4",
+   "args": "default",
+   "command": [
+    "ffmpeg",
+    "-hide_banner",
+    "-v",
+    "error",
+    "-xerror",
+    "-nostdin",
+    "-noautorotate",
+    "-i",
+    "bars_709.mp4",
+    "-map",
+    "0:v:0",
+    "-vf",
+    "zscale=matrixin=709:rangein=limited:matrix=gbr:range=full,format=gbrp16le,format=rgb48le",
+    "-fps_mode",
+    "passthrough",
+    "-pix_fmt",
+    "rgb48le",
+    "-f",
+    "rawvideo",
+    "pipe:1"
+   ],
+   "frames": [
+    "16fd6e339c6941af0af5625e17d179a938b734025cbe4099e443c05c4bf0bd9f",
+    "16fd6e339c6941af0af5625e17d179a938b734025cbe4099e443c05c4bf0bd9f",
+    "16fd6e339c6941af0af5625e17d179a938b734025cbe4099e443c05c4bf0bd9f",
+    "5b3b03339a3846a3346983b7f96669aab0d6c14eca5e5f15ed8e66f5c960744d",
+    "2f8a69ff868589371b0d2668ced637ea6129e00cadefb08224de11b7bc9a7d9a",
+    "47288e75d9f4a76320bc0fd5e45f5a3b82be00bf991e684374e96448c1a21877"
+   ]
+  },
+  {
    "clip": "untagged.mp4",
    "args": "explicit_709",
    "command": [

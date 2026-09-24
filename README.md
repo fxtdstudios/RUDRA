@@ -471,10 +471,11 @@ Studio workflow with no Python installed, every number and file matching the Stu
 Then Phase 4 (video delivery, 12 days; plan in
 [`docs/NATIVE_ARCHITECTURE.md`](docs/NATIVE_ARCHITECTURE.md) section 17): a movie in, an HDR10, HLG
 or ProRes master out with its audio, QC before publishing, ffmpeg and ffprobe run as programs as the Python runs them.
-- [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 23 clip and argument cases
+- [x] Probe, clock and input contract: `rudra/video.py`'s verdicts and messages on 24 clip and argument cases
   (HDR, alpha, interlace, rotation, anamorphic, odd sizes, variable timing, RGB, colour tags and overrides)
 - [x] Decode on a pipe, bit for bit: the Python's decoder command, and every frame equal to the one `read_frame` returned
-- [ ] The video predictor with the shadow smoother
+- [x] The video predictor with the shadow smoother: the same cuts and weights as eager PyTorch and every HDR pixel
+  within 2.7e-6 of it, whole frames and tiles, on LibTorch and ONNX Runtime
 - [ ] Mastering and the PNG spool
 - [ ] Encode and publish, argument for argument
 - [ ] QC and the alpha check

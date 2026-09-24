@@ -42,6 +42,7 @@ X264 = ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"]
 # name, ffmpeg arguments after the lavfi input (or a callable building from other clips)
 CLIPS = {
     "h264_709.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", *X264, *TAG709, "-output_ts_offset", "10"],
+    "bars_709.mp4": ["-f", "lavfi", "-i", "smptebars=s=64x36:r=24000/1001", "-frames:v", "6", *X264, *TAG709],
     "untagged.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", *X264],
     "srgb_full.mp4": ["-f", "lavfi", "-i", SRC, "-frames:v", "6", "-c:v", "libx264", "-preset", "ultrafast",
                       "-pix_fmt", "yuvj420p", "-color_primaries", "bt709", "-color_trc", "iec61966-2-1",
@@ -85,6 +86,7 @@ ARGS = {
 }
 CASES = [   # clip, argument variants
     ("h264_709.mp4", ["default", "gamma24"]),
+    ("bars_709.mp4", ["default"]),
     ("untagged.mp4", ["default", "srgb_709", "explicit_709"]),
     ("srgb_full.mp4", ["default"]),
     ("bt2020.mkv", ["default"]),
@@ -138,7 +140,7 @@ def open_source(info: dict, frame_info: dict, args) -> dict:
             "decoder_filter": decoder_filter(contract, alpha)}
 
 
-DECODE_CASES = [("h264_709.mp4", "default"), ("untagged.mp4", "explicit_709"), ("srgb_full.mp4", "default"),
+DECODE_CASES = [("h264_709.mp4", "default"), ("bars_709.mp4", "default"), ("untagged.mp4", "explicit_709"), ("srgb_full.mp4", "default"),
                 ("bt2020.mkv", "default"), ("rgb_png.mov", "srgb_709"),
                 ("prores4444_alpha.mov", "prores4444_straight_limited")]
 
@@ -188,13 +190,14 @@ def decode_record(clip: str, variant: str) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / ("out.mov" if "prores" in variant else "out.mp4")
         args = parser.parse_args([str(path), "--output", str(out), "--checkpoint", str(path), *flags])
+        real_predictor = video.Predictor
         video.subprocess.Popen, video.read_frame, video.Predictor = popen, read_frame, Predictor
         try:
             video.convert_video(args)
         except _Stop:
             pass
         finally:
-            video.subprocess.Popen, video.read_frame = real_popen, real_read
+            video.subprocess.Popen, video.read_frame, video.Predictor = real_popen, real_read, real_predictor
     return {"clip": clip, "args": variant, "command": seen["command"], "frames": seen["frames"]}
 
 

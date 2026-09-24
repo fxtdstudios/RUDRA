@@ -26,7 +26,8 @@ Emitters, in order:
     readouts   tools/emit_readouts_golden.py   the Studio page's probe, Frame panel and bars (needs Playwright)
     scopes     tools/emit_scopes_golden.py     the Studio page's scope drawings and rasters (needs Playwright)
     sequence   tools/emit_sequence_golden.py   sequence open: names, order, messages
-    video      tools/emit_video_golden.py      video probe, input contract and clock (needs ffmpeg)
+    video      tools/emit_video_golden.py      video probe, input contract, clock and decode (needs ffmpeg)
+    video_predict tools/emit_video_predict_golden.py the video predictor and shadow smoother (needs ffmpeg)
     session    tools/emit_session_golden.py    the Studio page's state, params() and undo (needs Playwright)
     viewer     tools/emit_viewer_golden.py     the browser Studio's viewer (needs Playwright)
     viewport   tools/emit_viewport_golden.py   the Studio's fit, zoom and pan layout (needs Playwright)
@@ -57,6 +58,7 @@ EMITTERS = {
     "sequence": "emit_sequence_golden.py",
     "session": "emit_session_golden.py",
     "video": "emit_video_golden.py",
+    "video_predict": "emit_video_predict_golden.py",
     "viewer": "emit_viewer_golden.py",
     "viewport": "emit_viewport_golden.py",
 }
