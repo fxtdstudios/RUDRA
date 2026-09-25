@@ -308,7 +308,9 @@ Then three benches (`bench\cp_oog`, `bench\cp_mix`, `bench\cp_aces`), every
 model, then `training\cp7_verdicts.py` (the gate table; re-runnable from the
 CSVs with no GPU) into `reports\logs\cp_results.json`. Scored 24 Sep: every gate
 that ran fails; see STATUS. Before reading a bench against the fp32 baseline,
-check precision: `scripts\RUN_BENCH_FP32_CHECK.bat`.
+check precision: `scripts\RUN_BENCH_FP32_CHECK.bat` (run 25 Sep: fp32 and bf16
+agree to 0.03 dB, so precision is not the gap). Then `scripts\RUN_BENCH_GAP_CHECK.bat`:
+the training metric against PU21 on the same trees, and the error by luminance.
 
 **N3 gate:** `oog/v4c vs baseline` both CIs above zero. **Studio gate (N7):**
 v4c_studio within 0.3 dB / 0.03 JOD of v4c on `oog` and `mix`. **Clean

@@ -66,16 +66,25 @@
 >   it loses 461 of 537 frames. Median frame: baseline 47.3 dB PU21, v4b 38.1.
 >   The two differ in data (32 val crops of 256 px against full test frames),
 >   metric (log1p(16x) PSNR against PU21) and precision: `predict_image` ran
->   under bf16 autocast while the baseline tree is fp32. **Open:
->   `scripts\RUN_BENCH_FP32_CHECK.bat`** (about 40 min) re-exports aces/v4b,
->   aces/v4c, oog/v4c and mix/v4c with `--precision fp32` beside the bf16 trees
->   and compares. If the gap closes, every CP7 row is re-exported in fp32 and
->   fp32 becomes the export default. If it does not, the next fix is `best.pt`
->   selection (whole frames, more than 32 crops, PU21 or CVVDP), before any
->   retrain.
+>   under bf16 autocast while the baseline tree is fp32.
+> - **25 Sep: precision is not the gap.** `scripts\RUN_BENCH_FP32_CHECK.bat`
+>   re-exported the four rows in fp32: aces/v4b -8.121 dB (bf16 -8.088),
+>   aces/v4c -21.950 (-21.948), mix/v4c -0.890 (-0.899), oog/v4c +1.342
+>   (+1.330); JOD moves by 0.003 at most. bf16 stays the export default. That
+>   leaves data and metric. **Open: `scripts\RUN_BENCH_GAP_CHECK.bat`** (no GPU,
+>   minutes) scores the same bench trees with the training metric beside PU21,
+>   and splits the PU21 error and the level bias by reference luminance
+>   (`tools/diagnose_bench_gap.py`). The training metric, PSNR of
+>   log1p(16 x) in 10,000-nit units, barely sees anything under a few hundred
+>   nits: a 10% error at 20 nits moves it 0.003, at 2,000 nits 0.07. If it
+>   says v4b wins on the bench frames while PU21 says it loses, the loss and
+>   `best.pt` selection are rewarding the wrong thing, and they are fixed before
+>   any retrain; if both say it loses, the difference is full frames against
+>   crops.
 >
-> Next, in order, each behind the one before: (1) the fp32 check; (2) the
-> selection fix if (1) says so; (3) the N3 fallback, then retrain v4c (about
+> Next, in order, each behind the one before: (1) the fp32 check (done:
+> not precision); (2) the gap check, then the metric or selection fix it
+> points to; (3) the N3 fallback, then retrain v4c (about
 > 6.5 h); (4) Step 7 as written: the 429 paper frames at clean and hard, and
 > `measure_clipping.py --score`; (5) only then Step 6 temporal, promotion, and
 > N7 `rudra-studio`.
