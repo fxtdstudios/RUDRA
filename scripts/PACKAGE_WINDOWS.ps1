@@ -224,8 +224,16 @@ if (-not $NoInstaller) {
         # Not installed: the official installer, silently and for this user only
         # (no administrator prompt), into %LOCALAPPDATA%\Programs\Inno Setup 6.
         Write-Host "Inno Setup 6 not found; installing it for this user from jrsoftware.org"
-        $isExe = Join-Path $env:TEMP "innosetup-6.exe"
-        Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $isExe -UseBasicParsing
+        # The GitHub release asset: jrsoftware.org/download.php answers with an
+        # HTML page, not the installer.
+        $isExe = Join-Path $env:TEMP "innosetup-6.7.3.exe"
+        Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" `
+            -OutFile $isExe -UseBasicParsing
+        $head = [System.IO.File]::ReadAllBytes($isExe)[0..1]
+        if ((Get-Item $isExe).Length -lt 1MB -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) {
+            Fail "the Inno Setup download is not an installer ($isExe)"
+        }
+        Unblock-File $isExe
         $p = Start-Process -FilePath $isExe -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER") -Wait -PassThru
         Remove-Item $isExe -ErrorAction SilentlyContinue
         $c = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
