@@ -75,7 +75,9 @@ jobs:
         run: |
           mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
           "$VCPKG_INSTALLATION_ROOT/vcpkg" install gtest nlohmann-json "opencv4[core,jpeg,png,tiff,webp]" --triplet x64-windows
-          echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> "$GITHUB_ENV"
+          # Classic mode: native/vcpkg.json (a manifest) would otherwise make the
+          # toolchain ignore the packages installed above, OpenCV among them.
+          echo "TOOLCHAIN=-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_MANIFEST_MODE=OFF" >> "$GITHUB_ENV"
       - name: Every golden, from this Python
         # The viewer golden comes from the browser Studio on SwiftShader, which
         # the Linux runner has; macOS and Windows test against the committed one.

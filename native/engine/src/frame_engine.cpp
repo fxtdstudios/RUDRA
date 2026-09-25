@@ -13,11 +13,15 @@ double ms_since(std::chrono::steady_clock::time_point t0) {
 
 FrameEngine::FrameEngine(FrameLoader loader, FrameInfer infer, EngineOptions options)
     : loader_(std::move(loader)), infer_(std::move(infer)), opt_(options),
-      worker_([this](std::stop_token st) { run(st); }) {}
+      worker_([this] { run(); }) {}
 
 FrameEngine::~FrameEngine() {
-    worker_.request_stop();
+    {
+        std::lock_guard lk(mu_);
+        stop_ = true;
+    }
     cv_.notify_all();
+    worker_.join();
 }
 
 void FrameEngine::set_sequence(int count) {
@@ -129,13 +133,13 @@ void FrameEngine::deliver(const ReadyFrame& f) {
     if (cb) cb(f);
 }
 
-void FrameEngine::run(std::stop_token stop) {
-    while (!stop.stop_requested()) {
+void FrameEngine::run() {
+    for (;;) {
         Job job;
         {
             std::unique_lock lk(mu_);
-            cv_.wait(lk, stop, [&] { return !queue_.empty(); });
-            if (stop.stop_requested()) return;
+            cv_.wait(lk, [&] { return stop_ || !queue_.empty(); });
+            if (stop_) return;
             // Interactive first; otherwise in the order read-ahead was queued.
             auto it = std::find_if(queue_.begin(), queue_.end(), [](const Job& j) { return j.priority == Priority::Interactive; });
             if (it == queue_.end()) it = queue_.begin();

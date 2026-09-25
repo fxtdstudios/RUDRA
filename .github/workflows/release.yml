@@ -64,8 +64,8 @@ jobs:
         run: |
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
       - name: Build and package
-        shell: pwsh
-        run: .\scripts\PACKAGE_WINDOWS.ps1 -Python python
+        shell: bash
+        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python
       - uses: actions/upload-artifact@v4
         with:
           name: rudra-windows
