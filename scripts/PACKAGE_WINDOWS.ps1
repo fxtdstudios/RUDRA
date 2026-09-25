@@ -10,7 +10,9 @@
       onnxruntime.dll, DirectML.dll, opencv_world*.dll,
       models\   the package(s) from dist\models
       LICENSE, NOTICE, LICENSE-weights, "Read me first.md"
-  and dist\beta\RUDRA-<version>-windows-x64.zip with its SHA-256.
+  dist\beta\RUDRA-<version>-windows-x64.zip, and the installer
+  dist\beta\RUDRA-<version>-windows-x64-setup.exe (Inno Setup 6; -NoInstaller
+  skips it), each with its SHA-256.
 
   Needs what NATIVE_PHASE3_EXIT.ps1 needs: Visual Studio 2022 or 2026 (or the
   Build Tools) with the C++ tools, a Python for aqtinstall, and a model package
@@ -22,6 +24,7 @@
   .\scripts\PACKAGE_WINDOWS.ps1
   .\scripts\PACKAGE_WINDOWS.ps1 -Tests        # also build and run the app's Qt tests
   .\scripts\PACKAGE_WINDOWS.ps1 -SkipBuild    # package the last build
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoInstaller  # the ZIP alone, without Inno Setup
 #>
 [CmdletBinding()]
 param(
@@ -29,8 +32,10 @@ param(
     [string]$QtVersion = "6.8.3",
     [string]$OrtVersion = "1.22.0",
     [string]$OpenCvVersion = "4.10.0",
+    [string]$InnoSetup = "",
     [switch]$SkipBuild,
     [switch]$Tests,
+    [switch]$NoInstaller,
     [switch]$InstallBuildTools
 )
 
@@ -184,4 +189,29 @@ Compress-Archive -Path $Out -DestinationPath $Zip -CompressionLevel Optimal
 $hash = (Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower()
 "$hash  $Name.zip" | Set-Content -Encoding ascii "$Zip.sha256"
 Write-Host "$hash  $Name.zip"
+
+# ---------------------------------------------------------------------------
+# The installer (Inno Setup 6): RUDRA-<version>-windows-x64-setup.exe, per-user
+# by default, Start menu entry, uninstaller, the licence shown first.
+if (-not $NoInstaller) {
+    Say "Installer (Inno Setup)"
+    $iscc = $null
+    foreach ($c in @($InnoSetup, "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+                     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")) {
+        if ($c -and (Test-Path $c)) { $iscc = $c; break }
+    }
+    if (-not $iscc) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source }
+    if (-not $iscc) {
+        Fail "Inno Setup 6 not found: winget install JRSoftware.InnoSetup (or -NoInstaller for the ZIP alone)"
+    }
+    $iss = Join-Path $Repo "native\app\windows\rudra.iss"
+    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" $iss
+    if ($LASTEXITCODE -ne 0) { Fail "ISCC" }
+    $Setup = Join-Path (Split-Path $Out) "$Name-setup.exe"
+    if (-not (Test-Path $Setup)) { Fail "no installer at $Setup" }
+    $sh = (Get-FileHash $Setup -Algorithm SHA256).Hash.ToLower()
+    "$sh  $Name-setup.exe" | Set-Content -Encoding ascii "$Setup.sha256"
+    Write-Host "$sh  $Name-setup.exe"
+}
 Write-Host "`nBuilt: $Zip"
+if (-not $NoInstaller) { Write-Host "       $Setup" }

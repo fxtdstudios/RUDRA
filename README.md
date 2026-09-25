@@ -405,8 +405,9 @@ Done:
   HDR10; the model package exports there with TorchScript exact and ONNX at
   5.4e-5 of eager PyTorch
 - [x] Beta packaging (0.9.0-beta.1): `scripts/package_mac.sh` makes a
-  self-contained RUDRA.app in a DMG, `scripts/PACKAGE_WINDOWS.ps1` a ZIP with
-  Qt, ONNX Runtime and DirectML beside the exe; a `v*` tag builds both on
+  self-contained RUDRA.app in a DMG, `scripts/PACKAGE_WINDOWS.ps1` an installer
+  (setup.exe) and a portable ZIP with Qt, ONNX Runtime and DirectML beside the
+  exe; a `v*` tag builds them on
   GitHub and publishes a pre-release ([`docs/BETA.md`](docs/BETA.md))
 
 Still to do:

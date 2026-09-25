@@ -32,8 +32,11 @@ weights: LICENSE-weights).
 Applications. The beta is not notarised yet: the first time, right-click
 RUDRA > Open, or run `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
 
-**Windows (x64, Windows 10 or 11).** Unzip anywhere and run `RUDRA.exe`. A GPU
-with DirectX 12 is used when there is one; the CPU otherwise.
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.1-windows-x64-setup.exe`:
+it installs for your user by default (no administrator prompt), adds RUDRA to
+the Start menu and can be removed from Settings > Apps. Or take the portable
+ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
+there is one; the CPU otherwise.
 
 **Movies, both systems.** RUDRA runs `ffmpeg` and `ffprobe` from the PATH and
 needs a build with `libx265`, `prores_ks` and `zscale`:
