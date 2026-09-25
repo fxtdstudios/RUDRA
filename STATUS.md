@@ -14,8 +14,81 @@
 >
 > | **F. Native desktop app** | `native/`, C++20 / Qt 6 / QRhi / LibTorch + ONNX Runtime, no Python at runtime | **Phase 0 closed 23 Sep 2026: GO on Windows**, macOS conditional (below). **Phase 1: steps 1 to 10 of 11 done 24 Sep**, step 11 (CI on three OSes) waiting on its first run. **Phase 2** (the QRhi viewer): done on Linux and Windows but for the backend matrix. **Phase 3** (the Qt UI): steps 1 to 11 done 24 Sep, the exit scripted and passing on Linux; the Windows run and the by-hand pass are open (below). **Phase 4** (video delivery): steps 1 to 11 done 24 Sep, the exit scripted (`NATIVE_PHASE4_EXIT.ps1`) and passing on Linux; the Windows run is open (below) |
 >
-> | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
+> | **E. Corpus programme (v4b, v4c)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint"; v4c adds the mixed-curve render and the curve head | **trained and benched 23-24 Sep; every gate that ran FAILS** (below). Nothing promoted; `sdr2hdr_shadow_v1.pt` stays the default. Three runs from 18-22 Sep were on the wrong corpus and are quarantined |
 >
+> **Release definition (agreed 24 Sep 2026).** Line C/E is complete when one
+> set of weights passes every row below on the held-out benches, paired
+> per frame, 95% bootstrap CI, PU21-PSNR and CVVDP read together. Parameter
+> count is not a target: 1.2 M and 4.77 M scored alike, and the oracle bound
+> (+5.84 dB clean) is mostly out of reach from 8 bits. Gains beyond these rows
+> come from more distinct real scenes and the optional clipped-region pass (N6),
+> not from a bigger network. Nothing is announced or shipped before rows 1 to 4.
+>
+> | # | condition | bench | pass when | status |
+> |---|---|---|---|---|
+> | 1 | clean, well-graded SDR | `aces`, paper 429 clean | not worse than the analytic inverse by more than 0.1 dB / 0.02 JOD | FAIL (v4b −8.09 dB, v4c −21.9 dB; bf16 check open) |
+> | 2 | unknown curve + codec | `oog`, `mix` | both metrics above the inverse, CI excluding zero (N3) | FAIL (v4c +1.33 dB but −0.126 JOD) |
+> | 3 | degraded input | paper 429 hard | at least v5's +1.43 dB / +0.44 JOD, with row 1 held | not run |
+> | 4 | clipped highlights | `measure_clipping.py --score`, 0/+1/+2 EV | error in stops on clipped pixels below the inverse's, CI excluding zero | not run |
+> | 5 | video | v4b/v4c test clips, clip-mode CVVDP + flicker | clip JOD ≥ per-frame JOD on every test clip (N5) | not run |
+> | 6 | commercial weights | `oog`, `mix` | `rudra-studio` within 0.3 dB / 0.03 JOD of the research model (N7) | not trained |
+> | 7 | against the market | N4 set: LTX HDR IC-LoRA, Hyperion, Ruby, SwitchHDR | a table published whatever it says | not run |
+>
+> Rows 1, 2 and 6 are scored by `training/cp7_verdicts.py`; rows 3 to 5 get
+> their gates there when their benches exist. A model that passes 1 to 6
+> replaces `sdr2hdr_shadow_v1.pt` as the default in `models.json`.
+
+> **24 Sep 2026, 22:30 — critical path scored; all four gates that ran fail (line E).**
+> `RUN_CRITICAL_PATH.bat` finished at 14:32: Step 4 re-run on the hold-out
+> manifest (`87a32f…`, 50k steps, best = step 45,500), Step 5 (8k), v4c with
+> `--curve-head` (50k, best = step 25,500), then the three CP7 benches. CP7 had
+> called `paired_gate.py` with **no gate flag**, so every row printed `GATE PASS`
+> (shadow_v1's 0 of 537 on ACES included). Gates now live in
+> `training/cp7_verdicts.py`, re-scored from the same CSVs (no GPU); the old
+> file is kept as `reports/logs/cp_results_2026-09-24_nogates.json`.
+>
+> | gate | question | PU21 Δ [95% CI] | CVVDP Δ [95% CI] | |
+> |---|---|---|---|---|
+> | N1/step4 | v4b beats the analytic inverse on its own ACES render | −8.09 [−8.80, −7.36] | −0.508 [−0.564, −0.456] | **FAIL** |
+> | N1/step5 | the gate head adds anything over v4b | 0.00 | 0.000 | **FAIL** |
+> | N3 | v4c beats the inverse out of generator | +1.33 [+0.80, +1.86] | −0.126 [−0.182, −0.073] | **FAIL** |
+> | N3/clean | v4c within 0.1 dB / 0.02 JOD of v4b on ACES | −13.86 | −1.082 | **FAIL** |
+> | N7 | studio weights within 0.3 dB / 0.03 JOD of v4c | | | not run |
+>
+> - **Step 5 did nothing.** From step 0 no eval beat the init (hard gain fell
+>   from 0.80 to 0.67 dB), so `best.pt` is the step-0 save and its bench rows
+>   are v4b's to the digit.
+> - **v4c cannot see ACES.** It loses on all 537 ACES frames on CVVDP, which is
+>   what the CPU proxy predicted. The fix already named for it is a confidence
+>   output that falls back to the analytic inverse, not dropping the head.
+> - **What training measures and what the bench measures disagree.** v4b's evals
+>   read +1.41 dB clean over the inverse, but on the bench of the same render
+>   it loses 461 of 537 frames. Median frame: baseline 47.3 dB PU21, v4b 38.1.
+>   The two differ in data (32 val crops of 256 px against full test frames),
+>   metric (log1p(16x) PSNR against PU21) and precision: `predict_image` ran
+>   under bf16 autocast while the baseline tree is fp32.
+> - **25 Sep: precision is not the gap.** `scripts\RUN_BENCH_FP32_CHECK.bat`
+>   re-exported the four rows in fp32: aces/v4b -8.121 dB (bf16 -8.088),
+>   aces/v4c -21.950 (-21.948), mix/v4c -0.890 (-0.899), oog/v4c +1.342
+>   (+1.330); JOD moves by 0.003 at most. bf16 stays the export default. That
+>   leaves data and metric. **Open: `scripts\RUN_BENCH_GAP_CHECK.bat`** (no GPU,
+>   minutes) scores the same bench trees with the training metric beside PU21,
+>   and splits the PU21 error and the level bias by reference luminance
+>   (`tools/diagnose_bench_gap.py`). The training metric, PSNR of
+>   log1p(16 x) in 10,000-nit units, barely sees anything under a few hundred
+>   nits: a 10% error at 20 nits moves it 0.003, at 2,000 nits 0.07. If it
+>   says v4b wins on the bench frames while PU21 says it loses, the loss and
+>   `best.pt` selection are rewarding the wrong thing, and they are fixed before
+>   any retrain; if both say it loses, the difference is full frames against
+>   crops.
+>
+> Next, in order, each behind the one before: (1) the fp32 check (done:
+> not precision); (2) the gap check, then the metric or selection fix it
+> points to; (3) the N3 fallback, then retrain v4c (about
+> 6.5 h); (4) Step 7 as written: the 429 paper frames at clean and hard, and
+> `measure_clipping.py --score`; (5) only then Step 6 temporal, promotion, and
+> N7 `rudra-studio`.
+
 > **25 Sep 2026, the master: highlight grain (line F).** A tester found a
 > colour-neutral grain in recovered highlights, peaking where the source sits
 > at 0.95-0.98. It is the analytic baseline, not the model: one 8-bit code is

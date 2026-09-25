@@ -88,8 +88,14 @@ def _tile_weight(height: int, width: int, overlap: int, y: int, x: int,
 @torch.inference_mode()
 def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
                   tile_size: int, overlap: int, recovery_mode: str = "all",
-                  recovery_strength: float = 1.0) -> torch.Tensor:
-    """Memory-bounded image inference with overlap feathering."""
+                  recovery_strength: float = 1.0, bf16: bool = True) -> torch.Tensor:
+    """Memory-bounded image inference with overlap feathering.
+
+    ``bf16=False`` runs CUDA in fp32. The analytic baseline is always fp32, and
+    bf16 keeps 8 mantissa bits (0.4 % steps), so on a clean frame the baseline
+    scores near-exactly and a bf16 prediction cannot. Use fp32 whenever the two
+    are compared.
+    """
     if sdr.shape[0] != 1:
         raise ValueError("predict_image expects one image at a time")
     _, _, height, width = sdr.shape
@@ -103,7 +109,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     # tile would invert its own guess and the seams would show.
     curve = model.predict_curve(sdr) if hasattr(model, "predict_curve") else None
     if tile_size <= 0 or (height <= tile_size and width <= tile_size):
-        amp = torch.autocast("cuda", dtype=torch.bfloat16) if sdr.is_cuda else contextlib.nullcontext()
+        amp = torch.autocast("cuda", dtype=torch.bfloat16) if (sdr.is_cuda and bf16) else contextlib.nullcontext()
         with amp:
             return model(sdr, preserve_outside=preserve_outside,
                          recovery_mode=recovery_mode,
@@ -117,7 +123,7 @@ def predict_image(model: SDR2HDRNet, sdr: torch.Tensor, preserve_outside: bool,
     for y in _tile_starts(height, tile_size, overlap):
         for x in _tile_starts(width, tile_size, overlap):
             tile = sdr[..., y:min(y + tile_size, height), x:min(x + tile_size, width)]
-            amp = torch.autocast("cuda", dtype=torch.bfloat16) if tile.is_cuda else contextlib.nullcontext()
+            amp = torch.autocast("cuda", dtype=torch.bfloat16) if (tile.is_cuda and bf16) else contextlib.nullcontext()
             with amp:
                 prediction = model(tile, preserve_outside=preserve_outside,
                                    recovery_mode=recovery_mode,

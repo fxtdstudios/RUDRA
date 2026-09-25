@@ -231,6 +231,10 @@ def main() -> int:
     parser.add_argument("--preserve-outside", action="store_true", default=True)
     parser.add_argument("--raw", dest="preserve_outside", action="store_false",
                         help="export the unblended prediction")
+    parser.add_argument("--precision", choices=("bf16", "fp32"), default="bf16",
+                        help="CUDA precision of the model's forward pass. bf16 is what "
+                             "every bench before 24 Sep 2026 used; the baseline tree is "
+                             "fp32 either way (see predict_image).")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
@@ -250,6 +254,7 @@ def main() -> int:
     model = load_model(Path(args.checkpoint), device)
     print(f"   split      : {args.split}  ({len(indexed)} of {len(records)} records)")
     print(f"   condition  : {args.condition}")
+    print(f"   precision  : {args.precision}")
     print(f"   device     : {device}")
     announce_storage(f"image/{args.split}", records[0]["hdr_path"])
 
@@ -299,7 +304,8 @@ def main() -> int:
             return predict_image(model, sdr, preserve_outside=args.preserve_outside,
                                  tile_size=tile_size, overlap=args.tile_overlap,
                                  recovery_mode=args.recovery_mode,
-                                 recovery_strength=args.recovery_strength)
+                                 recovery_strength=args.recovery_strength,
+                                 bf16=args.precision == "bf16")
 
         try:
             hdr = predict(args.tile_size)

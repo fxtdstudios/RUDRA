@@ -99,6 +99,13 @@ metrics.
 > model scores below the analytic baseline. The next corpus (v4c) draws its SDR
 > from a family of curves and codecs to close this. Numbers and plan:
 > [`STATUS.md`](STATUS.md).
+>
+> **24 Sep 2026: not closed yet.** The first models trained on v4b and v4c do not
+> beat the analytic baseline on the bench, including the out-of-generator
+> condition, so the shipped model is unchanged. The gates and what is being
+> checked next are in [`STATUS.md`](STATUS.md), which also holds the release
+> definition: the seven conditions a model must pass before it replaces the
+> shipped one.
 
 Full tables, the failure analysis, and how to recompute every number:
 [`docs/RESULTS.md`](docs/RESULTS.md).
