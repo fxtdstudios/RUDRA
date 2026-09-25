@@ -81,6 +81,20 @@ NO_LAUNCH=1 scripts/native_app.sh     # build and test only
 SKIP_BUILD=1 scripts/native_app.sh    # open the last build
 ```
 
+The beta packages (0.9.0-beta.1; `RUDRA_RELEASE` sets the label):
+
+```
+scripts/package_mac.sh                # Apple silicon: dist/beta/RUDRA-<version>-macos-arm64.dmg
+.\scripts\PACKAGE_WINDOWS.ps1         # Windows x64:   dist\beta\RUDRA-<version>-windows-x64.zip
+```
+
+Each needs a model package in `dist/models`, bundles it with Qt (macdeployqt,
+windeployqt), ONNX Runtime (Core ML; DirectML) and `rudra-native`, checks the
+result starts from where it is, and writes its SHA-256. The macOS app is signed
+ad hoc (no Developer ID yet). ffmpeg is not bundled. Pushing a `v*` tag runs
+`.github/workflows/release.yml`, which builds both on GitHub's runners and
+attaches them to a pre-release with `docs/BETA.md` as its notes.
+
 ## Model package
 
 `python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt` writes

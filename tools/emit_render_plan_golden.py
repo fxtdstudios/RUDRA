@@ -68,7 +68,9 @@ def main() -> int:
                 paths = [Path(x).as_posix().replace(root.as_posix(), "<root>") for x in master_targets(p)]
                 results.append({"name": name, "params": params, "files": files, "paths": paths})
             except ValueError as exc:
-                msg = str(exc).replace(root.as_posix(), "<root>")
+                # The message holds the path as this OS spells it: <root> for
+                # either spelling and '/' throughout, so every OS records the same.
+                msg = str(exc).replace(str(root), "<root>").replace(root.as_posix(), "<root>").replace("\\", "/")
                 results.append({"name": name, "params": params, "files": files, "error": msg})
     OUT.mkdir(parents=True, exist_ok=True)
     with open(OUT / "plans.json", "w", encoding="utf-8", newline="\n") as f:

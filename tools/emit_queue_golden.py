@@ -111,7 +111,8 @@ def main() -> int:
                     batch.load_jobs(q.resolve())
                 refusals[name] = {"spec": spec, "message": None}
             except ValueError as e:
-                msg = str(e).replace(str(root.resolve()), "<root>")
+                # '/' throughout: on Windows the message joins with '\\'.
+                msg = str(e).replace(str(root.resolve()), "<root>").replace(str(root), "<root>").replace("\\", "/")
                 refusals[name] = {"spec": spec, "message": msg}
     (OUT / "index.json").write_text(json.dumps({"oracle": "rudra/batch.py", "queue": QUEUE, "files": {k: v.decode() for k, v in FILES.items()},
                                                 "first_exit": first, "final_exit": final,

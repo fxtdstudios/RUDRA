@@ -496,7 +496,11 @@ QWidget* MainWindow::build_right_rail() {
     auto* rec = ctl();
     auto* recv = column(rec, 0, 12);
     recv->addWidget(label("Reconstruction", {}, "title", rec));
-    auto [rcard, rcv] = card(rec, 12, 14);
+    // Not a structured binding: the lambdas below use both, and Apple clang 15
+    // cannot capture a structured binding (C++20 allows it, from clang 16).
+    auto rcard_rcv = card(rec, 12, 14);
+    auto* rcard = rcard_rcv.first;
+    auto* rcv = rcard_rcv.second;
     mode_seg_ = new Seg("mode", {{"all", "All"}, {"highlights", "Highlights"}, {"shadows", "Shadows"}, {"off", "Off"}},
                         rcard);
     mode_seg_->clicked = [this](const QString& k) { session_.set_mode(k.toStdString()); };

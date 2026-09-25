@@ -40,7 +40,9 @@ def main() -> int:
         cases.append({"input": f"{name}.npy", "max_side": side, "expected": file,
                       "in_shape": list(chw.shape), "out_shape": list(out.shape)})
     with open(OUT / "index.json", "w", encoding="utf-8", newline="\n") as f:
-        json.dump({"oracle": "ui/server.py _fit (cv2 %s INTER_AREA, float32)" % cv2.__version__, "cases": cases}, f, indent=1)
+        # No library version in the file: CI re-emits it with whatever OpenCV pip
+        # installs and diffs it, so a version string alone would fail the check.
+        json.dump({"oracle": "ui/server.py _fit (cv2 INTER_AREA, float32)", "cases": cases}, f, indent=1)
         f.write("\n")
     print(f"fit: {len(cases)} cases -> {OUT}")
     return 0

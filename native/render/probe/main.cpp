@@ -13,7 +13,8 @@
 #include <QScreen>
 #include <QTextStream>
 
-#if QT_CONFIG(vulkan)
+#include "rudra/render/qt_vulkan.hpp"
+#if RUDRA_QT_VULKAN
 #include <QVulkanInstance>
 #endif
 
@@ -79,7 +80,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
     QVulkanInstance inst;
     if (opt.api == Api::Vulkan) {
         inst.setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
@@ -94,7 +95,7 @@ int main(int argc, char** argv) {
 #endif
 
     HdrProbeWindow window(opt);
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
     if (opt.api == Api::Vulkan) window.setVulkanInstance(&inst);
 #endif
     if (opt.screen >= 0 && opt.screen < screens.size()) {

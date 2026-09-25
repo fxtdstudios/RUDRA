@@ -83,7 +83,10 @@ std::string strip(std::string s) {
 std::string mismatch(const ColourTags& want, const ColourTags& got) {
     std::vector<std::pair<std::string, std::pair<std::string, std::string>>> wrong;
     for (const auto& [k, v] : want) {
-        const bool has = std::any_of(got.begin(), got.end(), [&](const auto& p) { return p.first == k; });
+        // Captured by name, not as the binding: Apple clang 15 cannot capture a
+        // structured binding in a lambda (C++20 allows it, from clang 16).
+        const std::string& key = k;
+        const bool has = std::any_of(got.begin(), got.end(), [&key](const auto& p) { return p.first == key; });
         const std::string g = has ? tag_of(got, k) : "absent";
         if (!has || g != v) wrong.push_back({k, {v, g}});
     }

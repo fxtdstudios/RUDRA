@@ -1,5 +1,6 @@
 #include "hdr_probe_window.hpp"
 #include "rudra/render/gl_format.hpp"
+#include "rudra/render/qt_vulkan.hpp"
 
 #include <algorithm>
 #include <QCoreApplication>
@@ -211,7 +212,7 @@ bool HdrProbeWindow::init() {
             break;
         }
         case Api::Vulkan: {
-#if QT_CONFIG(vulkan)
+#if RUDRA_QT_VULKAN
             QRhiVulkanInitParams p;
             p.inst = vulkanInstance();
             p.window = this;

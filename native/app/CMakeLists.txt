@@ -33,10 +33,31 @@ qt_add_resources(rudra_app_ui fonts PREFIX / FILES ${rudra_fonts} BASE "${CMAKE_
 set_source_files_properties("${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png" PROPERTIES QT_RESOURCE_ALIAS rudra-mark.png)
 qt_add_resources(rudra_app_ui assets PREFIX /assets FILES "${PROJECT_SOURCE_DIR}/../ui/assets/rudra-mark-256.png")
 
-qt_add_executable(RUDRA main.cpp)
+# The executable and its identity: the icon, the version, and on macOS the
+# bundle's Info.plist (HiDPI, the EDR display, the minimum system).
+set(_rudra_icon_sources "")
+if(APPLE)
+  set(_rudra_icon_sources "${CMAKE_CURRENT_SOURCE_DIR}/icons/rudra.icns")
+  set_source_files_properties(${_rudra_icon_sources} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+elseif(WIN32)
+  enable_language(RC)   # the project is CXX only; Ninja builds need RC for the .rc
+  configure_file(windows/rudra.rc.in "${CMAKE_CURRENT_BINARY_DIR}/rudra.rc" @ONLY)
+  set(_rudra_icon_sources "${CMAKE_CURRENT_BINARY_DIR}/rudra.rc")
+endif()
+qt_add_executable(RUDRA main.cpp ${_rudra_icon_sources})
 target_link_libraries(RUDRA PRIVATE rudra_app_ui)
+target_compile_definitions(RUDRA PRIVATE RUDRA_VERSION_LABEL="${RUDRA_VERSION_LABEL}")
 rudra_warnings(RUDRA)
-set_target_properties(RUDRA PROPERTIES WIN32_EXECUTABLE ON MACOSX_BUNDLE ON)
+set_target_properties(RUDRA PROPERTIES
+  WIN32_EXECUTABLE ON
+  MACOSX_BUNDLE ON
+  MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in"
+  MACOSX_BUNDLE_GUI_IDENTIFIER "com.fxtdstudios.rudra"
+  MACOSX_BUNDLE_BUNDLE_NAME "RUDRA"
+  MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+  MACOSX_BUNDLE_SHORT_VERSION_STRING "${RUDRA_VERSION_LABEL}"
+  MACOSX_BUNDLE_ICON_FILE "rudra.icns"
+  MACOSX_BUNDLE_COPYRIGHT "Copyright 2026 FXTD Studios. PolyForm Noncommercial 1.0.0.")
 
 # The window against the Studio page, offscreen (Phase 3): its menubar, keys
 # and actions (tests/golden/actions), and the look as it resolves.

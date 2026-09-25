@@ -404,13 +404,20 @@ Done:
   grade, compare, measure, master) and a movie opened, scrubbed and queued for
   HDR10; the model package exports there with TorchScript exact and ONNX at
   5.4e-5 of eager PyTorch
+- [x] Beta packaging (0.9.0-beta.1): `scripts/package_mac.sh` makes a
+  self-contained RUDRA.app in a DMG, `scripts/PACKAGE_WINDOWS.ps1` a ZIP with
+  Qt, ONNX Runtime and DirectML beside the exe; a `v*` tag builds both on
+  GitHub and publishes a pre-release ([`docs/BETA.md`](docs/BETA.md))
 
 Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
   EDR), GPU composite and display pass on Metal, a clean exit (the fix for an
   abort at exit is in, not yet run there)
 - [ ] Model checks on the full bench set
-- [ ] CI green on Windows, macOS and Linux
+- [ ] CI green on Windows, macOS and Linux (the goldens check is fixed; the
+  probe builds are next, their errors now published as annotations)
+- [ ] The beta packages built and opened on a Mac and a Windows PC, then the
+  `v0.9.0-beta.1` tag
 - [ ] Performance budgets recorded on every GPU backend
 - [ ] The workflow and video review on Windows with no Python, and by hand on an
   HDR display

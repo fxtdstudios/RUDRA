@@ -135,6 +135,13 @@ MainWindow::MainWindow(bool with_viewer) {
     stats_timer_.setSingleShot(true);
     stats_timer_.setInterval(90);
     connect(&stats_timer_, &QTimer::timeout, this, [this] { run_stats(); });
+    // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
+    // Connected once here: Qt::UniqueConnection does not apply to a lambda, so
+    // connecting on every Play added a handler each time and playback ran fast.
+    play_.setInterval(1000 / 24);
+    connect(&play_, &QTimer::timeout, this, [this] {
+        if (!waiting_) step_to(current_ + 1);
+    });
 
     // The floating probe box (#probeBox): it follows the cursor over the viewer,
     // a window of its own so it can sit over the viewer's swapchain.
@@ -538,7 +545,13 @@ std::vector<std::filesystem::path> MainWindow::model_roots() const {
     QSettings st;
     std::vector<std::filesystem::path> extra;
     for (const auto& r : st.value("model/roots").toStringList()) extra.emplace_back(r.toStdString());
-    const auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+    // The packages shipped with the app: beside the executable, or in a macOS
+    // bundle's Resources (RUDRA.app/Contents/MacOS/../Resources/models).
+    auto app_models = std::filesystem::path(QCoreApplication::applicationDirPath().toStdString()) / "models";
+#ifdef __APPLE__
+    if (const auto res = app_models.parent_path().parent_path() / "Resources" / "models"; std::filesystem::is_directory(res))
+        app_models = res;
+#endif
     const QString user = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     return package_roots(extra, app_models,
                          user.isEmpty() ? std::filesystem::path() : std::filesystem::path(user.toStdString()) / "models");
@@ -651,7 +664,9 @@ void MainWindow::adopt_model(std::shared_ptr<LoadedModel> loaded, const std::fun
     if (had_frames) start_engine(frames_, current_);
     else if (!pending_source_) log("drop frames — the network runs once each, then the grade is local");
     if (pending_source_) {
-        const auto [path, folder] = *pending_source_;
+        // Copies, not a structured binding: the lambda captures them.
+        const QString path = pending_source_->first;
+        const bool folder = pending_source_->second;
         pending_source_.reset();
         QTimer::singleShot(0, this, [this, path, folder] { open_source(path, folder); });
     }
@@ -851,11 +866,6 @@ void MainWindow::toggle_play() {
     }
     if (frames_.size() < 2) return;
     btn_play_->set_glyph(IconButton::Glyph::Pause);
-    // 24 fps, the Studio's default; a frame that is not ready is held, not skipped.
-    play_.setInterval(1000 / 24);
-    QObject::connect(&play_, &QTimer::timeout, this, [this] {
-        if (!waiting_) step_to(current_ + 1);
-    }, Qt::UniqueConnection);
     play_.start();
 }
 
