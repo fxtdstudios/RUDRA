@@ -16,6 +16,26 @@
 >
 > | **E. Corpus programme (v4b)** | 0 EV re-ingest on `G:\datasets`, gate 3b, the retrain that tests "corpus content was the constraint" | **corpus built and gated; training not started.** Three runs made between 18 and 22 Sep were on the wrong corpus and are quarantined |
 >
+> **25 Sep 2026, the master: highlight grain (line F).** A tester found a
+> colour-neutral grain in recovered highlights, peaking where the source sits
+> at 0.95-0.98. It is the analytic baseline, not the model: one 8-bit code is
+> 0.8 nits at mid-grey through `inverse_aces_approx` and 41 to 161 nits between
+> 0.95 and 0.98, so the source's own grain comes out as tens of nits once the
+> reconstruction takes over from the anchor. New stage after the chroma carry,
+> `rudra/grain.py` `settle_highlight_grain`: luminance smoothed where the
+> reconstruction took over and the source is flat (spread under one code;
+> none from three), in linear light, one gain per pixel. Measured on a sunset
+> plate, flat areas, by source luma (`tools/measure_highlight_grain.py`): 0.9-0.95
+> 9.4 -> 0.7 nits, 0.95-0.98 17.0 -> 1.8, 0.98-1.0 27.7 -> 7.2, against the
+> source's own 0.9 / 0.7 / 0.3; frame mean and peak unchanged; textured areas
+> unchanged. Default on in the Studio's master and `rudra-native master`
+> (`settle_grain`), ported with its goldens. CI the same day: every build passes
+> on the three OSes; the core tests' Windows (a file still open when removed,
+> backslash paths in a refusal message, tile weights one ulp from the MSVC
+> wheel's linspace) and macOS (Apple clang fusing multiply-adds, now off
+> project-wide; Homebrew ffmpeg without zscale, now ffmpeg-full) failures are
+> fixed, and each failing test now publishes its own annotation.
+
 > **25 Sep 2026, native app: macOS and the beta (line F).** On a MacBook Pro
 > (Apple silicon, macOS 27) the app builds with `scripts/native_app.sh` and
 > its 36 Qt tests pass, the scripted workflow and a movie's HDR10 export
