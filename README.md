@@ -189,6 +189,12 @@ and starting frame. A sequence named `shot` starting at 1001 writes
 loaded frame order and one frozen copy of the current grade.
 
 - Master keeps the source resolution and does not trigger a browser download.
+- Flat highlights are settled: above the anchor's knee the expansion curve is
+  steep enough to turn the source's one-code grain into tens of nits, so where
+  the source is flat the master's luminance is smoothed (hue, edges and glints
+  untouched). On a sunset plate, flat sky at source luma 0.95 to 0.98 went from
+  17.0 to 1.8 nits of grain; `tools/measure_highlight_grain.py` measures any
+  plate. `settle_grain: false` in the master parameters turns it off.
 - Existing outputs stop the render before processing; files are never overwritten.
 - Keep the Studio and the browser open until the render completes.
 - If a sequence stops, completed frames remain on disk. Choose the remaining
@@ -427,8 +433,8 @@ Still to do:
   EDR), GPU composite and display pass on Metal, a clean exit (the fix for an
   abort at exit is in, not yet run there)
 - [ ] Model checks on the full bench set
-- [ ] CI green on Windows, macOS and Linux (the goldens check is fixed; the
-  probe builds are next, their errors now published as annotations)
+- [ ] CI green on Windows, macOS and Linux: every build passes on all three; the
+  core tests' fixes for Windows (3) and macOS (13) are in, waiting on a run
 - [ ] The macOS beta DMG built and opened on a Mac, and the Windows installer
   on a clean PC, then the `v0.9.0-beta.1` pre-release published
 - [ ] Performance budgets recorded on every GPU backend

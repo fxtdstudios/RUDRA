@@ -122,10 +122,13 @@ TEST(VideoEncode, PublishingNeverReplaces) {
     auto r = publish_video(work / "staged.mp4", work / "staged.json", work / "out.mp4", work / "out.mp4.json");
     ASSERT_FALSE(r.ok());
     EXPECT_EQ(r.error().message, "Output appeared during processing; refusing overwrite");
-    std::ifstream in(work / "out.mp4");
-    std::string s;
-    in >> s;
-    EXPECT_EQ(s, "old");
+    {
+        // Closed before the remove below: Windows refuses to delete an open file.
+        std::ifstream in(work / "out.mp4");
+        std::string s;
+        in >> s;
+        EXPECT_EQ(s, "old");
+    }
     fs::remove(work / "out.mp4");
     { std::ofstream(work / "out.mp4.json") << "{}"; }
     EXPECT_FALSE(publish_video(work / "staged.mp4", work / "staged.json", work / "out.mp4", work / "out.mp4.json").ok());

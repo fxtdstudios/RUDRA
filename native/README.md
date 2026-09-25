@@ -118,10 +118,10 @@ rudra-native video dist/models/sdr2hdr_shadow_v1 clip.mp4 --output master_hdr10.
 ```
 
 `master` is the Studio's Master button without the Studio: decode, fields,
-composite, Region EV, anchor, chroma carry, measure, ACES (or linear) EXR and
-its sidecar. `--params` takes the Studio's master parameters as JSON
-(`recovery_mode`, `strength`, `preserve_outside`, `regions`, `anchor`,
-`carry_chroma`, `source_space`, `container`, ...). Needs `RUDRA_WITH_OPENCV`.
+composite, Region EV, anchor, chroma carry, highlight grain, measure, ACES (or
+linear) EXR and its sidecar. `--params` takes the Studio's master parameters as
+JSON (`recovery_mode`, `strength`, `preserve_outside`, `regions`, `anchor`,
+`carry_chroma`, `settle_grain`, `source_space`, `container`, ...). Needs `RUDRA_WITH_OPENCV`.
 
 `video` is `rudra video` (rudra/video.py) without Python: the same options,
 checks, report and QC, with ffmpeg and ffprobe on PATH (libx265, prores_ks and

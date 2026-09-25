@@ -35,6 +35,7 @@ struct MasterRequest {
     double anchor_knee = 0.9;
     bool carry_chroma = true;
     double chroma_knee = 0.99;
+    bool settle_grain = true;               // at anchor_knee
     std::string source_space = "rec709";
     std::string container = "aces";         // aces or linear
 };

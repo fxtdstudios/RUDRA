@@ -7,6 +7,11 @@ function(rudra_warnings target)
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Wshadow -Wconversion
                                              -Wno-sign-conversion)
+    # No silent fused multiply-adds. The port is held to the Python's and the
+    # browser's numbers, which round every multiply; Apple clang fuses a*b + c
+    # by default on arm64 and moved the viewer's probe readouts in the last
+    # bit (macOS CI, 25 Sep 2026). Where a port wants an FMA it calls std::fma.
+    target_compile_options(${target} PRIVATE -ffp-contract=off)
   endif()
 endfunction()
 

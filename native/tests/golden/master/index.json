@@ -10,8 +10,8 @@
       },
       "exr": "case_default.exr",
       "sidecar": "case_default.json",
-      "maxcll": 2022,
-      "maxfall": 230
+      "maxcll": 2824,
+      "maxfall": 231
     },
     {
       "name": "graded_linear",
@@ -53,6 +53,7 @@
         "checkpoint": "sdr2hdr_shadow_v1.pt",
         "anchor": false,
         "carry_chroma": false,
+        "settle_grain": false,
         "recovery_mode": "highlights",
         "strength": 1.4,
         "preserve_outside": false

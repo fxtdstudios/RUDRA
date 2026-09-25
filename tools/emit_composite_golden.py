@@ -11,6 +11,7 @@ from the functions they port:
                 ui/server.py _render_master applies)
     anchor      rudra.anchor.anchor_to_sdr
     chroma      rudra.chroma.carry_source_chroma
+    grain       rudra.grain.settle_highlight_grain
     gamut       rudra.delivery.colorspace.rgb_to_rgb_matrix / convert
     master      the stage sequence of ui/server.py _render_master
     measure     rudra.delivery.metadata.analyze_frame / maxcll_maxfall and
@@ -38,6 +39,7 @@ if str(REPO) not in sys.path:
 
 from rudra.anchor import anchor_to_sdr  # noqa: E402
 from rudra.chroma import carry_source_chroma  # noqa: E402
+from rudra.grain import settle_highlight_grain  # noqa: E402
 from rudra.delivery import metadata as dm  # noqa: E402
 from rudra.delivery.colorspace import convert, rgb_to_rgb_matrix  # noqa: E402
 from rudra.delivery.controls import apply_region_ev  # noqa: E402
@@ -173,24 +175,27 @@ def main() -> int:
         graded = np.clip(apply_region_ev(nits, GRADED_BANDS, 1.0), 0.0, ceiling)
         anchored = anchor_to_sdr(graded, sdr64, knee=0.9)
         carried = carry_source_chroma(anchored, sdr64, knee=0.99)
-        scene_linear = (carried / DIFFUSE_WHITE_NITS).astype(np.float32)
+        settled = settle_highlight_grain(carried, sdr64, knee=0.9)
+        scene_linear = (settled / DIFFUSE_WHITE_NITS).astype(np.float32)
         aces = convert(scene_linear, "rec709", "ap0")
         stages.update({
             "anchored": out.f64(f"{name}_anchored", chw(anchored)),
             "carried": out.f64(f"{name}_carried", chw(carried)),
+            "settled": out.f64(f"{name}_settled", chw(settled)),
             "scene_linear": out.f32(f"{name}_scene_linear", chw(scene_linear)),
             "aces_ap0": out.f32(f"{name}_aces_ap0", chw(aces)),
         })
         # Each stage alone on its predecessor's golden, too.
+        stages["grain_pixels"] = int((np.abs(settled - carried).max(-1) > 1e-9).sum())
         stages["anchor_band_pixels"] = int(
             ((sdr64.max(-1) > 0.86) & (sdr64.max(-1) < 0.94)).sum())
         block["master"] = {"bands": GRADED_BANDS, "region_softness": 1.0,
                            "anchor_knee": 0.9, "chroma_knee": 0.99, "source_space": "rec709",
                            "stages": stages}
 
-        stats = dm.analyze_frame(carried, index=0)
+        stats = dm.analyze_frame(settled, index=0)
         maxcll, maxfall = dm.maxcll_maxfall([stats])
-        block["analyze"] = {"input": "carried", "stats": stats_json(stats),
+        block["analyze"] = {"input": "settled", "stats": stats_json(stats),
                             "maxcll": maxcll, "maxfall": maxfall}
         hdr0 = network[("all", 1.0, True)]
         base = np.load(OUT / block["baseline"]["file"])

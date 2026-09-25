@@ -61,6 +61,7 @@ Result<MasterRequest> master_request_from_json(const std::string& text) {
         r.anchor_knee = j.value("anchor_knee", 0.9);
         r.carry_chroma = j.value("carry_chroma", true);
         r.chroma_knee = j.value("chroma_knee", 0.99);
+        r.settle_grain = j.value("settle_grain", true);
         r.source_space = j.value("source_space", std::string("rec709"));
         r.container = j.value("container", std::string("aces"));
         if (j.contains("regions"))
@@ -78,7 +79,8 @@ std::string master_request_json(const MasterRequest& q) {
                      {"recovery_mode", q.recovery_mode}, {"strength", q.strength},
                      {"region_softness_stops", q.region_softness_stops}, {"anchor", q.anchor},
                      {"anchor_knee", q.anchor_knee},     {"carry_chroma", q.carry_chroma},
-                     {"chroma_knee", q.chroma_knee},     {"source_space", q.source_space},
+                     {"chroma_knee", q.chroma_knee},     {"settle_grain", q.settle_grain},
+                     {"source_space", q.source_space},
                      {"container", q.container}};
     auto regions = nlohmann::json::array();
     for (const auto& b : q.regions)
@@ -113,6 +115,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
     apply_region_ev(nits, bands, q.region_softness_stops, double(model.max_hdr) * 10000.0);
     if (q.anchor) anchor_to_sdr(nits, sdr, q.anchor_knee);
     if (q.carry_chroma) carry_source_chroma(nits, sdr, q.chroma_knee);
+    if (q.settle_grain) settle_highlight_grain(nits, sdr, q.anchor_knee);
     const PlanarBuffer linear = scene_linear(nits);
 
     const FrameStats stats = analyze_frame(nits, 0);
@@ -136,6 +139,7 @@ Result<MasterResult> write_master(const SdrImage& sdr, int source_bits, const Fi
         {"rudra:tiled", "False"},
         {"rudra:anchored", q.anchor ? "True" : "False"},
         {"rudra:chromaCarried", q.carry_chroma ? "True" : "False"},
+        {"rudra:grainSettled", q.settle_grain ? "True" : "False"},
         {"rudra:sourceSpace", q.source_space},
     };
     const bool aces = q.container == "aces";
