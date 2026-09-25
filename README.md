@@ -14,6 +14,7 @@
   <img src="https://img.shields.io/badge/torch-2.x-ee4c2c">
   <img src="https://img.shields.io/badge/weights-noncommercial-orange">
   <img src="https://github.com/fxtdstudios/RUDRA/actions/workflows/tests.yml/badge.svg">
+  <a href="https://github.com/fxtdstudios/RUDRA/releases"><img alt="Desktop beta" src="https://img.shields.io/github/v/release/fxtdstudios/RUDRA?include_prereleases&label=desktop%20beta"></a>
   <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Windows build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20windows-2022&label=Windows&logo=windows"></a>
   <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="macOS build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20macos-14&label=macOS&logo=apple"></a>
   <a href="https://github.com/fxtdstudios/RUDRA/actions/workflows/native.yml?query=branch%3Anative"><img alt="Linux build" src="https://img.shields.io/github/check-runs/fxtdstudios/RUDRA/native?nameFilter=core%2C%20ubuntu-24.04&label=Linux&logo=linux"></a>
@@ -106,7 +107,14 @@ Full tables, the failure analysis, and how to recompute every number:
 
 ## Install
 
-Requires Python 3.10 to 3.13. CUDA is optional: everything runs on CPU, slower.
+**Desktop beta (no Python).** For Windows x64, download
+`RUDRA-0.9.0-beta.1-windows-x64-setup.exe` from
+[Releases](https://github.com/fxtdstudios/RUDRA/releases): it installs for your
+user (no administrator prompt), with the model and the Visual C++ runtime
+included; the portable ZIP beside it runs from any folder. The macOS DMG
+follows. Details: [`docs/BETA.md`](docs/BETA.md).
+
+**Python package.** Requires Python 3.10 to 3.13. CUDA is optional: everything runs on CPU, slower.
 FFmpeg is needed for video, not for stills.
 
 ```bash
@@ -409,6 +417,10 @@ Done:
   (setup.exe) and a portable ZIP with Qt, ONNX Runtime and DirectML beside the
   exe; a `v*` tag builds them on
   GitHub and publishes a pre-release ([`docs/BETA.md`](docs/BETA.md))
+- [x] Windows beta built on a Windows PC: `RUDRA-0.9.0-beta.1-windows-x64-setup.exe`
+  (Inno Setup, per-user, Start menu, uninstaller) and the portable ZIP, with the
+  MSVC runtime from Visual Studio's redistributable folder; the package starts
+  and reads its model from where it is
 
 Still to do:
 - [ ] macOS: inference on MPS and Core ML, HDR output on an XDR display (Metal
@@ -417,8 +429,8 @@ Still to do:
 - [ ] Model checks on the full bench set
 - [ ] CI green on Windows, macOS and Linux (the goldens check is fixed; the
   probe builds are next, their errors now published as annotations)
-- [ ] The beta packages built and opened on a Mac and a Windows PC, then the
-  `v0.9.0-beta.1` tag
+- [ ] The macOS beta DMG built and opened on a Mac, and the Windows installer
+  on a clean PC, then the `v0.9.0-beta.1` pre-release published
 - [ ] Performance budgets recorded on every GPU backend
 - [ ] The workflow and video review on Windows with no Python, and by hand on an
   HDR display
