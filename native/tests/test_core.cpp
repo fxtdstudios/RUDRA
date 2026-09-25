@@ -85,7 +85,16 @@ TEST(Curve, CorrectionMatchesPython) {
     expect_close(got, want.data, 0.0, 1e-6, "curve correction");
 }
 
-TEST(Tiling, StartsAndWeightsMatchPythonBitForBit) {
+// The starts exactly; the weights to within one float32 ulp. The port is
+// ATen's linspace as one fused multiply-add per element, and matches the Linux
+// and macOS wheels bit for bit. On Windows CI (25 Sep 2026) it did not: that
+// wheel is built by MSVC, which does not contract a multiply and an add into
+// an FMA, so its last bit can differ. One ulp of a tile weight is 6e-8 of a
+// pixel's blend.
+TEST(Tiling, StartsAndWeightsMatchPython) {
+    const auto within_ulp = [](float got, float want) {
+        return got == want || std::nextafter(want, got) == got;
+    };
     const auto idx = index_json();
     for (const auto& c : idx.at("tiles")) {
         const int H = c.at("full_h"), W = c.at("full_w"), T = c.at("tile"), O = c.at("overlap");
@@ -96,12 +105,15 @@ TEST(Tiling, StartsAndWeightsMatchPythonBitForBit) {
             const PlanarBuffer got = tile_weight(t, O, H, W);
             const auto row = npy(w.at("row").at("file").get<std::string>());
             const auto col = npy(w.at("col").at("file").get<std::string>());
-            for (int x = 0; x < t.w; ++x) ASSERT_EQ(got.at(0, t.h / 2, x), row.data[x]) << "row x=" << x;
-            for (int y = 0; y < t.h; ++y) ASSERT_EQ(got.at(0, y, t.w / 2), col.data[y]) << "col y=" << y;
+            for (int x = 0; x < t.w; ++x)
+                ASSERT_TRUE(within_ulp(got.at(0, t.h / 2, x), row.data[x])) << "row x=" << x << ": " << got.at(0, t.h / 2, x) << " vs " << row.data[x];
+            for (int y = 0; y < t.h; ++y)
+                ASSERT_TRUE(within_ulp(got.at(0, y, t.w / 2), col.data[y])) << "col y=" << y << ": " << got.at(0, y, t.w / 2) << " vs " << col.data[y];
             if (w.contains("full")) {
                 const auto full = npy(w.at("full").at("file").get<std::string>());
                 ASSERT_EQ(got.span().size(), full.data.size());
-                for (std::size_t i = 0; i < full.data.size(); ++i) ASSERT_EQ(got.span()[i], full.data[i]);
+                for (std::size_t i = 0; i < full.data.size(); ++i)
+                    ASSERT_TRUE(within_ulp(got.span()[i], full.data[i])) << "i=" << i;
             }
         }
     }

@@ -2,6 +2,7 @@
 // the same state file, byte for byte, at every step, and a Python state
 // resumed here to the state the Python itself resumes it to.
 
+#include <algorithm>
 #include <gtest/gtest.h>
 
 #include <fstream>
@@ -95,9 +96,13 @@ TEST(Queue, RefusesWhatThePythonRefuses) {
             continue;
         }
         ASSERT_FALSE(r);
+        // The golden is written with forward slashes on every OS (see
+        // tools/emit_queue_golden.py), so the message is compared the same way.
         std::string want = c.at("message");
-        if (auto p = want.find("<root>"); p != std::string::npos) want.replace(p, 6, d.string());
-        EXPECT_EQ(r.error().message, want);
+        if (auto p = want.find("<root>"); p != std::string::npos) want.replace(p, 6, d.generic_string());
+        std::string got = r.error().message;
+        std::replace(got.begin(), got.end(), '\\', '/');
+        EXPECT_EQ(got, want);
     }
 }
 
