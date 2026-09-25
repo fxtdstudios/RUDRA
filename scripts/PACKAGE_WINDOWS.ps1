@@ -10,7 +10,10 @@
       onnxruntime.dll, DirectML.dll, opencv_world*.dll,
       models\   the package(s) from dist\models
       LICENSE, NOTICE, LICENSE-weights, "Read me first.md"
-  and dist\beta\RUDRA-<version>-windows-x64.zip with its SHA-256.
+  dist\beta\RUDRA-<version>-windows-x64.zip, and the installer
+  dist\beta\RUDRA-<version>-windows-x64-setup.exe (Inno Setup 6, installed for
+  this user from jrsoftware.org when missing; -NoInstaller skips it), each with
+  its SHA-256. The MSVC runtime is copied from Visual Studio's VC\Redist folder.
 
   Needs what NATIVE_PHASE3_EXIT.ps1 needs: Visual Studio 2022 or 2026 (or the
   Build Tools) with the C++ tools, a Python for aqtinstall, and a model package
@@ -22,6 +25,7 @@
   .\scripts\PACKAGE_WINDOWS.ps1
   .\scripts\PACKAGE_WINDOWS.ps1 -Tests        # also build and run the app's Qt tests
   .\scripts\PACKAGE_WINDOWS.ps1 -SkipBuild    # package the last build
+  .\scripts\PACKAGE_WINDOWS.ps1 -NoInstaller  # the ZIP alone, without Inno Setup
 #>
 [CmdletBinding()]
 param(
@@ -29,8 +33,10 @@ param(
     [string]$QtVersion = "6.8.3",
     [string]$OrtVersion = "1.22.0",
     [string]$OpenCvVersion = "4.10.0",
+    [string]$InnoSetup = "",
     [switch]$SkipBuild,
     [switch]$Tests,
+    [switch]$NoInstaller,
     [switch]$InstallBuildTools
 )
 
@@ -157,9 +163,27 @@ if (Test-Path $Out) { Remove-Item $Out -Recurse -Force }
 if (Test-Path $Zip) { Remove-Item $Zip -Force }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 Copy-Item $App, $Cli $Out
-# Qt, its plugins and the MSVC runtime beside the executables.
-& (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations --compiler-runtime (Join-Path $Out "RUDRA.exe")
+# Qt and its plugins beside the executables.
+& (Join-Path $QtRoot "bin\windeployqt.exe") --release --no-translations (Join-Path $Out "RUDRA.exe")
 if ($LASTEXITCODE -ne 0) { Fail "windeployqt" }
+# The MSVC runtime from Visual Studio's own redistributable folder, so the
+# package runs on a PC that never installed it (windeployqt --compiler-runtime
+# needs VCINSTALLDIR, which only a Developer prompt sets).
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$vsPath = if (Test-Path $vswhere) {
+    & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+}
+if (-not $vsPath) { Fail "Visual Studio with the C++ tools not found (the MSVC runtime comes from it)" }
+$crt = Get-ChildItem (Join-Path $vsPath "VC\Redist\MSVC") -Directory -ErrorAction SilentlyContinue |
+       Where-Object { $_.Name -match "^\d+\." } | Sort-Object { [version]$_.Name } -Descending |
+       ForEach-Object { Get-ChildItem (Join-Path $_.FullName "x64") -Directory -Filter "Microsoft.VC14*.CRT" -ErrorAction SilentlyContinue } |
+       Select-Object -First 1
+if (-not $crt) { Fail "no VC\Redist\MSVC\<version>\x64\Microsoft.VC14*.CRT under $vsPath" }
+Copy-Item (Join-Path $crt.FullName "*.dll") $Out -Force
+foreach ($d in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+    if (-not (Test-Path (Join-Path $Out $d))) { Fail "$d missing from the package" }
+}
+Write-Host "MSVC runtime: $($crt.FullName)"
 # ONNX Runtime and DirectML beside the exe: Windows' own older onnxruntime.dll
 # in System32 would otherwise be loaded first.
 Copy-Item "$OrtRoot\lib\*.dll", $DmlDll.FullName, $CvDll.FullName $Out -Force
@@ -184,4 +208,48 @@ Compress-Archive -Path $Out -DestinationPath $Zip -CompressionLevel Optimal
 $hash = (Get-FileHash $Zip -Algorithm SHA256).Hash.ToLower()
 "$hash  $Name.zip" | Set-Content -Encoding ascii "$Zip.sha256"
 Write-Host "$hash  $Name.zip"
+
+# ---------------------------------------------------------------------------
+# The installer (Inno Setup 6): RUDRA-<version>-windows-x64-setup.exe, per-user
+# by default, Start menu entry, uninstaller, the licence shown first.
+if (-not $NoInstaller) {
+    Say "Installer (Inno Setup)"
+    $iscc = $null
+    foreach ($c in @($InnoSetup, "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+                     "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")) {
+        if ($c -and (Test-Path $c)) { $iscc = $c; break }
+    }
+    if (-not $iscc) { $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source }
+    if (-not $iscc) {
+        # Not installed: the official installer, silently and for this user only
+        # (no administrator prompt), into %LOCALAPPDATA%\Programs\Inno Setup 6.
+        Write-Host "Inno Setup 6 not found; installing it for this user from jrsoftware.org"
+        # The GitHub release asset: jrsoftware.org/download.php answers with an
+        # HTML page, not the installer.
+        $isExe = Join-Path $env:TEMP "innosetup-6.7.3.exe"
+        Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" `
+            -OutFile $isExe -UseBasicParsing
+        $head = [System.IO.File]::ReadAllBytes($isExe)[0..1]
+        if ((Get-Item $isExe).Length -lt 1MB -or $head[0] -ne 0x4D -or $head[1] -ne 0x5A) {
+            Fail "the Inno Setup download is not an installer ($isExe)"
+        }
+        Unblock-File $isExe
+        $p = Start-Process -FilePath $isExe -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER") -Wait -PassThru
+        Remove-Item $isExe -ErrorAction SilentlyContinue
+        $c = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+        if ($p.ExitCode -eq 0 -and (Test-Path $c)) { $iscc = $c }
+    }
+    if (-not $iscc) {
+        Fail "Inno Setup 6 not found and could not be installed (https://jrsoftware.org/isdl.php, or -NoInstaller for the ZIP alone)"
+    }
+    $iss = Join-Path $Repo "native\app\windows\rudra.iss"
+    & $iscc /Q "/DAppVersion=$Version" "/DSourceDir=$Out" "/DOutputDir=$(Split-Path $Out)" $iss
+    if ($LASTEXITCODE -ne 0) { Fail "ISCC" }
+    $Setup = Join-Path (Split-Path $Out) "$Name-setup.exe"
+    if (-not (Test-Path $Setup)) { Fail "no installer at $Setup" }
+    $sh = (Get-FileHash $Setup -Algorithm SHA256).Hash.ToLower()
+    "$sh  $Name-setup.exe" | Set-Content -Encoding ascii "$Setup.sha256"
+    Write-Host "$sh  $Name-setup.exe"
+}
 Write-Host "`nBuilt: $Zip"
+if (-not $NoInstaller) { Write-Host "       $Setup" }

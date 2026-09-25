@@ -85,12 +85,14 @@ The beta packages (0.9.0-beta.1; `RUDRA_RELEASE` sets the label):
 
 ```
 scripts/package_mac.sh                # Apple silicon: dist/beta/RUDRA-<version>-macos-arm64.dmg
-.\scripts\PACKAGE_WINDOWS.ps1         # Windows x64:   dist\beta\RUDRA-<version>-windows-x64.zip
+.\scripts\PACKAGE_WINDOWS.ps1         # Windows x64:   dist\beta\RUDRA-<version>-windows-x64-setup.exe and .zip
 ```
 
 Each needs a model package in `dist/models`, bundles it with Qt (macdeployqt,
 windeployqt), ONNX Runtime (Core ML; DirectML) and `rudra-native`, checks the
-result starts from where it is, and writes its SHA-256. The macOS app is signed
+result starts from where it is, and writes its SHA-256. The Windows installer
+is Inno Setup 6 (`native/app/windows/rudra.iss`, `winget install
+JRSoftware.InnoSetup`): per-user by default, Start menu, uninstaller. The macOS app is signed
 ad hoc (no Developer ID yet). ffmpeg is not bundled. Pushing a `v*` tag runs
 `.github/workflows/release.yml`, which builds both on GitHub's runners and
 attaches them to a pre-release with `docs/BETA.md` as its notes.

@@ -84,7 +84,7 @@ private:
         Priority priority;
         Generation::value_type generation;
     };
-    void run(std::stop_token stop);
+    void run();
     std::shared_ptr<ReadyFrame> lookup(int index);   // under mu_: moves it to the front of the LRU
     void insert(std::shared_ptr<ReadyFrame> f);       // under mu_
     void deliver(const ReadyFrame& f);
@@ -95,7 +95,8 @@ private:
     Generation generation_;
 
     mutable std::mutex mu_;
-    std::condition_variable_any cv_;
+    std::condition_variable cv_;
+    bool stop_ = false;   // under mu_: the destructor asks the worker to return
     std::deque<Job> queue_;
     int count_ = 0;
     int wanted_ = -1;   // the frame the current generation asked for
@@ -104,7 +105,9 @@ private:
     std::unordered_map<int, std::pair<std::shared_ptr<ReadyFrame>, std::list<int>::iterator>> cache_;
     std::function<void(const ReadyFrame&)> ready_cb_;
     EngineStats stats_;
-    std::jthread worker_;
+    // A std::thread and stop_, not std::jthread: Apple's libc++ in Xcode 15 has
+    // no jthread or stop_token. Last, so it starts after everything it reads.
+    std::thread worker_;
 };
 
 }  // namespace rudra
