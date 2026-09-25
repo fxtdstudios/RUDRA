@@ -305,10 +305,13 @@ python training\train_sdr2hdr.py --mode image --manifest G:\corpus_v4c\studio\sd
 ```
 
 Then three benches (`bench\cp_oog`, `bench\cp_mix`, `bench\cp_aces`), every
-model, and `training\paired_gate.py` into `reports\logs\cp_results.json`.
+model, then `training\cp7_verdicts.py` (the gate table; re-runnable from the
+CSVs with no GPU) into `reports\logs\cp_results.json`. Scored 24 Sep: every gate
+that ran fails; see STATUS. Before reading a bench against the fp32 baseline,
+check precision: `scripts\RUN_BENCH_FP32_CHECK.bat`.
 
 **N3 gate:** `oog/v4c vs baseline` both CIs above zero. **Studio gate (N7):**
 v4c_studio within 0.3 dB / 0.03 JOD of v4c on `oog` and `mix`. **Clean
-regression:** `aces/v4c` against `aces/v4b`, reported; see the proxy note in
+regression:** `aces/v4c` against `aces/v4b`, within 0.1 dB / 0.02 JOD; see the proxy note in
 STATUS before reading it.
 
