@@ -67,7 +67,8 @@ FIXTURES = {
 CASES = [
     ("default", "still_png8.png", {}),
     ("graded_linear", "still_png16.png", {"regions": GRADED, "region_softness_stops": 0.5, "container": "linear"}),
-    ("plain_highlights", "still_q95.jpg", {"anchor": False, "carry_chroma": False, "recovery_mode": "highlights",
+    ("plain_highlights", "still_q95.jpg", {"anchor": False, "carry_chroma": False, "settle_grain": False,
+                                           "recovery_mode": "highlights",
                                            "strength": 1.4, "preserve_outside": False}),
 ]
 

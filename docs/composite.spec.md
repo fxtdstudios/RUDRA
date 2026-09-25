@@ -12,7 +12,7 @@ to the same goldens:
 
 | Implementation | Precision | Where | Role |
 |---|---|---|---|
-| `SDR2HDRNet.forward` tail + `rudra/delivery`, `rudra/anchor.py`, `rudra/chroma.py` | fp32 / fp64 | Python | the oracle (P4) |
+| `SDR2HDRNet.forward` tail + `rudra/delivery`, `rudra/anchor.py`, `rudra/chroma.py`, `rudra/grain.py` | fp32 / fp64 | Python | the oracle (P4) |
 | `native/core` `composite.cpp`, `master.cpp`, `measure.cpp` | fp32 / fp64 | C++ | CPU path, reference for the shader |
 | `ui/compositor.js` (GLSL ES), `native/render/shaders/composite.frag` (GLSL 440, through QRhi) | fp16/fp32 | GPU | the live viewer |
 
@@ -99,8 +99,20 @@ What `ui/server.py _render_master` writes, in this order:
      normalised in double), replicate borders.
    * `n_k = carried_k (1 - ramp) + n_k ramp`, where `1 - ramp` is float32;
      non-finite becomes 0.
-5. Scene linear: `(n / 203)` cast to float32.
-6. Container: ACES 2065-1 converts from the source primaries (default
+5. Settle the highlight grain (default on, at the anchor's knee 0.9 and
+   softness 0.04), rudra/grain.py:
+   * `ramp` as in the anchor on `code = max_k s_k` (float64).
+   * `flat`: for each of `max_k s_k` and `sum_k s_k w'_k`, the spread
+     `sqrt(max(box(x^2) - box(x)^2, 0))` over a 7x7 box (OpenCV boxFilter,
+     BORDER_REFLECT); the larger of the two, in codes (`* 255`), through
+     `smoothstep((3 - spread) / 2)`: 1 under one code, 0 from three.
+   * `Y = max(sum_k n_k w'_k, 0)`; `settled = G(flat Y) / G(flat)` where
+     `G(flat) > 1e-6`, else `Y`; `G` is a sigma-2 Gaussian (OpenCV's float64
+     kernel, 17 taps, BORDER_REFLECT).
+   * `Y' = Y + ramp flat (settled - Y)`, `n_k *= Y' / Y` where `Y > 1e-6`
+     (else 1); non-finite becomes 0. One scalar per pixel: hue is kept.
+6. Scene linear: `(n / 203)` cast to float32.
+7. Container: ACES 2065-1 converts from the source primaries (default
    Rec.709; the network never changes primaries) to AP0 with
    `M = inv(NPM_dst) * Bradford(white_src -> white_dst) * NPM_src`, matrices in
    float64 from the chromaticities, pixels widened to float64 for the product
@@ -128,6 +140,7 @@ over all channel values, share of values above 203 x (1 + 1e-6) and above
 | C++ composite vs `predict_image` | rtol 2e-4, atol 1e-6 (network units) | the golden is fed the fields `predict_fields` returned, which agree with the full forward to ~3e-6 before `expm1` |
 | Region EV, anchor | rtol 1e-12 / 1e-10 | same operations in double |
 | Chroma carry | rtol 1e-5, atol 1e-6 nits | OpenCV sums the float32 blur in a SIMD order |
+| Highlight grain | rtol 1e-9, atol 1e-9 nits | OpenCV's box and Gaussian filters sum in their own order |
 | Scene linear | exact | one division and a cast |
 | AP0 | rtol 1e-7 | a 3x3 in double, then float32 |
 | Matrices | 1e-13 absolute | inverse by cofactors vs LAPACK |

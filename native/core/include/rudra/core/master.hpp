@@ -36,6 +36,8 @@ public:
     const double* plane(int c) const noexcept { return data_.data() + c * plane_size(); }
     std::span<double> span() noexcept { return data_; }
     std::span<const double> span() const noexcept { return data_; }
+    double& at(int c, int y, int x) noexcept { return plane(c)[static_cast<std::size_t>(y) * w_ + x]; }
+    double at(int c, int y, int x) const noexcept { return plane(c)[static_cast<std::size_t>(y) * w_ + x]; }
 
 private:
     int h_ = 0, w_ = 0;
@@ -44,6 +46,7 @@ private:
 
 inline constexpr double kAnchorKnee = 0.9, kAnchorSoftness = 0.04;
 inline constexpr double kChromaKnee = 0.99, kChromaSoftness = 0.01, kChromaMaskSigma = 2.0;
+inline constexpr double kGrainSigma = 2.0;
 
 enum class MasterContainer : std::uint8_t { Aces2065, SceneLinear };
 
@@ -54,6 +57,7 @@ struct MasterParams {
     double anchor_knee = kAnchorKnee;
     bool carry_chroma = true;
     double chroma_knee = kChromaKnee;
+    bool settle_grain = true;              // at the anchor's knee
     Primaries source_primaries = Primaries::Rec709;
     MasterContainer container = MasterContainer::Aces2065;
 };
@@ -75,6 +79,19 @@ std::vector<float> gaussian_blur_replicate(std::span<const float> plane, int hei
 // rudra.chroma.carry_source_chroma.
 void carry_source_chroma(NitsFrame& nits, const SdrImage& sdr, double knee = kChromaKnee,
                          double softness = kChromaSoftness, double mask_sigma = kChromaMaskSigma);
+
+// cv2.GaussianBlur(src, (0,0), sigma, BORDER_REFLECT) for one float64 plane:
+// OpenCV's kernel size and its float64 kernel.
+std::vector<double> gaussian_blur_reflect(std::span<const double> plane, int height, int width, double sigma);
+
+// rudra.grain.source_flatness: 1 where the source is flat to within its
+// grain, 0 where it has structure, on the max channel and the luma.
+std::vector<double> source_flatness(const SdrImage& sdr);
+
+// rudra.grain.settle_highlight_grain: luminance only, above the anchor's knee,
+// where the source is flat.
+void settle_highlight_grain(NitsFrame& nits, const SdrImage& sdr, double knee = kAnchorKnee,
+                            double softness = kAnchorSoftness, double sigma = kGrainSigma);
 
 // (nits / 203) as float32.
 PlanarBuffer scene_linear(const NitsFrame& nits);

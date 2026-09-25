@@ -768,6 +768,16 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         nits = carry_source_chroma(nits, sdr.astype(np.float64),
                                    knee=float(params.get("chroma_knee", 0.99)))
 
+    # Then the grain. Above the anchor's knee the reconstruction stands on a
+    # curve whose slope near white turns the source's one-code grain into tens
+    # of nits: on a sunset plate, flat sky at max channel 0.97-0.99 measured
+    # 18.0 nits of noise against the source's 1.1, and 1.6 once settled; edges
+    # and glints were left as they were (rudra/grain.py). Luminance only.
+    if bool(params.get("settle_grain", True)):
+        from rudra.grain import settle_highlight_grain
+        nits = settle_highlight_grain(nits, sdr.astype(np.float64),
+                                      knee=float(params.get("anchor_knee", 0.9)))
+
     scene_linear = (nits / DIFFUSE_WHITE_NITS).astype(np.float32)
 
     # The network never changes primaries: an sRGB plate comes out in Rec.709
@@ -792,6 +802,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "rudra:tiled": str(bool(tile_size)),
         "rudra:anchored": str(bool(params.get("anchor", True))),
         "rudra:chromaCarried": str(bool(params.get("carry_chroma", True))),
+        "rudra:grainSettled": str(bool(params.get("settle_grain", True))),
         "rudra:sourceSpace": source_space,
     }
     if container == "aces":

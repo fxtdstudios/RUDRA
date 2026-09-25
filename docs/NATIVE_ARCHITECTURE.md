@@ -608,7 +608,8 @@ is ticked in the same commit.
 
 Already ported in Phase 0: baseline, tiling, composite, Region EV, anchor,
 chroma carry, colour-space matrices, `analyze_frame`, MaxCLL/MaxFALL, Studio
-`measure`.
+`measure`. Added 25 Sep 2026: the highlight grain stage (`rudra/grain.py`,
+`settle_highlight_grain`), after the chroma carry.
 
 | # | Deliverable | Oracle | Done when | Days | Status |
 |---|---|---|---|---|---|

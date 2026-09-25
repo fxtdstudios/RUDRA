@@ -171,10 +171,56 @@ TEST_P(PerFrame, MasterStages) {
     expect_close(nits.span(), f64(st.at("carried")).data, 1e-5, 1e-6, "carried");
 
     nits = nits_frame(f64(st.at("carried")));
+    settle_highlight_grain(nits, sdr, m.at("anchor_knee").get<double>());
+    // OpenCV's box and Gaussian filters sum in their own order; the port in
+    // plain double loops. What moves is the flatness weight, by ~1e-12.
+    expect_close(nits.span(), f64(st.at("settled")).data, 1e-9, 1e-9, "settled");
+
+    nits = nits_frame(f64(st.at("settled")));
     const PlanarBuffer lin = scene_linear(nits);
     expect_close(lin.span(), f32(st.at("scene_linear")).data, 0.0, 0.0, "scene_linear");
     const PlanarBuffer ap0 = convert_primaries(lin, Primaries::Rec709, Primaries::Ap0);
     expect_close(ap0.span(), f32(st.at("aces_ap0")).data, 1e-7, 1e-9, "aces_ap0");
+}
+
+TEST(Grain, BelowTheKneeAndOnStructureNothingMoves) {
+    // A flat grey below the knee, a flat near-white with one-code grain above
+    // it, and a hard edge in that near-white: only the grain may move.
+    const int h = 24, w = 48;
+    PlanarBuffer codes(3, h, w);
+    NitsFrame nits(h, w);
+    std::uint32_t seed = 12345;
+    auto noise = [&] { seed = seed * 1664525u + 1013904223u; return double(seed >> 8) / double(1u << 24) - 0.5; };
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const double code = x < 16 ? 0.5 : (x < 40 ? 0.97 : 0.6);   // an edge at x = 40
+            const double grain = x < 16 ? 0.0 : noise() * 2.0 / 255.0;
+            const double level = (x < 16 ? 50.0 : (x < 40 ? 1000.0 : 120.0)) * (1.0 + (x >= 16 && x < 40 ? noise() * 0.1 : 0.0));
+            for (int c = 0; c < 3; ++c) {
+                codes.at(c, y, x) = static_cast<float>(std::clamp(code + grain, 0.0, 1.0));
+                nits.at(c, y, x) = level;
+            }
+        }
+    const SdrImage sdr(std::move(codes));
+    NitsFrame before = nits;
+    settle_highlight_grain(nits, sdr);
+    double spread_before = 0.0, spread_after = 0.0, mean_before = 0.0, mean_after = 0.0;
+    int count = 0;
+    for (int y = 4; y < h - 4; ++y)
+        for (int x = 0; x < w; ++x) {
+            if (x < 16 || x >= 44) {
+                for (int c = 0; c < 3; ++c) EXPECT_EQ(nits.at(c, y, x), before.at(c, y, x)) << x << "," << y;
+            } else if (x >= 20 && x < 36) {
+                mean_before += before.at(1, y, x);
+                mean_after += nits.at(1, y, x);
+                spread_before += std::abs(before.at(1, y, x) - 1000.0);
+                spread_after += std::abs(nits.at(1, y, x) - 1000.0);
+                ++count;
+            }
+            EXPECT_DOUBLE_EQ(nits.at(0, y, x) / nits.at(1, y, x), before.at(0, y, x) / before.at(1, y, x));   // hue
+        }
+    EXPECT_LT(spread_after, 0.3 * spread_before);
+    EXPECT_NEAR(mean_after / count, mean_before / count, 0.01 * mean_before / count);
 }
 
 TEST_P(PerFrame, MasterChainEndToEnd) {
