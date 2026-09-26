@@ -124,7 +124,7 @@
       <div class="viewer" id="viewer">
         <div class="empty" id="empty">
           <b>Drop an SDR frame</b>
-          PNG, JPEG or TIFF — one, or a whole sequence
+          PNG or TIFF (8/16-bit), JPEG — image or sequence
         </div>
         <div class="plate" id="plate" hidden>
           <canvas id="gl" title="Hold to see the baseline"></canvas>
@@ -156,12 +156,16 @@
 
       <div class="scopes" id="scopes">
         <div class="scope wave">
-          <div class="plabel"><span>Waveform</span><span class="note">luma percentile · nits/log</span></div>
+          <div class="plabel"><span>Waveform</span><span class="note">sampled luminance density · nits/log</span></div>
           <div class="plot"><svg id="wave" viewBox="0 0 500 150" preserveAspectRatio="xMidYMid meet"></svg></div>
         </div>
         <div class="scope hist">
           <div class="plabel"><span>Histogram</span><span class="note">absolute nits · log2 stops · DW</span></div>
           <div class="plot"><svg id="hist" width="310" height="116" viewBox="0 0 310 116"></svg></div>
+        </div>
+        <div class="scope vector">
+          <div class="plabel" title="Absolute reconstructed RGB encoded to PQ; Rec.2020 non-constant-luminance Cb/Cr. Targets use 75% signal amplitude. No display tone mapping applied."><span>Vectorscope</span><span class="note">PQ / Rec.2020 · 75% targets</span></div>
+          <div class="plot"><svg id="vector" width="190" height="116" viewBox="0 0 190 116"></svg></div>
         </div>
         <div class="scope meas">
           <div class="plabel">Measured</div>
@@ -204,16 +208,42 @@
 
       <div class="hr"></div>
       <div class="plabel">Delivery</div>
+      <label><input type="checkbox" id="colorAuto" checked> Auto color setup</label>
+      <p id="inputColorStatus" role="status">Auto input: embedded ICC profile, otherwise assumed sRGB.</p>
+      <details class="ctl ocio-controls"><summary>OCIO color management (optional)</summary>
+        <label><input type="checkbox" id="ocioEnabled"> Enable OCIO</label>
+        <label>Config path (blank = ACES Studio)<input id="ocioConfig" placeholder="Absolute path to config.ocio"></label>
+        <button id="ocioLoad" type="button">Load config</button>
+        <p id="ocioStatus" role="status">Existing presets work without OCIO.</p>
+        <label>Input color space<select id="ocioInput"></select></label>
+        <label>Model bridge: encoded sRGB<select id="ocioModel"></select></label>
+        <label>HDR bridge: linear Rec.2020 (1 = 203 nits)<select id="ocioWorking"></select></label>
+        <label>EXR output color space<select id="ocioOutput"></select></label>
+        <label>Display<select id="ocioDisplay"></select></label>
+        <label>View<select id="ocioView"></select></label>
+        <small>Input is converted to SDR sRGB and clipped to 0–1 for this model. A color-space conversion alone does not tone-map HDR. Browser PNG preview requires an sRGB display/view for correct appearance.</small>
+      </details>
+      <label>Export color space / format<select id="exportPreset" aria-label="Export color space / format">
+        <option value="aces">ACES2065-1 / EXR half-float</option>
+        <option value="linear">Linear Rec.2020 / EXR half-float</option>
+        <option value="srgb_png">sRGB SDR / PNG 8-bit</option>
+        <option value="srgb_tiff">sRGB SDR / TIFF 8-bit</option>
+        <option value="ocio_exr">OCIO output color space / EXR float32</option>
+        <option value="ocio_view_png">OCIO display + view / PNG 8-bit</option>
+      </select></label>
+      <small id="exportNote">Linear HDR master. Input is interpreted as sRGB.</small>
+      <button id="exportPreview" type="button">Preview PNG/TIFF export</button>
       <div class="ctl">
         <div class="field"><span class="k">Container</span><span class="v" id="containerField">OpenEXR — ACES 2065-1</span></div>
-        <div class="field"><span class="k">Transfer</span><span class="v">linear (scene-referred)</span></div>
+        <div class="field"><span class="k">Transfer</span><span class="v" id="transferField">linear (scene-referred)</span></div>
         <div class="field"><span class="k">Primaries</span><span class="v" id="primariesField">AP0 (ST 2065-4)</span></div>
-        <div class="field"><span class="k">White</span><span class="v">diffuse 1.0 = 203 nits</span></div>
+        <div class="field"><span class="k">White</span><span class="v" id="whiteField">diffuse 1.0 = 203 nits</span></div>
       </div>
 
       <div class="plabel">Render</div>
       <div class="ctl render-controls">
         <label>Render folder<input id="renderDir" type="text" placeholder="C:\Renders\Shot01" aria-label="Render folder"></label>
+        <button type="button" id="browseFolder">Browse folders…</button>
         <label>Output<select id="renderMode"><option value="image">Current image</option><option value="sequence">All loaded frames — sequence</option></select></label>
         <label>Render name<input id="renderName" value="master" type="text"></label>
         <label>Start frame<input id="renderStart" value="1" type="number" min="0" step="1"></label>
@@ -244,6 +274,17 @@
 
 <input type="file" id="file" accept="image/*" multiple hidden>
 <script src="compositor.js?v=2"></script>
-<script src="app.js?v=5"></script>
+<script src="scope_math.js?v=3"></script>
+<dialog id="folderDialog" aria-label="Choose save folder">
+  <h3>Save on the Studio computer</h3>
+  <input id="folderPath" aria-label="Folder path" style="width:100%">
+  <button id="folderGo" type="button">Go</button><button id="folderUp" type="button">Up</button>
+  <div id="folderList" style="max-height:45vh;overflow:auto"></div>
+  <p id="folderError" role="status"></p>
+  <button id="folderSelect" type="button">Use this folder</button>
+  <button id="folderCancel" type="button">Cancel</button>
+</dialog>
+<dialog id="exportPreviewDialog"><h3>Export preview — current settings</h3><p>Full-resolution render, scaled to fit. This is separate from the HDR viewer.</p><img id="exportPreviewImage" alt="Rendered export preview" style="max-width:80vw;max-height:70vh"><br><button id="exportPreviewClose" type="button">Close</button></dialog>
+<script src="app.js?v=12"></script>
 </body>
 </html>

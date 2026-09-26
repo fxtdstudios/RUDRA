@@ -21,7 +21,7 @@ import importlib.util as _ilu
 
 TORCH_AVAILABLE = _ilu.find_spec("torch") is not None
 
-__version__ = "0.3.2"
+__version__ = "0.3.3rc1"
 
 if TORCH_AVAILABLE:
     try:

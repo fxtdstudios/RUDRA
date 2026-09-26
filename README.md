@@ -886,6 +886,115 @@ before retrying. Temporary folders may remain after a hard process termination.
 
 ## Validation quality diagnostic
 
+Studio is included in the Python wheel. After installing it, launch
+`rudra-studio --checkpoint /path/to/sdr2hdr_shadow_v1.pt --device auto`.
+Model weights are distributed separately and retain their non-commercial license;
+the wheel does not bundle them or FFmpeg. A local wheel installation check does
+not establish clean-machine or HDR-display verification.
+
+Studio export: choose **Export color space / format**, then **Browse folders…**
+to select a folder on the Studio computer (or enter an absolute new folder path).
+Choose current image or sequence, a render name and start frame, then **Render export**.
+Presets: ACES2065-1 AP0 half-float EXR, linear Rec.2020 half-float EXR,
+sRGB 8-bit PNG and sRGB 8-bit TIFF. SDR presets apply fixed luminance Reinhard
+mapping at a 203-nit scale, convert Rec.2020 to sRGB, clip out-of-gamut values,
+and embed an sRGB ICC profile. The viewer remains the HDR preview and does not
+soft-proof this SDR transform in the main viewport; use the separate export preview.
+Auto input and optional OCIO configuration are described below. Native HDR video
+delivery is not included in these still/sequence presets.
+Sidecar luminance measurements describe HDR before the output transform.
+Existing output images or sidecars are never overwritten.
+
+Optional OCIO: install `pip install -e ".[ocio]"` using the Studio environment.
+Studio supports 8-bit images and unsigned 16-bit grayscale/RGB PNG/TIFF inputs.
+16-bit inputs retain precision through resizing, inference, the Studio compositor
+and export. Embedded ICC conversion for 16-bit inputs
+requires manual color interpretation (optionally through OCIO), since the current
+ICC bridge cannot preserve 16-bit precision. Float/signed TIFF input is rejected.
+EXR output remains half/float.
+Linear Rec.2020 EXR exports include their primaries and white-point metadata.
+
+**Auto color setup** is on by default: startup loads the ACES Studio defaults
+when OCIO is available, and remembers color settings, export preset and render
+destination in this browser. Auto input converts embedded ICC profiles to sRGB
+using LittleCMS before model inference; untagged images explicitly show
+“No embedded ICC — assumed sRGB.” Corrupt/unsupported ICC profiles produce an error
+instead of silently assuming sRGB. Disable Auto for a manual OCIO input override.
+No embedded ICC means no reliable automatic detection of untagged camera log or P3.
+Saved settings are local to this browser and origin, not shared across computers.
+Open **OCIO color management**, leave the path blank for the bundled ACES 1.3
+Studio config or enter an absolute `.ocio` config path, and click **Load config**.
+Select the input space, then enable OCIO. The bridge selections must identify
+encoded sRGB and linear Rec.2020 in custom configs; HDR bridge values use 1 = 203 nits.
+Input is converted to the model's normalized SDR sRGB domain and clipped to 0–1;
+this does not turn the model into a native camera-log/HDR-input reconstruction model.
+Manual mode ignores embedded ICC and uses the selected input interpretation.
+
+Use **OCIO output color space / EXR float32** for conversion to a chosen space
+(for example ACEScg); use **OCIO display + view / PNG 8-bit** to bake the selected
+view. **Preview PNG/TIFF export** renders through the same backend writer as export,
+at full resolution, in a separate preview dialog. The interactive HDR viewer/scopes
+retain their existing pipeline. For a browser-correct preview choose an sRGB display;
+arbitrary P3/PQ/HLG view PNGs are not tagged or certified for HDR playback. They have
+an explicit OCIO sidecar, not an incorrectly assigned sRGB ICC profile.
+Config identity and selections are recorded in export metadata. Custom configs
+must keep their referenced LUT files available on the Studio computer.
+
+### Experimental quality-aware recovery training
+
+```console
+python training/train_quality_policy.py --manifest outputs/finetune_views_20260920/data/manifest.jsonl --checkpoint checkpoints/sdr2hdr_shadow_v1.pt --out outputs/quality_policy_new --device cuda
+```
+
+This experiment freezes the reconstruction weights and measures off,
+highlights-only, shadows-only, and all recovery on native paired frames. A small
+SDR-only policy learns expected PU21 regret from measured outputs rather than
+synthetic degradation labels. It uses up to 256 training scenes and all validation
+scenes, one deterministic frame per scene with clean and degraded conditions.
+Test image pixels are never read. Three policy seeds are evaluated on clean/hard
+PU21 and real image ColorVideoVDP; no policy is automatically promoted. Validation
+selection is exploratory and needs independent visual and temporal confirmation.
+
+Progress is saved in `status.json`; per-mode scores in `measurements.jsonl`;
+training history in `learning.jsonl`; the final decision in `assessment.json`.
+Policy checkpoints are separate from reconstruction checkpoints and must not be
+passed to Studio's `--checkpoint`. `rudra.recovery_policy.load_policy` verifies
+the reconstruction checkpoint hash, and `policy.choose(model, sdr)` returns the
+recovery mode for `predict_image`. Current Studio defaults remain unchanged.
+The policy inherits the non-commercial restrictions of the reconstruction weights.
+
+Use `--joint-quality` in a new output folder to also measure real ColorVideoVDP on
+training frames. This experimental objective uses the lesser normalized PU21/JOD
+gain against all-recovery, with training-only scales and worst-condition balancing.
+It penalizes metric conflicts instead of optimizing PU21 alone. Validation criteria
+remain unchanged; this option does not establish independent or temporal quality.
+
+`training/train_conservative_policy.py --source <completed-joint-run> --out <new-folder>`
+fits a conservative selector using the existing cache on CPU. It reserves 20% of
+training scenes for checkpoint/confidence-threshold selection, then evaluates the
+fixed selection on validation. Low-confidence decisions retain all-recovery.
+The threshold is experimental, not a safety guarantee. The checkpoint loader and
+review tools honor the saved threshold; never deploy by taking raw logits' argmax.
+
+If stopped during measurement, repeat the training command with the same output
+folder and `--resume`. Completed comparisons are reused after checking the manifest,
+checkpoint, policy, scene order, scores, and source image hashes. Small SDR features
+are rebuilt, then the remaining comparisons run. Stop the previous process first.
+Resume currently covers measurement only; it rejects runs where policy fitting has
+already started. A malformed measurement log is rejected rather than silently discarded.
+
+Generate the candidate review on CPU after training (optionally wait up to six hours):
+
+```console
+python training/review_quality_policy.py --run outputs/quality_policy_new --wait-seconds 21600
+```
+
+This replays the saved selector against cached validation features, verifies the
+selected scores, and writes `review.md` and `review.json` with recovery-mode counts,
+per-scene regressions, worst-scene lists, and descriptive paired bootstrap intervals.
+It reads no image pixels and does not change Studio. These intervals use the same
+validation scenes used for selection; they are not independent release evidence.
+
 Run a fixed, scene-balanced sample without consuming the final test set:
 
 ```console

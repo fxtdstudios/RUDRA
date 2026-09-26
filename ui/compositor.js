@@ -363,8 +363,11 @@
 
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, texSdr);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, f.width, f.height, 0,
-                    gl.RGB, gl.UNSIGNED_BYTE, f.sdr);
+      var precise = f.sdr instanceof Float32Array;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, precise ? gl.RGB32F : gl.RGB8, f.width, f.height, 0,
+                    gl.RGB, precise ? gl.FLOAT : gl.UNSIGNED_BYTE, f.sdr);
 
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, texFields);

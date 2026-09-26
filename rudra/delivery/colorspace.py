@@ -43,6 +43,7 @@ WHITE_POINTS: dict[str, tuple[float, float]] = {
 # ST 2065-4 / ACES container chromaticities attribute, in EXR field order:
 # redX, redY, greenX, greenY, blueX, blueY, whiteX, whiteY.
 AP0_CHROMATICITIES = (0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767)
+REC2020_CHROMATICITIES = (0.708, 0.292, 0.170, 0.797, 0.131, 0.046, 0.3127, 0.3290)
 
 _BRADFORD = np.array([
     [0.8951, 0.2664, -0.1614],

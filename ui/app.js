@@ -195,7 +195,8 @@
     var frame = current();
     if (frame) { frame.peak = peak; frame.aboveDW = m.above_diffuse_white_pct; }
     showMetrics(m);
-    state.scopeData = buildScopes(luma, w, h);
+    // Scope luminance differs from the maximum-channel light-level metrics.
+    state.scopeData = buildScopes(RudraScopeMath.luminanceSamples(s.model, PEAK_NITS), w, h, s.model);
     drawScopes(state.scopeData, m);
     drawFrames();
   }
@@ -204,7 +205,7 @@
   var W = 460, H = 132, HW = 304, HH = 96;
   var COLUMNS = 230, HIST_BINS = 76, COL_BINS = 512;
 
-  function buildScopes(luma, w, h) {
+  function buildScopes(luma, w, h, rgb) {
     var loLog10 = Math.log10(SCOPE_LO), span10 = Math.log10(SCOPE_HI / SCOPE_LO);
     var cols = new Float32Array(COLUMNS * COL_BINS);
     var counts = new Float32Array(COLUMNS);
@@ -223,8 +224,9 @@
       }
     }
 
-    var out = {lo: [], q1: [], mid: [], q3: [], hi: [], histogram: [],
+    var out = {lo: [], q1: [], mid: [], q3: [], hi: [], histogram: [], vectorscope: [],
                floor_nits: SCOPE_LO, ceiling_nits: SCOPE_HI};
+    out.waveform = RudraScopeMath.waveformDensity(luma, w, h, COLUMNS, H, SCOPE_LO, SCOPE_HI);
     var wanted = [2, 25, 50, 75, 98], keys = ["lo", "q1", "mid", "q3", "hi"];
     for (var c = 0; c < COLUMNS; c++) {
       var total = counts[c] || 1, acc = 0, next = 0, base = c * COL_BINS;
@@ -241,6 +243,7 @@
     var peak = 1;
     for (var i = 0; i < HIST_BINS; i++) { peak = Math.max(peak, hist[i]); }
     for (var b = 0; b < HIST_BINS; b++) { out.histogram.push(hist[b] / peak); }
+    out.vector = RudraScopeMath.vectorDensity(rgb, PEAK_NITS, 64);
     return out;
   }
 
@@ -259,12 +262,19 @@
   }
 
   function drawScopes(s, m) {
-    var n = s.mid.length, step = W / n, outer = "", inner = "", spine = [];
-    for (var i = 0; i < n; i++) {
-      var x = (i * step + 0.5).toFixed(1);
-      outer += "M" + x + " " + ((1 - s.lo[i]) * H).toFixed(1) + "V" + ((1 - s.hi[i]) * H).toFixed(1);
-      inner += "M" + x + " " + ((1 - s.q1[i]) * H).toFixed(1) + "V" + ((1 - s.q3[i]) * H).toFixed(1);
-      spine.push(x + "," + ((1 - s.mid[i]) * H).toFixed(1));
+    // Render occupied bins only: gaps in measured luminance remain gaps.
+    var wave = s.waveform, paths = new Array(16).fill(""), traces = "";
+    var cellW = W / wave.columns, cellH = H / wave.bins;
+    for (var c = 0; c < wave.columns; c++) for (var k = 0; k < wave.bins; k++) {
+      var count = wave.counts[c * wave.bins + k];
+      if (!count) { continue; }
+      var intensity = Math.max(1, Math.ceil(15 * Math.log1p(count) / Math.log1p(wave.peak)));
+      paths[intensity] += 'M' + (c * cellW).toFixed(2) + ' ' + (H - (k + 1) * cellH).toFixed(2) +
+        'h' + cellW.toFixed(2) + 'v' + cellH.toFixed(2) + 'h-' + cellW.toFixed(2) + 'z';
+    }
+    for (var level = 1; level < paths.length; level++) {
+      if (paths[level]) { traces += '<path d="' + paths[level] + '" fill="#b7eddf" opacity="' +
+        (.15 + .85 * level / 15).toFixed(2) + '"/>'; }
     }
     var cll = "";
     var span = Math.log10(SCOPE_HI / SCOPE_LO);
@@ -275,17 +285,13 @@
            '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#888">Diffuse white 203</text>';
     if (m && isFinite(m.maxcll)) {
       var y = H - (Math.log10(Math.min(Math.max(m.maxcll, SCOPE_LO), SCOPE_HI) / SCOPE_LO) / span) * H;
-      cll = '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
+      cll += '<line x1="0" y1="' + y.toFixed(1) + '" x2="' + W + '" y2="' + y.toFixed(1) +
             '" stroke="#cfcfcf" stroke-width="1" stroke-dasharray="2 3" opacity="0.55"/>' +
             '<text x="4" y="' + (y - 4).toFixed(1) +
             '" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#a8a8a8">MaxCLL ' +
             Math.round(m.maxcll) + " nits</text>";
     }
-    $("wave").innerHTML = ladder() +
-      '<path d="' + outer + '" stroke="#8f8f8f" stroke-width="1.6" opacity="0.30"/>' +
-      '<path d="' + inner + '" stroke="#d8d8d8" stroke-width="1.6" opacity="0.62"/>' +
-      '<polyline points="' + spine.join(" ") +
-      '" fill="none" stroke="#ffffff" stroke-width="0.9" opacity="0.5"/>' + cll;
+    $("wave").innerHTML = traces + ladder() + cll;
 
     var bins = s.histogram.length, bw = HW / bins, bars = "";
     for (var j = 0; j < bins; j++) {
@@ -308,6 +314,28 @@
       '<line x1="' + dw.toFixed(1) + '" y1="0" x2="' + dw.toFixed(1) + '" y2="' + HH +
       '" stroke="#4a4a4a" stroke-dasharray="2 3"/>' +
       '<text x="' + (dw + 3).toFixed(1) + '" y="10" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#777">DW</text>' + marks;
+
+    var vector = s.vector, vb = vector.bins, cells = "", size = 100 / vb;
+    // Equal Cb/Cr units on both axes. No circular clipping of valid RGB colors.
+    for (var vy = 0; vy < vb; vy++) for (var vx = 0; vx < vb; vx++) {
+      var count = vector.counts[vy * vb + vx];
+      if (!count) { continue; }
+      var density = Math.log1p(count) / Math.log1p(vector.peak);
+      cells += '<rect x="' + (45 + vx * size).toFixed(2) + '" y="' + (8 + vy * size).toFixed(2) +
+        '" width="' + size.toFixed(2) + '" height="' + size.toFixed(2) +
+        '" fill="#b7eddf" opacity="' + (.18 + density * .82).toFixed(2) + '"/>';
+    }
+    var targetMarks = RudraScopeMath.vectorTargets().map(function (t) {
+      var x = 95 + 100 * t.cb, y = 58 - 100 * t.cr;
+      return '<rect x="' + (x-2).toFixed(2) + '" y="' + (y-2).toFixed(2) +
+        '" width="4" height="4" fill="none" stroke="#aaa"/><text x="' + (x+4).toFixed(2) +
+        '" y="' + (y+2).toFixed(2) + '" font-size="7" fill="#aaa">' + t.label + '</text>';
+    }).join('');
+    $("vector").innerHTML = '<rect x="45" y="8" width="100" height="100" fill="#151515" stroke="#383838"/>' +
+      '<path d="M95 8V108M45 58H145" stroke="#383838"/>' + cells + targetMarks +
+      '<text x="150" y="60" font-size="7" fill="#888">Cb</text><text x="96" y="7" font-size="7" fill="#888">Cr</text>' +
+      '<text x="2" y="115" font-size="6.5" fill="#888">Clamped ' + vector.clipped + ' / invalid ' + vector.invalid + '</text>';
+
   }
 
   /* ---- the viewer ------------------------------------------------------ */
@@ -506,11 +534,14 @@
   }
 
   function adopt(frame) {
+    if (frame.header && frame.header.input_color) { $('inputColorStatus').textContent=frame.header.input_color.status + ' (' + frame.header.input_color.profile + ')'; }
     /* Put an already-fetched frame on the GPU. No network, no forward pass. */
     var head = frame.header, off = head.offsets, n = head.width * head.height;
     var fieldsU16 = new Uint16Array(frame.buf, off.fields, n * 4);
     var shadowU16 = new Uint16Array(frame.buf, off.shadow, n);
-    var sdr = new Uint8Array(frame.buf, off.sdr, n * 3);
+    var sdr = head.sdr_dtype === 'float32'
+      ? new Float32Array(frame.buf.slice(off.sdr, off.sdr + n * 3 * 4))
+      : new Uint8Array(frame.buf, off.sdr, n * 3);
 
     hiMask = new Float32Array(n);
     shMask = new Float32Array(n);
@@ -541,8 +572,11 @@
     evictCache();
   }
 
+  var ocioLoaded = null;
+  var colorReady = Promise.resolve();
   function params(extra) {
     var p = {
+      input_auto: $('colorAuto').checked,
       strength: state.strength,
       display_nits: displayNits(),
       recovery_mode: state.mode,
@@ -551,6 +585,13 @@
       region_softness_stops: 1.0,
       tile_size: 0, tile_overlap: 64, max_side: 1600
     };
+    if ($("ocioEnabled").checked) {
+      if (!ocioLoaded) { throw new Error('Load an OCIO configuration first'); }
+      p.ocio = {config:ocioLoaded.path,cache_id:ocioLoaded.cache_id,
+        input:$("ocioInput").value,model_srgb:$("ocioModel").value,
+        working_linear:$("ocioWorking").value,output:$("ocioOutput").value,
+        display:$("ocioDisplay").value,view:$("ocioView").value};
+    }
     if (extra) { Object.keys(extra).forEach(function (k) { p[k] = extra[k]; }); }
     return p;
   }
@@ -560,7 +601,7 @@
     var ready = !on && state.frames.length > 0 && state.live;
     $("btnMaster").disabled = !ready;
     $("btnReprocess").disabled = !ready;
-    $("btnMaster").textContent = label || "Master EXR";
+    $("btnMaster").textContent = label || "Render export";
   }
 
   function select(index, force) {
@@ -604,6 +645,7 @@
       if (inflight && inflight.controller === controller) { inflight = null; }
       frame.loading = false;
       frame.header = d.header;
+      if (d.header.input_color) { $('inputColorStatus').textContent=d.header.input_color.status + ' (' + d.header.input_color.profile + ')'; }
       frame.buf = d.buf;
       busy(false);
       if (state.frames[state.index] !== frame) { drawFrames(); return; }
@@ -866,10 +908,22 @@
 
   function setContainer(kind) {
     state.container = kind;
+    $("exportPreset").value = kind;
+    var sdr = kind.indexOf("srgb_") === 0;
     $("containerField").textContent = kind === "aces"
-      ? "OpenEXR — ACES 2065-1" : "OpenEXR — linear Rec.2020";
+      ? "OpenEXR — ACES 2065-1" : sdr ? (kind === "srgb_png" ? "PNG 8-bit" : "TIFF 8-bit") : "OpenEXR — linear Rec.2020";
     $("primariesField").textContent = kind === "aces"
-      ? "AP0 (ST 2065-4)" : "Rec.2020";
+      ? "AP0 (ST 2065-4)" : sdr ? "sRGB / Rec.709" : "Rec.2020";
+    $("transferField").textContent = sdr ? "sRGB (ICC embedded)" : "linear (scene-referred)";
+    $("whiteField").textContent = sdr ? "SDR tone mapped" : "diffuse 1.0 = 203 nits";
+    $("exportNote").textContent = sdr ? "SDR export: Reinhard tone mapping, 203 nit scale. Viewer remains HDR preview; output may look different. Input assumed sRGB." : "Linear HDR master. Input is interpreted as sRGB.";
+    if (kind.indexOf('ocio_') === 0) {
+      $("containerField").textContent = kind === 'ocio_exr' ? 'OCIO EXR float32' : 'OCIO display/view PNG';
+      $("primariesField").textContent = 'Defined by OCIO selection';
+      $("transferField").textContent = 'Defined by OCIO selection';
+      $("whiteField").textContent = 'Bridge: 1 = 203 nits';
+      $("exportNote").textContent = 'Enable OCIO and load a config. EXR converts color space; PNG applies the selected display/view. Preview renders the PNG export transform.';
+    }
     log("container: " + $("containerField").textContent);
   }
 
@@ -886,6 +940,121 @@
 
   /* ---- wiring ----------------------------------------------------------- */
   function bind() {
+    var colorKeys=['colorAuto','ocioEnabled','ocioConfig','ocioInput','ocioModel','ocioWorking','ocioOutput','ocioDisplay','ocioView','exportPreset','renderDir','renderMode','renderName','renderStart'];
+    function rememberColor() {
+      var saved={}; colorKeys.forEach(function(id) { saved[id]=$(id).type==='checkbox' ? $(id).checked : $(id).value; });
+      try { localStorage.setItem('rudra.color.v1',JSON.stringify(saved)); } catch(e) { /* Storage may be disabled. */ }
+    }
+    function autoLabels() {
+      $('ocioInput').disabled=$('colorAuto').checked;
+      $('inputColorStatus').textContent=$('colorAuto').checked ? 'Auto input: embedded ICC profile, otherwise assumed sRGB.' : 'Manual input interpretation; embedded profiles are ignored.';
+    }
+    function fillChoices(id, values, preferred) {
+      var select=$(id); select.replaceChildren();
+      values.forEach(function (v) { var option=document.createElement('option'); option.value=v; option.textContent=v; select.appendChild(option); });
+      if (values.indexOf(preferred)>=0) { select.value=preferred; }
+      else { select.selectedIndex=-1; }
+    }
+    function invalidateInput() {
+      if (inflight) { inflight.controller.abort(); inflight.frame.loading=false; inflight=null; }
+      state.frames.forEach(function (frame) { frame.buf=null; });
+      if (current() && state.live) { fetchFrame(current()); }
+    }
+    function updateViews() {
+      if (ocioLoaded) { fillChoices('ocioView',ocioLoaded.displays[$('ocioDisplay').value] || [],'ACES 1.0 - SDR Video'); }
+    }
+    async function loadOcio() {
+      try {
+        var path=$('ocioConfig').value.trim();
+        var response=await fetch('/api/ocio?config='+encodeURIComponent(path)); var data=await response.json();
+        if (!data.ok) { throw new Error(data.error); }
+        ocioLoaded=Object.assign(data,{path:path});
+        fillChoices('ocioInput',data.spaces,'sRGB Encoded Rec.709 (sRGB)');
+        fillChoices('ocioModel',data.spaces,'sRGB Encoded Rec.709 (sRGB)');
+        fillChoices('ocioWorking',data.spaces,'Linear Rec.2020');
+        fillChoices('ocioOutput',data.spaces,'ACEScg');
+        fillChoices('ocioDisplay',Object.keys(data.displays),'sRGB - Display'); updateViews();
+        $('ocioStatus').textContent='Loaded '+data.config+'. Check bridge spaces for custom configs.';
+        if ($('ocioEnabled').checked) { invalidateInput(); }
+        return true;
+      } catch (e) { $('ocioStatus').textContent=e.message; return false; }
+    }
+    $('ocioLoad').addEventListener('click',async function () { if (await loadOcio()) { rememberColor(); } });
+    $('colorAuto').addEventListener('change',async function () {
+      if (this.checked && !ocioLoaded) { $('ocioEnabled').checked=await loadOcio(); }
+      autoLabels(); rememberColor(); invalidateInput();
+    });
+    $('ocioEnabled').addEventListener('change',function () {
+      if (this.checked && !ocioLoaded) { this.checked=false; $('ocioStatus').textContent='Load config before enabling OCIO.'; return; }
+      invalidateInput();
+    });
+    ['ocioInput','ocioModel'].forEach(function (id) { $(id).addEventListener('change',invalidateInput); });
+    $('ocioDisplay').addEventListener('change',updateViews);
+    colorKeys.forEach(function (id) { $(id).addEventListener('change',rememberColor); });
+    colorReady=(async function () {
+      var saved={};
+      try { saved=JSON.parse(localStorage.getItem('rudra.color.v1') || '{}') || {}; } catch(e) { saved={}; }
+      ['colorAuto','ocioConfig','renderDir','renderMode','renderName','renderStart'].forEach(function(id) {
+        if (Object.prototype.hasOwnProperty.call(saved,id)) {
+          if ($(id).type==='checkbox') { $(id).checked=!!saved[id]; } else { $(id).value=String(saved[id]); }
+        }
+      });
+      var loaded=false;
+      if ($('colorAuto').checked || saved.ocioEnabled) { loaded=await loadOcio(); }
+      if (loaded) {
+        ['ocioInput','ocioModel','ocioWorking','ocioOutput','ocioDisplay'].forEach(function(id) {
+          if (saved[id] && Array.from($(id).options).some(function(o){return o.value===saved[id];})) { $(id).value=saved[id]; }
+        });
+        updateViews();
+        if (saved.ocioView && Array.from($('ocioView').options).some(function(o){return o.value===saved.ocioView;})) { $('ocioView').value=saved.ocioView; }
+      }
+      $('ocioEnabled').checked=loaded && (saved.ocioEnabled === undefined ? $('colorAuto').checked : !!saved.ocioEnabled);
+      var preset=saved.exportPreset || 'aces';
+      if (preset.indexOf('ocio_')===0 && !$('ocioEnabled').checked) { preset='aces'; }
+      if (Array.from($('exportPreset').options).some(function(o){return o.value===preset;})) { setContainer(preset); }
+      autoLabels();
+    }());
+    var previewURL=null;
+    $('exportPreview').addEventListener('click',async function () {
+      if (!current()) { $('renderStatus').textContent='Load an image first.'; return; }
+      this.disabled=true;
+      try {
+        $('renderStatus').textContent='Rendering export preview…';
+        var response=await fetch('/api/master/preview',{method:'POST',headers:{'X-Rudra-Params':JSON.stringify(params({container:state.container,master_max_side:0}))},body:current().file});
+        if (!response.ok) { var error=await response.json(); throw new Error(error.error); }
+        if (previewURL) { URL.revokeObjectURL(previewURL); }
+        previewURL=URL.createObjectURL(await response.blob()); $('exportPreviewImage').src=previewURL;
+        $('exportPreviewDialog').showModal(); $('renderStatus').textContent='Export preview ready.';
+      } catch(e) { $('renderStatus').textContent=e.message; }
+      finally { this.disabled=false; }
+    });
+    $('exportPreviewClose').addEventListener('click',function () { $('exportPreviewDialog').close(); });
+    var chosenFolder = "", parentFolder = "";
+    async function listFolders(path) {
+      $("folderError").textContent = "Loading…";
+      $("folderSelect").disabled = true;
+      try {
+        var response = await fetch('/api/folders?path=' + encodeURIComponent(path));
+        var data = await response.json();
+        if (!data.ok) { throw new Error(data.error); }
+        chosenFolder = data.path; parentFolder = data.parent;
+        $("folderPath").value = data.path; $("folderList").replaceChildren();
+        data.folders.forEach(function (folder) {
+          var button = document.createElement('button');
+          button.type = 'button'; button.textContent = folder.name; button.style.display = 'block';
+          button.addEventListener('click', function () { listFolders(folder.path); });
+          $("folderList").appendChild(button);
+        });
+        $("folderError").textContent = data.folders.length ? "" : "No subfolders";
+        $("folderSelect").disabled = false;
+      } catch (error) { $("folderError").textContent = error.message; }
+    }
+    $("exportPreset").addEventListener('change', function () { setContainer(this.value); });
+    $("browseFolder").addEventListener('click', function () { $("folderDialog").showModal(); listFolders($("renderDir").value.trim()); });
+    $("folderGo").addEventListener('click', function () { listFolders($("folderPath").value); });
+    $("folderUp").addEventListener('click', function () { listFolders(parentFolder); });
+    $("folderSelect").addEventListener('click', function () { $("renderDir").value = chosenFolder; rememberColor(); $("folderDialog").close(); });
+    $("folderCancel").addEventListener('click', function () { $("folderDialog").close(); });
     /* menus */
     [].forEach.call(document.querySelectorAll(".menu"), function (menu) {
       menu.querySelector(".mtitle").addEventListener("click", function (e) {
@@ -1110,7 +1279,8 @@
           "needs both", "err");
     }
     fetch("/api/model", {cache: "no-store"}).then(function (r) { return r.json(); })
-      .then(function (info) {
+      .then(async function (info) {
+        await colorReady;
         state.live = !!info.loaded;
         $("ckpt").textContent = info.name || info.reason || "no model";
         $("device").textContent = info.gpu || info.device || "—";
@@ -1121,7 +1291,7 @@
           log("drop frames — the network runs once each, then the grade is local");
           fetch("/api/training", {cache: "no-store"}).then(function (r) { return r.json(); }).then(function (candidate) {
             if (candidate.available && !candidate.promoted) {
-              log("training complete — candidate " + candidate.selected_seed + " available for review; shipped model remains active");
+              log("archived September 20 assessment — candidate " + candidate.selected_seed + "; shipped model remains active. This is not live training status.");
             }
           });
           autoload();

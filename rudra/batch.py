@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 
 from . import video
 
@@ -25,7 +26,16 @@ def save(path, data):
             json.dump(data, stream, indent=2)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(name, path)
+        # Windows readers/scanners can briefly deny replacement of an open file.
+        # Keep the old JSON intact and retry the atomic replacement, with a bound.
+        for attempt in range(8):
+            try:
+                os.replace(name, path)
+                break
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                time.sleep(min(.05 * 2**attempt, .5))
     finally:
         if os.path.exists(name): os.unlink(name)
 

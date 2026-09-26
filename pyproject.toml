@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rudra-hdr"
-version = "0.3.2"
+version = "0.3.3rc1"
 description = "Radiometric dynamic-range conditioning and HDR decoder research"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -22,8 +22,10 @@ dependencies = [
 
 [project.scripts]
 rudra = "rudra.delivery.cli:main"
+rudra-studio = "ui.server:main"
 
 [project.optional-dependencies]
+ocio = ["opencolorio>=2.4,<3"]
 metrics = ["cvvdp>=0.5.1", "lpips>=0.1.4"]
 vae = [
   "diffusers>=0.35",
@@ -35,7 +37,10 @@ vae = [
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
-include = ["rudra*", "config*"]
+include = ["rudra*", "config*", "training*", "ui*"]
+
+[tool.setuptools.package-data]
+ui = ["*.html", "*.css", "*.js", "assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

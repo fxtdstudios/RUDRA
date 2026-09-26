@@ -388,13 +388,16 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     from training.infer_sdr2hdr import predict_image
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    from ui.ocio_support import decode_input
+    image, input_info = decode_input(image_bytes, params)
     max_side = int(params.get("max_side", 1600))
     if max(image.size) > max_side:
         ratio = max_side / max(image.size)
         image = image.resize((max(1, int(image.width * ratio)),
                               max(1, int(image.height * ratio))), Image.LANCZOS)
     sdr = np.asarray(image, dtype=np.float32) / 255.0
+    from ui.ocio_support import input_pixels
+    sdr = input_pixels(sdr, params)
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     strength = float(params.get("strength", 1.0))
@@ -418,6 +421,7 @@ def run_inference(model, image_bytes: bytes, params: dict, args) -> dict:
     metrics = measure(hdr_np, base_np, highlight, shadow)
     metrics["elapsed_s"] = round(time.time() - started, 2)
     metrics["source_resolution"] = f"{image.width}x{image.height}"
+    metrics['input_color'] = input_info
     metrics["resolution"] = f"{image.width}x{image.height}"
     metrics["display_nits"] = round(display_nits, 1)
     return {
@@ -447,7 +451,7 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
     Body layout, little-endian, offsets in the header:
         fields   H*W*4 float16   log residual RGB, highlight mask in alpha
         shadow   H*W   float16   shadow mask
-        sdr      H*W*3 uint8     exactly the pixels the network was given
+        sdr      H*W*3 uint8 or float32 (sdr_dtype identifies encoding)
     The SDR travels back because the page must compute the analytic baseline
     from the same pixels the network saw, not from its own resize of the file.
     """
@@ -458,7 +462,8 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
     from training.infer_sdr2hdr import predict_fields
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    from ui.ocio_support import decode_input
+    image, input_info = decode_input(image_bytes, params)
     source = f"{image.width}x{image.height}"
     max_side = int(params.get("max_side", 1600))
     if max(image.size) > max_side:
@@ -466,8 +471,10 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
         image = image.resize((max(1, int(image.width * ratio)),
                               max(1, int(image.height * ratio))), Image.LANCZOS)
 
-    sdr_u8 = np.asarray(image, dtype=np.uint8)
-    sdr = sdr_u8.astype(np.float32) / 255.0
+    sdr = np.asarray(image, dtype=np.float32) / 255.0
+    from ui.ocio_support import input_pixels
+    sdr = input_pixels(sdr, params)
+    sdr_u8 = np.rint(sdr * 255).astype(np.uint8)
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     tile_size = int(params.get("tile_size", 0))
@@ -506,7 +513,9 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
 
     packed = _half(np.concatenate([residual, highlight], axis=-1))
     shadow16 = _half(shadow)
-    body = packed.tobytes() + shadow16.tobytes() + sdr_u8.tobytes()
+    precise = input_info.get('bit_depth') == 16
+    sdr_payload = sdr.astype('<f4') if precise else sdr_u8
+    body = packed.tobytes() + shadow16.tobytes() + sdr_payload.tobytes()
 
     height, width = sdr_u8.shape[:2]
     header = {
@@ -520,6 +529,8 @@ def run_frame(model, image_bytes: bytes, params: dict, args) -> tuple[dict, byte
         "peak_nits": NETWORK_PEAK_NITS,
         "diffuse_white_nits": DIFFUSE_WHITE_NITS,
         "source_resolution": source,
+        "input_color": input_info,
+        "sdr_dtype": 'float32' if precise else 'uint8',
         "resolution": f"{width}x{height}",
         "elapsed_s": round(time.time() - started, 3),
         "offsets": {
@@ -540,6 +551,8 @@ SAFE_STEM = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def master_targets(params):
+    from ui.export_formats import preset
+    extension, _ = preset(params)
     folder = Path(str(params.get('render_dir', '')).strip()).expanduser()
     if not folder.is_absolute():
         raise ValueError('Choose an absolute render folder on the Studio computer')
@@ -553,7 +566,7 @@ def master_targets(params):
     if count < 1 or count > 100000 or start < 0 or start + count > 100000000:
         raise ValueError('Invalid frame range')
     if not sequence and count != 1: raise ValueError('Image render requires one frame')
-    targets = [folder / (f'{name}.{start+i:06d}.exr' if sequence else f'{name}.exr') for i in range(count)]
+    targets = [folder / (f'{name}.{start+i:06d}.{extension}' if sequence else f'{name}.{extension}') for i in range(count)]
     for out in targets:
         if out.exists() or out.with_suffix('.json').exists():
             raise ValueError(f'Refusing to overwrite existing render: {out}')
@@ -599,7 +612,8 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     from training.infer_sdr2hdr import predict_image
 
     started = time.time()
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    from ui.ocio_support import decode_input
+    image, input_info = decode_input(image_bytes, params)
     # Full resolution: a master is the one output that must not be downsampled.
     limit = int(params.get("master_max_side", 0))
     if limit > 0 and max(image.size) > limit:
@@ -608,6 +622,8 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
                               max(1, int(image.height * ratio))), Image.LANCZOS)
 
     sdr = np.asarray(image, dtype=np.float32) / 255.0
+    from ui.ocio_support import input_pixels
+    sdr = input_pixels(sdr, params)
     tensor = torch.from_numpy(sdr).permute(2, 0, 1)[None].to(next(model.parameters()).device)
 
     def _predict(tile_size: int):
@@ -652,6 +668,9 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
     maxcll, maxfall = dm.maxcll_maxfall([stats])
 
     container = params.get("container", "aces")
+    from ui.export_formats import preset, write_srgb
+    _, output_label = preset(params)
+    is_sdr = container.startswith('srgb_')
     provenance = {
         "rudra:checkpoint": str(params.get("checkpoint", "")),
         "rudra:maxCLL": f"{maxcll}",
@@ -661,20 +680,40 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "rudra:regionEV": json.dumps(regions) if graded else "neutral",
         "rudra:tiled": str(bool(tile_size)),
     }
-    if container == "aces":
+    ocio_metadata = None
+    if container.startswith('ocio_'):
+        from ui.ocio_support import output_pixels
+        pixels, ocio_metadata = output_pixels(scene_linear, params)
+        if container == 'ocio_exr':
+            write_exr(out, pixels, half=False, attributes={'ocio:colorSpace': ocio_metadata['output'],
+                      'ocio:configCacheID': ocio_metadata['cache_id'], **provenance})
+        else:
+            # Arbitrary display encodings must not be mislabeled with an sRGB ICC.
+            Image.fromarray(np.rint(np.clip(pixels,0,1)*255).astype(np.uint8)).save(out)
+    elif is_sdr:
+        write_srgb(nits, out)
+    elif container == "aces":
         # HALF tops out near 65,504; scene-linear here is nits/203, so a
         # 1,000,000-nit sun is ~4,926 -- comfortably inside. Keep half.
         write_aces_exr(scene_linear, out, source_space="rec2020", provenance=provenance)
     else:
-        write_exr(out, scene_linear, half=True, attributes=provenance)
+        from rudra.delivery.colorspace import REC2020_CHROMATICITIES
+        write_exr(out, scene_linear, half=True,
+                  chromaticities=REC2020_CHROMATICITIES, attributes=provenance)
 
     sidecar = out.with_suffix(".json")
     sidecar.write_text(json.dumps({
         "maxcll_nits": maxcll, "maxfall_nits": maxfall,
         "peak_nits": round(float(nits.max()), 1),
         "resolution": [image.width, image.height],
-        "container": "ACES 2065-1 (AP0)" if container == "aces" else "scene-linear Rec.2020",
-        "transfer": "linear", "diffuse_white_nits": DIFFUSE_WHITE_NITS,
+        "container": output_label,
+        "transfer": "OCIO-defined" if ocio_metadata else "sRGB" if is_sdr else "linear", "diffuse_white_nits": DIFFUSE_WHITE_NITS,
+        "tone_mapping": "luminance Reinhard, 203 nit scale; sRGB gamut clipped" if is_sdr else None,
+        "bit_depth": 32 if container == 'ocio_exr' else 8 if is_sdr or container == 'ocio_view_png' else 16,
+        "measurement_stage": "reconstructed HDR before output transform",
+        "ocio": ocio_metadata,
+        "ocio_input": params.get('ocio'),
+        "input_color": input_info,
         "checkpoint": params.get("checkpoint", ""),
         "recovery_mode": params.get("recovery_mode", "all"),
         "residual_strength": float(params.get("strength", 1.0)),
@@ -694,7 +733,7 @@ def _render_master(model, image_bytes: bytes, params: dict, args, out: Path) -> 
         "maxfall": maxfall,
         "peak_nits": round(float(nits.max()), 1),
         "resolution": f"{image.width}x{image.height}",
-        "container": "ACES 2065-1" if container == "aces" else "Linear Rec.2020",
+        "container": output_label,
         "graded": graded,
         "tiled": bool(tile_size),
         "elapsed_s": round(time.time() - started, 2),
@@ -745,6 +784,26 @@ def make_handler(args):
             self.wfile.write(body)
 
         def do_GET(self):
+            if self.path.startswith('/api/ocio'):
+                from urllib.parse import urlparse, parse_qs
+                from ui.ocio_support import describe
+                try:
+                    return self._json(describe(parse_qs(urlparse(self.path).query).get('config',[''])[0]))
+                except Exception as exc:
+                    return self._json(dict(ok=False,error=str(exc)),status=400)
+            if self.path.startswith('/api/folders'):
+                from urllib.parse import urlparse, parse_qs
+                try:
+                    value = parse_qs(urlparse(self.path).query).get('path', [''])[0]
+                    folder = Path(value).expanduser() if value else Path.home()
+                    if not folder.is_absolute():
+                        raise ValueError('Use an absolute folder path')
+                    folder = folder.resolve()
+                    children = sorted((p for p in folder.iterdir() if p.is_dir()), key=lambda p:p.name.lower())
+                    return self._json(dict(ok=True,path=str(folder),parent=str(folder.parent),
+                        folders=[dict(name=p.name,path=str(p)) for p in children]))
+                except (OSError, ValueError) as exc:
+                    return self._json(dict(ok=False,error=str(exc)),status=400)
             if self.path.startswith("/api/checkpoints"):
                 return self._json({
                     "default": registry()["default"],
@@ -849,6 +908,22 @@ def make_handler(args):
                     header["gpu"] = info_used.get("gpu")
                     return self._binary(header, body)
                 if self.path.startswith("/api/master"):
+                    if self.path == '/api/master/preview':
+                        if params.get('container') not in ('srgb_png','srgb_tiff','ocio_view_png'):
+                            raise ValueError('Choose an SDR or OCIO display/view PNG preset to preview')
+                        with tempfile.TemporaryDirectory(prefix='rudra-preview-') as temp:
+                            target = Path(temp)/('preview.tif' if params.get('container')=='srgb_tiff' else 'preview.png')
+                            _render_master(model,raw,params,args,target)
+                            from PIL import Image
+                            buffer=io.BytesIO()
+                            with Image.open(target) as preview:
+                                preview.save(buffer,format='PNG',**({'icc_profile':preview.info['icc_profile']} if preview.info.get('icc_profile') else {}))
+                            payload=buffer.getvalue()
+                        self.send_response(200)
+                        self.send_header('Content-Type','image/png')
+                        self.send_header('Content-Length',str(len(payload)))
+                        self.end_headers(); self.wfile.write(payload)
+                        return
                     if self.path == '/api/master/plan':
                         targets = master_targets(params)
                         return self._json(dict(ok=True, paths=[str(p) for p in targets]))
@@ -900,7 +975,7 @@ def main() -> int:
                             webbrowser.open(f"http://localhost:{args.port}")),
             daemon=True).start()
 
-    with ThreadedServer(("", args.port), make_handler(args)) as httpd:
+    with ThreadedServer(("127.0.0.1", args.port), make_handler(args)) as httpd:
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
