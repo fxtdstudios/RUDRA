@@ -1,7 +1,7 @@
-# RUDRA 0.9.0 beta 1
+# RUDRA 0.9.0 beta 2
 
 The desktop RUDRA: SDR footage in, scene-linear HDR out, with the places the
-model reconstructed shown to you. This is the first public beta of the native
+model reconstructed shown to you. This is the second public beta of the native
 app (C++20, Qt 6.8, no Python at runtime). It is for evaluation and
 non-commercial use (PolyForm Noncommercial 1.0.0, see LICENSE; the model
 weights: LICENSE-weights).
@@ -26,13 +26,23 @@ weights: LICENSE-weights).
 - `rudra-native`, the command line: `diff`, `video`, `deliver`, `batch`,
   `ffmpeg-check`.
 
+## Changes since beta 1
+
+- Includes the native highlight-grain correction from the current main branch.
+- Packages identify themselves as 0.9.0-beta.2. The shipped model remains
+  `sdr2hdr_shadow_v1`; this is an application beta, not newly trained weights.
+- Packaging runs the native app tests on both platforms. macOS movie checks
+  use FFmpeg 7; FFmpeg 9 is not qualified because metadata checks regressed.
+- This native release is separate from the Python/browser Studio preview;
+  it does not claim feature parity with that preview.
+
 ## Install
 
 **macOS (Apple silicon, macOS 13 or later).** Open the DMG and drag RUDRA to
 Applications. The beta is not notarised yet: the first time, right-click
-RUDRA > Open, or run `xattr -dr com.apple.quarantine /Applications/RUDRA.app`.
+RUDRA > Open (subject to your macOS security policy).
 
-**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.1-windows-x64-setup.exe`:
+**Windows (x64, Windows 10 or 11).** Run `RUDRA-0.9.0-beta.2-windows-x64-setup.exe`:
 it installs for your user by default (no administrator prompt), adds RUDRA to
 the Start menu and can be removed from Settings > Apps. Or take the portable
 ZIP: unzip anywhere and run `RUDRA.exe`. A GPU with DirectX 12 is used when
@@ -40,7 +50,7 @@ there is one; the CPU otherwise.
 
 **Movies, both systems.** RUDRA runs `ffmpeg` and `ffprobe` from the PATH and
 needs a build with `libx265`, `prores_ks` and `zscale`:
-macOS `brew install ffmpeg-full`; Windows the "full" build from gyan.dev with
+macOS `brew install ffmpeg@7`, with `$(brew --prefix ffmpeg@7)/bin` on PATH; Windows the "full" build from gyan.dev with
 its `bin` folder on the PATH. `rudra-native ffmpeg-check` says whether yours
 has everything. Stills need nothing extra.
 

@@ -3,7 +3,7 @@ name: release
 # The desktop beta: RUDRA.app in a DMG (macOS, Apple silicon), and for
 # Windows x64 an installer (setup.exe, Inno Setup) and a portable ZIP, each
 # with its SHA-256, attached to a GitHub pre-release when
-# a v* tag is pushed (git tag v0.9.0-beta.1 && git push origin v0.9.0-beta.1).
+# a v* tag is pushed (git tag v0.9.0-beta.2 && git push origin v0.9.0-beta.2).
 # Run by hand (workflow_dispatch), it builds the two and keeps them as
 # workflow artifacts without publishing. The packaging is the scripts'
 # (scripts/package_mac.sh, scripts/PACKAGE_WINDOWS.ps1); the model package is
@@ -26,7 +26,9 @@ jobs:
       - uses: actions/setup-python@v6
         with: { python-version: "3.12" }
       - name: Tools
-        run: brew install ninja
+        run: |
+          brew install ninja ffmpeg@7
+          echo "$(brew --prefix ffmpeg@7)/bin" >> "$GITHUB_PATH"
       - name: The model package
         run: |
           python -m pip install --upgrade pip
@@ -34,9 +36,7 @@ jobs:
           pip install -e .
           tools/ci_run.sh "Export" python tools/export_model.py checkpoints/sdr2hdr_shadow_v1.pt --out dist/models
       - name: Build and package
-        # The app's Qt tests run in native.yml; here the movie tests would need
-        # an ffmpeg with zscale, which Homebrew's default ffmpeg lacks.
-        run: SKIP_TESTS=1 PYTHON=python tools/ci_run.sh "Package" scripts/package_mac.sh
+        run: PYTHON=python tools/ci_run.sh "Package" scripts/package_mac.sh
       - uses: actions/upload-artifact@v4
         with:
           name: rudra-macos
@@ -65,7 +65,7 @@ jobs:
           if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
       - name: Build and package
         shell: bash
-        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python
+        run: tools/ci_run.sh "Package" pwsh -NoProfile -File scripts/PACKAGE_WINDOWS.ps1 -Python python -Tests
       - uses: actions/upload-artifact@v4
         with:
           name: rudra-windows

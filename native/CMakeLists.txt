@@ -4,9 +4,9 @@ cmake_minimum_required(VERSION 3.24)
 # The dependency rule (a layer links only to layers below it) is enforced by
 # PRIVATE linkage here and by tools/check_layers.py in CI.
 project(RudraNative VERSION 0.9.0 LANGUAGES CXX)
-# The release label after the version: "beta.1" for the first public beta,
+# The release label after the version: "beta.2" for the second public beta,
 # empty for a final release. RUDRA_VERSION_LABEL is what the app shows.
-set(RUDRA_RELEASE "beta.1" CACHE STRING "Pre-release tag appended to the version (empty for a release)")
+set(RUDRA_RELEASE "beta.2" CACHE STRING "Pre-release tag appended to the version (empty for a release)")
 if(RUDRA_RELEASE)
   set(RUDRA_VERSION_LABEL "${PROJECT_VERSION}-${RUDRA_RELEASE}")
 else()
